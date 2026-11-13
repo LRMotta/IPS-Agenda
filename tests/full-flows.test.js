@@ -420,6 +420,57 @@ test('projeto grava couriers por ID e temperatura em colunas opcionais por cabec
   assert.equal(row[headers.indexOf('Situação envio de amostras')], 'Sim');
 });
 
+test('salvar projeto grava todos os campos sem reler a planilha entre gravações', () => {
+  const headers = ['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador', 'Sub 1', 'Sub 2', 'Centro',
+    'Patrocinador', 'CRO', 'Coordenador', 'Meta', 'Status', 'CE', 'Expediente', 'Título', 'Coluna alheia'];
+  const sheet = new FakeSheet('Projetos', [headers, ['PROJ-1', 'Antigo', 'ANT-01', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'manter']]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Projetos: sheet }));
+  const payload = Object.assign({}, validProject, {
+    courierPrincipalId: 'COU-MARKEN', courierPrincipalTemperaturas: ['Ambiente'],
+    courierAdicional1Id: '', courierAdicional1Temperaturas: [],
+    courierAdicional2Id: '', courierAdicional2Temperaturas: [],
+    situacaoEnvioAmostras: 'Sim', caixasTransporteJson: '[]',
+    soaBaseCalculoPadrao: 'MANTER_DATAS_PREVISTAS', ctmsJornadaAtivo: true,
+    ressarcimentoPadraoParticipante: '100,00', ressarcimentoPadraoAcompanhante: '50,00', formaRessarcimento: 'ambos'
+  });
+  const reads = [];
+  const ops = [];
+  const originalGetRange = sheet.getRange.bind(sheet);
+  sheet.getRange = (...args) => {
+    const range = originalGetRange(...args);
+    for (const method of ['getValues', 'getDisplayValues']) {
+      const original = range[method].bind(range);
+      range[method] = () => { reads.push(args); ops.push('read'); return original(); };
+    }
+    const setValues = range.setValues.bind(range);
+    range.setValues = (values) => { ops.push('write'); return setValues(values); };
+    return range;
+  };
+  sheet.getLastColumn = () => { throw new Error('getLastColumn não deve ser chamado'); };
+
+  assert.equal(context.salvarDadosProjeto({ ...payload, id: 'PROJ-1' }), 'Projeto atualizado com sucesso!');
+  assert.deepEqual(reads, [], 'cabeçalho vem da leitura inicial');
+  // Cabeçalhos novos em um bloco, colunas 2-17 em outro e os opcionais contíguos em um terceiro.
+  assert.equal(ops.length, 3);
+  const h = sheet.rows[0];
+  const row = sheet.rows[1];
+  assert.equal(h.length, 18 + 13);
+  assert.equal(row[17], 'manter', 'coluna fora do payload é preservada');
+  assert.equal(row[1], 'Novo Estudo');
+  assert.equal(row[h.indexOf('Courier principal (ID)')], 'COU-MARKEN');
+  assert.equal(row[h.indexOf('Temperaturas courier principal')], 'Ambiente');
+  assert.equal(row[h.indexOf('Situação envio de amostras')], 'Sim');
+  assert.equal(row[h.indexOf('Caixas especiais transporte (JSON)')], '[]');
+  assert.equal(row[h.indexOf('CTMS ativo na Jornada')], 'Sim');
+  assert.equal(row[h.indexOf('Forma de ressarcimento')], 'Ambos');
+
+  ops.length = 0;
+  assert.equal(context.salvarDadosProjeto({ ...payload, id: 'PROJ-1', fase: 'IV' }), 'Projeto atualizado com sucesso!');
+  assert.equal(sheet.rows[0].length, h.length, 'cabeçalhos existentes não são duplicados');
+  assert.equal(ops.length, 2);
+  assert.equal(sheet.rows[1][4], 'IV');
+});
+
 test('schema legado de projetos continua salvavel sem criar campos opcionais', () => {
   const sheet = new FakeSheet('Projetos', [
     ['ID', 'Nome', 'Codigo', 'Especialidade', 'Fase', 'Investigador']
