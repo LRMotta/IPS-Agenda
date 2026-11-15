@@ -338,13 +338,6 @@
     setTimeout(retry, 120);
   }
 
-  function dashClearProjetoInputs() {
-    var search = document.getElementById('searchProjetos');
-    var status = document.getElementById('filterStatusProj');
-    if (search) search.value = '';
-    if (status) status.value = '';
-  }
-
   function dashClearParticipanteInputs() {
     var search = document.getElementById('searchParticipantes');
     var status = document.getElementById('filterStatusPar');
@@ -376,9 +369,8 @@
       if (dashOpenMainWithFilter('projetos', target)) return;
       dashWaitAndApply('projetos', function() {
         if (dashListIsLoading('bodyProjetos')) return false;
-        if (typeof renderTabelaProj !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
-        dashClearProjetoInputs();
-        renderTabelaProj(_projetos.filter(projetoEstaAtivo_));
+        if (typeof projetosAplicarFiltroDashboard_ !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
+        projetosAplicarFiltroDashboard_('projetosAtivos');
         return true;
       });
       return;
@@ -412,12 +404,8 @@
       if (dashOpenMainWithFilter('projetos', target, dashRecrutZeroKeysParam())) return;
       dashWaitAndApply('projetos', function() {
         if (dashListIsLoading('bodyProjetos')) return false;
-        if (typeof renderTabelaProj !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
-        var keys = _dashKpiRecrutZeroKeys || {};
-        dashClearProjetoInputs();
-        renderTabelaProj(_projetos.filter(function(p) {
-          return !!(keys[_normDash(p.nomeAbreviado)] || keys[_normDash(p.codigo)]);
-        }));
+        if (typeof projetosAplicarFiltroDashboard_ !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
+        projetosAplicarFiltroDashboard_('recrutZero', '', _dashKpiRecrutZeroKeys || {}, _normDash);
         return true;
       });
     }
@@ -429,12 +417,8 @@
     if (dashOpenMainWithFilter('projetos', 'coordenador', coordenador)) return;
     dashWaitAndApply('projetos', function() {
       if (dashListIsLoading('bodyProjetos')) return false;
-      if (typeof renderTabelaProj !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
-      var search = document.getElementById('searchProjetos');
-      if (search) search.value = coordenador;
-      renderTabelaProj(_projetos.filter(function(p) {
-        return _normDash(p && p.coordenador) === _normDash(coordenador);
-      }));
+      if (typeof projetosAplicarFiltroDashboard_ !== 'function' || typeof _projetos === 'undefined' || !Array.isArray(_projetos)) return false;
+      projetosAplicarFiltroDashboard_('coordenador', coordenador);
       return true;
     });
   }

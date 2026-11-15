@@ -1016,25 +1016,7 @@ function applyDashboardPendingFilter_(pagina) {
     var filterValue = String(DASHBOARD_PENDING_KEYS || '');
     var keys = dashboardFilterKeysMap_();
     DASHBOARD_PENDING_KEYS = '';
-    var searchProj = document.getElementById('searchProjetos');
-    var statusProj = document.getElementById('filterStatusProj');
-    if (searchProj) searchProj.value = '';
-    if (statusProj) statusProj.value = '';
-    if (filtro === 'projetosAtivos') {
-      renderTabelaProj((_projetos || []).filter(projetoEstaAtivo_));
-      return;
-    }
-    if (filtro === 'coordenador') {
-      var coordenador = normSelectValue(filterValue);
-      if (searchProj) searchProj.value = filterValue;
-      renderTabelaProj((_projetos || []).filter(function(p) {
-        return normSelectValue(p && p.coordenador) === coordenador;
-      }));
-      return;
-    }
-    renderTabelaProj((_projetos || []).filter(function(p) {
-      return !!(keys[normSelectValue(p && p.nomeAbreviado)] || keys[normSelectValue(p && p.codigo)]);
-    }));
+    projetosAplicarFiltroDashboard_(filtro, filterValue, keys, normSelectValue);
   }
 }
 
@@ -5738,7 +5720,7 @@ function navAcProj(e, inputId, listId, opts, selVar) {
 // ── CRUD ─────────────────────────────────────────────────────
 function carregarProjetos(force) {
   document.getElementById('bodyProjetos').innerHTML =
-    '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>';
+    '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
   getCadastrosBootstrapCached('projetos',
     function(res) {
       var cfg = (res && res.config) || {};
@@ -6473,11 +6455,87 @@ function onProjetoCourierChange() {
   validarProjetoCouriers_(true);
 }
 
+// ── Filtros da lista ─────────────────────────────────────────
+// O grupo (situação) combina com a busca e com o status. O filtro vindo do
+// Dashboard fica visível na barra até ser removido.
+var PROJ_GRUPOS = { ativos: 'Ativos', concluidos: 'Concluídos', outros: 'Outros', todos: 'Todos' };
+var _projGrupo = 'ativos';
+var _projFiltroDash = null;
+var _projetosExibidos = [];
+
+function projetoGrupo_(p) {
+  return projetoEstaAtivo_(p) ? 'ativos' : (projetoEstaConcluido_(p) ? 'concluidos' : 'outros');
+}
+
+function projSetGrupo(grupo) {
+  _projGrupo = PROJ_GRUPOS[grupo] ? grupo : 'todos';
+  filtrarProjetos(true);
+}
+
+function projStatKeydown(ev, grupo) {
+  if (!ev || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+  ev.preventDefault();
+  projSetGrupo(grupo);
+}
+
+function projLimparFiltroDash() {
+  _projFiltroDash = null;
+  filtrarProjetos(true);
+}
+
+function projetosAplicarFiltroDashboard_(filtro, valor, keys, normFn) {
+  var searchProj = document.getElementById('searchProjetos');
+  var statusProj = document.getElementById('filterStatusProj');
+  if (searchProj) searchProj.value = '';
+  if (statusProj) statusProj.value = '';
+  normFn = typeof normFn === 'function' ? normFn : normSelectValue;
+  if (filtro === 'coordenador') {
+    var coordenador = normSelectValue(valor);
+    _projGrupo = 'ativos';
+    _projFiltroDash = {
+      label: 'Coordenador: ' + String(valor || '').trim(),
+      test: function(p) { return normSelectValue(p && p.coordenador) === coordenador; }
+    };
+  } else if (filtro === 'recrutZero') {
+    keys = keys || {};
+    _projGrupo = 'todos';
+    _projFiltroDash = {
+      label: 'Recrutamento aberto sem participantes ativos',
+      test: function(p) { return !!(keys[normFn(p && p.nomeAbreviado)] || keys[normFn(p && p.codigo)]); }
+    };
+  } else {
+    _projGrupo = 'ativos';
+    _projFiltroDash = null;
+  }
+  filtrarProjetos(true);
+}
+
+function projAtualizarFiltrosUi_(contagem) {
+  var ids = { ativos: 'projSegAtivos', concluidos: 'projSegConcluidos', outros: 'projSegOutros', todos: 'projSegTodos' };
+  Object.keys(ids).forEach(function(grupo) {
+    var count = document.getElementById(ids[grupo]);
+    if (count) count.textContent = String((contagem && contagem[grupo]) || 0);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-proj-grupo]'), function(btn) {
+    var ativo = btn.getAttribute('data-proj-grupo') === _projGrupo;
+    btn.classList.toggle('active', ativo);
+    btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-proj-card-grupo]'), function(card) {
+    var ativo = card.getAttribute('data-proj-card-grupo') === _projGrupo;
+    card.classList.toggle('active', ativo);
+    card.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+  });
+  var chip = document.getElementById('projFiltroDash');
+  var chipLabel = document.getElementById('projFiltroDashLabel');
+  if (chip) chip.hidden = !_projFiltroDash;
+  if (chipLabel) chipLabel.textContent = _projFiltroDash ? _projFiltroDash.label : '';
+}
+
 function renderProjetos(lista) {
   _projetos = lista || [];
-  var esps = {}; var concluidos = 0; var projetosAtivos = 0; var ativosTotal = 0; var metaTotal = 0; var participantesTotal = 0; var falhasTotal = 0;
+  var concluidos = 0; var projetosAtivos = 0; var ativosTotal = 0; var metaTotal = 0; var participantesTotal = 0; var falhasTotal = 0;
   _projetos.forEach(function(p){
-    if (p.especialidade) esps[p.especialidade]=1;
     if (projetoEstaConcluido_(p)) {
       concluidos++;
       return;
@@ -6491,9 +6549,9 @@ function renderProjetos(lista) {
   });
   document.getElementById('projTotal').textContent = _projetos.length;
   document.getElementById('projFases').textContent = projetosAtivos;
-  document.getElementById('projEsps').textContent  = Object.keys(esps).length;
-  document.getElementById('projRecrutamento').textContent = ativosTotal + ' pacientes ativo(s)';
-  document.getElementById('projRecrutamentoPct').textContent = 'Meta ' + (metaTotal || '—') + ' | Total ' + participantesTotal + (falhasTotal ? ' | Falhas ' + falhasTotal : '');
+  document.getElementById('projOutros').textContent = _projetos.length - projetosAtivos - concluidos;
+  document.getElementById('projRecrutamento').textContent = ativosTotal;
+  document.getElementById('projRecrutamentoPct').textContent = 'Meta ' + (metaTotal || '—') + ' · Total ' + participantesTotal + (falhasTotal ? ' · Falhas de triagem ' + falhasTotal : '');
   document.getElementById('projConcluidos').textContent = concluidos;
   filtrarProjetos(true);
   applyDashboardPendingFilter_('projetos');
@@ -6520,74 +6578,71 @@ function filtrarProjetos(forceNow) {
   codexRunSearchFilter('searchProjetos', 'projetos', function() {
     var q = (document.getElementById('searchProjetos').value||'').toLowerCase().trim();
     var st = document.getElementById('filterStatusProj') ? document.getElementById('filterStatusProj').value : '';
-    var f = _projetos.filter(function(p) {
-      return (!q || projetoCorrespondeBusca_(p, q)) && (!st || String(p.status || '') === st);
+    var base = _projetos.filter(function(p) {
+      return (!q || projetoCorrespondeBusca_(p, q)) && (!st || String(p.status || '') === st) &&
+        (!_projFiltroDash || _projFiltroDash.test(p));
     });
-    renderTabelaProj(f);
+    var contagem = { ativos: 0, concluidos: 0, outros: 0, todos: base.length };
+    base.forEach(function(p) { contagem[projetoGrupo_(p)]++; });
+    var f = _projGrupo === 'todos' ? base : base.filter(function(p) { return projetoGrupo_(p) === _projGrupo; });
+    projAtualizarFiltrosUi_(contagem);
+    renderTabelaProj(f, base.length - f.length);
   }, !!forceNow);
 }
 
+// A impressão parte dos dados exibidos, não do HTML da tabela: mudanças
+// visuais na lista não alteram o documento impresso.
 function imprimirProjetos() {
-  var body = document.getElementById('bodyProjetos');
-  if (!body) return;
-  var rows = Array.prototype.slice.call(body.querySelectorAll('tr.proj-main'));
-  if (!rows.length) {
-    snack('Nao ha projetos exibidos para imprimir.');
+  var lista = _projetosExibidos || [];
+  if (!lista.length) {
+    snack('Não há projetos exibidos para imprimir.');
     return;
   }
   var search = document.getElementById('searchProjetos');
+  var statusSel = document.getElementById('filterStatusProj');
   var filtro = String((search && search.value) || '').trim();
+  var statusFiltro = String((statusSel && statusSel.value) || '').trim();
   var headers = ['Projeto', 'Fase', 'Especialidade', 'Equipe', 'Patrocinador / CRO', 'Recrutamento', 'Centro', 'Status'];
-  var tableRows = rows.map(function(row) {
-    var cells = row.querySelectorAll('td');
-    var values = Array.prototype.slice.call(cells, 0, 8).map(function(cell, index) {
-      var printCell = cell.cloneNode(true);
-      if (index === 0) {
-        Array.prototype.slice.call(printCell.querySelectorAll('.proj-toggle, .row-avatar')).forEach(function(el) { el.remove(); });
-      }
-      Array.prototype.slice.call(printCell.querySelectorAll('button, .material-symbols-outlined')).forEach(function(el) { el.remove(); });
-      if (index === 5) return recrutamentoProjetoImpressaoHtml_(printCell.innerText || '');
-      return esc(String(printCell.innerText || '').trim()).replace(/\n/g, '<br>');
-    });
+  var linhas = function(valores) {
+    return valores.filter(Boolean).map(function(valor) { return esc(valor); }).join('<br>');
+  };
+  var tableRows = lista.map(function(p) {
+    var subs = [p.subInvestigador1, p.subInvestigador2].filter(Boolean);
+    var values = [
+      linhas([p.nomeAbreviado || '-', p.codigo]),
+      esc(p.fase ? projetoFaseLabel_(p.fase) : '-'),
+      esc(p.especialidade || '-'),
+      linhas([p.investigador || '-', subs.length ? 'Sub: ' + subs.join(' / ') : '', p.coordenador ? 'Coord.: ' + p.coordenador : '']),
+      linhas([p.patrocinador || '-', p.cro || '—']),
+      '<div class="print-recruitment">' + recrutamentoProjetoLinhas_(p).map(function(linha) {
+        return '<div class="print-recruitment-line">' + esc(linha) + '</div>';
+      }).join('') + '</div>',
+      esc(p.centro || '-'),
+      esc(p.status || '—')
+    ];
     return '<tr>' + values.map(function(value) { return '<td>' + value + '</td>'; }).join('') + '</tr>';
   }).join('');
+  var recorte = [];
+  if (_projGrupo !== 'todos') recorte.push(PROJ_GRUPOS[_projGrupo]);
+  if (statusFiltro) recorte.push('Status: ' + statusFiltro);
+  if (_projFiltroDash) recorte.push(_projFiltroDash.label);
+  if (filtro) recorte.push('Busca: ' + filtro);
   var emitted = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
   var logo = (typeof getPatientDisplayLogoSrc === 'function' ? getPatientDisplayLogoSrc() : '') || ((document.querySelector('.nav-brand img') || {}).src || '');
   var logoHtml = logo ? '<img src="' + esc(logo) + '" alt="IPS | UCS">' : '<strong>IPS | UCS</strong>';
-  var subtitle = filtro ? 'Filtro: ' + filtro + ' · ' + rows.length + ' projeto(s)' : rows.length + ' projeto(s) exibido(s)';
+  var subtitle = (recorte.length ? recorte.join(' · ') + ' · ' : '') + (lista.length === 1 ? '1 projeto' : lista.length + ' projetos');
   var html = '<!doctype html><html><head><meta charset="utf-8"><title>Projetos</title><style>' +
     '@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1f2937;margin:0}.no-print{position:fixed;right:12px;top:12px;border:1px solid #c5d5fb;background:#1266f1;color:#fff;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer}.head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #1266f1;padding-bottom:9px;margin-bottom:12px}.head img{height:34px;width:auto;object-fit:contain}.head strong{font-size:18px;color:#1266f1}.head h1{font-size:18px;margin:0;color:#0b3f8a}.head p{font-size:10px;color:#64748b;margin:3px 0 0}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#eef4ff;color:#0b3f8a;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.45px;padding:7px 6px;border:1px solid #d8e2f0}td{vertical-align:top;font-size:9px;line-height:1.35;padding:6px;border:1px solid #e2e8f0;overflow-wrap:anywhere}.print-recruitment{display:grid;gap:3px}.print-recruitment-line{white-space:normal}th:nth-child(1){width:15%}th:nth-child(2){width:7%}th:nth-child(3){width:12%}th:nth-child(4){width:18%}th:nth-child(5){width:16%}th:nth-child(6){width:12%}th:nth-child(7){width:8%}th:nth-child(8){width:12%}tr{break-inside:avoid}@media print{.no-print{display:none}}</style></head><body>' +
     '<button class="no-print" onclick="window.print()">Imprimir</button><div class="head">' + logoHtml + '<div><h1>Projetos</h1><p>' + esc(subtitle) + ' · Emitido em ' + esc(emitted) + '</p></div></div>' +
     '<table><thead><tr>' + headers.map(function(header) { return '<th>' + esc(header) + '</th>'; }).join('') + '</tr></thead><tbody>' + tableRows + '</tbody></table><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>';
   var w = window.open('', '_blank');
   if (!w) {
-    snack('O navegador bloqueou a janela de impressao.');
+    snack('O navegador bloqueou a janela de impressão.');
     return;
   }
   w.document.open();
   w.document.write(html);
   w.document.close();
-}
-
-function recrutamentoProjetoImpressaoHtml_(texto) {
-  var valor = String(texto || '').replace(/\s+/g, ' ').trim();
-  if (!valor) return '';
-  var ativos = valor.match(/(\d+)\s+pacientes ativo\(s\)/i);
-  var restante = ativos ? valor.slice(ativos.index + ativos[0].length) : valor;
-  var percentual = restante.match(/^\s*(\d+(?:[,.]\d+)?%|—)/);
-  var total = valor.match(/Total:\s*(\d+)(?=\s*(?:Falha triagem:|Meta:)|$)/i);
-  var falhas = valor.match(/Falha triagem:\s*(\d+)(?=\s*(?:Meta:)|$)/i);
-  var meta = valor.match(/Meta:\s*([^\s]+)(?:\s|$)/i);
-  var linhas = [];
-  if (/^Projeto conclu[ií]do/i.test(valor)) linhas.push('Projeto concluído');
-  if (ativos) linhas.push(ativos[1] + ' pacientes ativo(s)' + (percentual ? ' (' + percentual[1] + ')' : ''));
-  if (total) linhas.push('Total: ' + total[1]);
-  if (falhas) linhas.push('Falha triagem: ' + falhas[1]);
-  if (meta) linhas.push('Meta: ' + meta[1]);
-  if (!linhas.length) linhas.push(valor);
-  return '<div class="print-recruitment">' + linhas.map(function(linha) {
-    return '<div class="print-recruitment-line">' + esc(linha) + '</div>';
-  }).join('') + '</div>';
 }
 
 var FASE_COLORS = {'I':'#e8f0fe:#1266f1','II':'#e6f4ea:#137333','III':'#fff3e0:#e65100','IV':'#fce8e6:#b3261e'};
@@ -6611,10 +6666,14 @@ function faseAutoColor(fase) {
   return FASE_AUTO_COLORS[hash % FASE_AUTO_COLORS.length];
 }
 
+function projetoFaseLabel_(fase) {
+  var faseNorm = norm(fase);
+  return faseNorm === 'observacional' || String(fase || '').toLowerCase().indexOf('fase') >= 0 ? fase : 'Fase ' + fase;
+}
+
 function chipFase(fase) {
   var c = (FASE_COLORS[fase] || faseAutoColor(fase)).split(':');
-  var faseNorm = norm(fase);
-  var label = faseNorm === 'observacional' || String(fase || '').toLowerCase().indexOf('fase') >= 0 ? fase : 'Fase ' + fase;
+  var label = projetoFaseLabel_(fase);
   return '<span class="chip" style="background:'+c[0]+';color:'+c[1]+'">' + esc(label) + '</span>';
 }
 
@@ -6640,33 +6699,49 @@ function projetoStatusChip(projeto) {
 
 function recrutamentoProjetoHtml(p) {
   if (projetoClassificacaoStatus_(p) === 'nao_selecionado') return '';
-  var concluido = projetoEstaConcluido_(p);
-  var ativos = Number(p.participantesAtivos || 0);
-  var falhas = Number(p.falhasTriagem || 0);
-  var total = Number(p.totalParticipantes || 0);
-  var meta = Number(p.metaRecrutamento || 0);
-  var pct = meta > 0 ? Math.min(100, Math.round((ativos * 1000) / meta) / 10) : 0;
-  var pctLabel = meta > 0 ? pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
-  var barColor = pct >= 100 ? '#137333' : pct >= 70 ? '#1266f1' : pct >= 35 ? '#e65100' : '#9aa3b0';
-  var metricas = '<span class="chip" style="padding:2px 6px;font-size:10px;background:#eef1f5;color:#5f6b7c">Total: ' + esc(total) + '</span>' +
-    (falhas > 0 ? '<span class="chip" style="padding:2px 6px;font-size:10px;background:#f3f4f6;color:#5f6b7c">Falha triagem: ' + esc(falhas) + '</span>' : '') +
-    (!concluido ? '<span class="chip" style="padding:2px 6px;font-size:10px;background:#fff7e6;color:#9a4b16">Meta: ' + (meta > 0 ? esc(meta) : '—') + '</span>' : '');
-  if (concluido) {
-    return '<div style="min-width:148px;max-width:190px">' +
-      '<div style="font-size:11px;font-weight:700;color:#137333;margin-bottom:5px">Projeto concluído</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:4px">' + metricas + '</div>' +
+  var d = projetoRecrutamentoDados_(p);
+  if (d.concluido) {
+    return '<div class="proj-rec proj-rec-done">' +
+      '<div class="proj-rec-top"><span class="proj-rec-done-label">Projeto concluído</span></div>' +
+      '<div class="proj-rec-note">' + esc(d.total === 1 ? '1 participante' : d.total + ' participantes') + '</div>' +
     '</div>';
   }
-  return '<div style="min-width:148px;max-width:190px">' +
-    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:5px">' +
-      '<span class="chip chip-green" style="padding:2px 7px;font-size:10.5px">' + esc(ativos) + ' pacientes ativo(s)</span>' +
-      '<span style="font-size:11px;font-weight:700;color:#5f6b7c">' + esc(pctLabel) + '</span>' +
+  var nivel = d.pct >= 100 ? 'full' : d.pct >= 70 ? 'high' : d.pct >= 35 ? 'mid' : 'low';
+  return '<div class="proj-rec" title="' + esc(recrutamentoProjetoLinhas_(p).join(' · ')) + '">' +
+    '<div class="proj-rec-top">' +
+      '<span><strong>' + esc(d.ativos) + '</strong>' + (d.meta > 0 ? ' de ' + esc(d.meta) : '') + (d.ativos === 1 && !d.meta ? ' ativo' : ' ativos') + '</span>' +
+      '<span class="proj-rec-pct">' + esc(d.meta > 0 ? d.pctLabel : 'sem meta') + '</span>' +
     '</div>' +
-    '<div style="height:7px;background:#eef1f5;border-radius:999px;overflow:hidden;border:1px solid #e0e6f0">' +
-      '<div style="height:100%;width:' + esc(pct) + '%;background:' + barColor + ';border-radius:999px"></div>' +
-    '</div>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">' + metricas + '</div>' +
+    '<div class="proj-rec-bar"><div class="proj-rec-fill proj-rec-' + nivel + '" style="width:' + esc(d.pct) + '%"></div></div>' +
   '</div>';
+}
+
+function projetoRecrutamentoDados_(p) {
+  var ativos = Number(p.participantesAtivos || 0);
+  var meta = Number(p.metaRecrutamento || 0);
+  var pct = meta > 0 ? Math.min(100, Math.round((ativos * 1000) / meta) / 10) : 0;
+  return {
+    concluido: projetoEstaConcluido_(p),
+    ativos: ativos,
+    falhas: Number(p.falhasTriagem || 0),
+    total: Number(p.totalParticipantes || 0),
+    meta: meta,
+    pct: pct,
+    pctLabel: meta > 0 ? pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—'
+  };
+}
+
+// Indicadores de recrutamento em texto, um por linha (dica da lista e impressão).
+function recrutamentoProjetoLinhas_(p) {
+  if (projetoClassificacaoStatus_(p) === 'nao_selecionado') return [];
+  var d = projetoRecrutamentoDados_(p);
+  var linhas = [];
+  if (d.concluido) linhas.push('Projeto concluído');
+  else linhas.push((d.ativos === 1 ? '1 paciente ativo' : d.ativos + ' pacientes ativos') + (d.meta > 0 ? ' (' + d.pctLabel + ')' : ''));
+  linhas.push('Total: ' + d.total);
+  if (d.falhas > 0) linhas.push('Falha de triagem: ' + d.falhas);
+  if (!d.concluido) linhas.push('Meta: ' + (d.meta > 0 ? d.meta : '—'));
+  return linhas;
 }
 
 function projetoDetailValue(value) {
@@ -6710,12 +6785,45 @@ function projetoCouriersDetalheHtml_(p) {
 
 var _projetoCeStatusCache = {};
 
-function projetoDetalheHtml(p) {
+function projetoDetalheItem_(icon, label, valueHtml) {
+  return '<span class="det-item"><span class="material-symbols-outlined">' + icon + '</span><span>' + label + ': ' + valueHtml + '</span></span>';
+}
+
+function projetoRecrutamentoDetalheHtml_(p) {
+  if (projetoClassificacaoStatus_(p) === 'nao_selecionado') return '';
+  var d = projetoRecrutamentoDados_(p);
+  return '<div class="proj-detail-section">' +
+    '<div class="proj-detail-section-label"><span class="material-symbols-outlined">groups</span>Recrutamento</div>' +
+    '<div class="proj-detail-items">' +
+      (d.concluido ? '' : projetoDetalheItem_('person_check', 'Pacientes ativos', esc(d.ativos) + (d.meta > 0 ? ' (' + esc(d.pctLabel) + ' da meta)' : ''))) +
+      (d.concluido ? '' : projetoDetalheItem_('flag', 'Meta', d.meta > 0 ? esc(d.meta) : projetoDetailValue(''))) +
+      projetoDetalheItem_('group', 'Total de participantes', esc(d.total)) +
+      projetoDetalheItem_('person_off', 'Falhas de triagem', esc(d.falhas)) +
+    '</div>' +
+  '</div>';
+}
+
+function projetoEquipeDetalheHtml_(p) {
+  var subs = [p.subInvestigador1, p.subInvestigador2].filter(Boolean).join(' / ');
+  return '<div class="proj-detail-section">' +
+    '<div class="proj-detail-section-label"><span class="material-symbols-outlined">badge</span>Equipe e centro</div>' +
+    '<div class="proj-detail-items">' +
+      projetoDetalheItem_('medical_services', 'Investigador principal', projetoDetailValue(p.investigador)) +
+      projetoDetalheItem_('stethoscope', 'Subinvestigadores', projetoDetailValue(subs)) +
+      projetoDetalheItem_('manage_accounts', 'Coordenador', projetoDetailValue(p.coordenador)) +
+      projetoDetalheItem_('location_on', 'Centro', projetoDetailValue(p.centro)) +
+    '</div>' +
+  '</div>';
+}
+
+function projetoDetalheHtml(p, idx) {
   var projetoCe = String(p.nomeAbreviado || p.codigo || '').trim();
   var ceStatusId = 'proj-ce-status-' + String(p.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
   return '<div class="proj-detail-panel">' +
     '<div class="proj-detail-title">' + projetoDetailValue(p.tituloCompleto) + '</div>' +
     '<div class="proj-detail-layout">' +
+      projetoRecrutamentoDetalheHtml_(p) +
+      projetoEquipeDetalheHtml_(p) +
       '<div class="proj-detail-section proj-detail-study">' +
         '<div class="proj-detail-section-label"><span class="material-symbols-outlined">fact_check</span>Marcos do estudo</div>' +
         '<div class="proj-detail-items">' +
@@ -6726,6 +6834,10 @@ function projetoDetalheHtml(p) {
         '</div>' +
       '</div>' +
       projetoCouriersDetalheHtml_(p) +
+    '</div>' +
+    '<div class="proj-detail-footer">' +
+      '<button class="proj-detail-delete" type="button" data-record-action="delete" data-record-index="' + esc(idx) + '">' +
+        '<span class="material-symbols-outlined">delete</span>Excluir projeto</button>' +
     '</div>' +
   '</div>';
 }
@@ -6738,7 +6850,7 @@ function carregarProjetoCeStatus(row) {
   var target = statusId ? document.getElementById(statusId) : null;
   if (!target) return;
   if (!projeto) {
-    target.textContent = 'Nao';
+    target.textContent = 'Não';
     target.className = 'ce-status no';
     statusItem.setAttribute('data-ce-loaded', '1');
     return;
@@ -6746,7 +6858,7 @@ function carregarProjetoCeStatus(row) {
   var cacheKey = norm(projeto);
   var cached = _projetoCeStatusCache[cacheKey];
   if (cached) {
-    target.textContent = cached.found ? 'Sim' : 'Nao';
+    target.textContent = cached.found ? 'Sim' : 'Não';
     target.className = 'ce-status ' + (cached.found ? 'yes' : 'no');
     if (cached.message) target.title = cached.message;
     statusItem.setAttribute('data-ce-loaded', '1');
@@ -6760,15 +6872,15 @@ function carregarProjetoCeStatus(row) {
     onSuccess: function(res) {
       res = res || { found: false, message: '' };
       _projetoCeStatusCache[cacheKey] = res;
-      target.textContent = res.found ? 'Sim' : 'Nao';
+      target.textContent = res.found ? 'Sim' : 'Não';
       target.className = 'ce-status ' + (res.found ? 'yes' : 'no');
       if (res.message) target.title = res.message;
       statusItem.setAttribute('data-ce-loaded', '1');
     },
     onFailure: function(e) {
-      target.textContent = 'Nao';
+      target.textContent = 'Não';
       target.className = 'ce-status no';
-      target.title = appErrorMessage(e, 'Nao foi possivel verificar a CE.');
+      target.title = appErrorMessage(e, 'Não foi possível verificar a CE.');
       statusItem.setAttribute('data-ce-loaded', '1');
     }
   });
@@ -6788,49 +6900,44 @@ function toggleProjetoDetalhe(ev, id) {
   if (open) carregarProjetoCeStatus(row);
 }
 
-function renderTabelaProj(lista) {
+function renderTabelaProj(lista, ocultosPeloGrupo) {
   var tb = document.getElementById('bodyProjetos');
   if (!tb) return;
   lista = lista || [];
+  _projetosExibidos = lista;
   if (!lista.length) {
-    tb.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum projeto encontrado.</td></tr>';
+    var ocultos = Number(ocultosPeloGrupo || 0);
+    tb.innerHTML = '<tr class="empty-row"><td colspan="6">' +
+      (ocultos > 0
+        ? 'Nenhum projeto em “' + esc(PROJ_GRUPOS[_projGrupo] || '') + '” com estes filtros. ' +
+          '<button class="proj-empty-link" type="button" onclick="projSetGrupo(\'todos\')">' +
+          (ocultos === 1 ? 'Ver 1 projeto em outra situação' : 'Ver ' + ocultos + ' projetos em outras situações') + '</button>'
+        : 'Nenhum projeto encontrado.') +
+      '</td></tr>';
     return;
   }
   tb.innerHTML = lista.map(function(p, idx) {
-    var ini = (p.nomeAbreviado || '?')[0].toUpperCase();
     var detailId = 'proj-detail-' + idx;
-    var codigoHtml = p.codigo
-      ? '<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">' + esc(p.codigo) + '</div>'
-      : '';
-    var coordHtml = p.coordenador
-      ? '<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">Coord.: ' + esc(p.coordenador) + '</div>'
-      : '';
-    var subs = [p.subInvestigador1, p.subInvestigador2].filter(Boolean);
-    var subsHtml = subs.length
-      ? '<div style="font-size:11px;color:#5f6b7c;margin-top:3px;">Sub: ' + esc(subs.join(' / ')) + '</div>'
-      : '';
-    var croHtml = p.cro
-      ? '<div style="font-size:11px;color:#9aa3b0;margin-top:4px;">' + esc(p.cro) + '</div>'
-      : '<div style="font-size:11px;color:#9aa3b0;margin-top:4px;">&mdash;</div>';
+    var nome = p.nomeAbreviado || '-';
+    var tagsHtml = (p.fase ? chipFase(p.fase) : '') +
+      (p.especialidade ? '<span class="chip chip-blue">' + esc(p.especialidade) + '</span>' : '');
     return '<tr class="proj-main">'
-      + '<td><div class="name-cell"><button class="icon-btn proj-toggle" type="button" title="Detalhes do projeto" aria-expanded="false" data-proj-detail-target="' + detailId + '" onclick="toggleProjetoDetalhe(event,\'' + detailId + '\')"><span class="material-symbols-outlined">expand_more</span></button><div class="row-avatar" style="border-radius:8px;">' + esc(ini) + '</div>'
-      + '<div><div class="row-name">' + esc(p.nomeAbreviado || '-') + '</div>'
-      + codigoHtml + '</div></div></td>'
-      + '<td>' + (p.fase ? chipFase(p.fase) : '-') + '</td>'
-      + '<td><span class="chip chip-blue">' + esc(p.especialidade || '-') + '</span></td>'
-      + '<td><div class="row-name" style="font-size:13px;">' + esc(p.investigador || '-') + '</div>'
-      + subsHtml + coordHtml + '</td>'
-      + '<td><div class="row-name" style="font-size:13px;">' + esc(p.patrocinador || '-') + '</div>' + croHtml + '</td>'
+      + '<td><div class="name-cell"><button class="icon-btn proj-toggle" type="button" title="Detalhes do projeto" aria-label="Detalhes de ' + esc(nome) + '" aria-expanded="false" data-proj-detail-target="' + detailId + '" onclick="toggleProjetoDetalhe(event,\'' + detailId + '\')"><span class="material-symbols-outlined">expand_more</span></button>'
+      + '<div class="proj-id"><div class="row-name">' + esc(nome) + '</div>'
+      + (p.codigo ? '<div class="proj-sub">' + esc(p.codigo) + '</div>' : '')
+      + (tagsHtml ? '<div class="proj-tags">' + tagsHtml + '</div>' : '')
+      + '</div></div></td>'
+      + '<td><div class="row-name">' + esc(p.investigador || '-') + '</div>'
+      + (p.coordenador ? '<div class="proj-sub">Coord.: ' + esc(p.coordenador) + '</div>' : '') + '</td>'
+      + '<td><div class="row-name">' + esc(p.patrocinador || '-') + '</div>'
+      + '<div class="proj-sub">' + (p.cro ? esc(p.cro) : '&mdash;') + '</div></td>'
       + '<td>' + recrutamentoProjetoHtml(p) + '</td>'
-      + '<td class="wide-only" style="color:#5f6b7c;">' + esc(p.centro || '-') + '</td>'
       + '<td>' + projetoStatusChip(p) + '</td>'
       + '<td><div class="action-btns">'
-      + '<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="' + idx + '">'
+      + '<button class="icon-btn" title="Editar" aria-label="Editar ' + esc(nome) + '" data-record-action="edit" data-record-index="' + idx + '">'
       + '<span class="material-symbols-outlined">edit</span></button>'
-      + '<button class="icon-btn del" title="Excluir" data-record-action="delete" data-record-index="' + idx + '">'
-      + '<span class="material-symbols-outlined">delete</span></button>'
       + '</div></td></tr>'
-      + '<tr class="proj-detail" id="' + detailId + '"><td colspan="9">' + projetoDetalheHtml(p) + '</td></tr>';
+      + '<tr class="proj-detail" id="' + detailId + '"><td colspan="6">' + projetoDetalheHtml(p, idx) + '</td></tr>';
   }).join('');
   bindTableRecordActions(tb, lista, {
     edit: function(item) { abrirFormProjeto(item); },

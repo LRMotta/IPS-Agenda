@@ -776,21 +776,67 @@
     .proj-detail td { padding-top: 0 !important; background: #fafbff; }
     .proj-detail-panel { border: 1px solid #e1e8f4; border-radius: 10px; background: #fff; margin: 0 0 10px 48px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(37,58,92,.04); }
     .proj-detail-title { font-size: 12.5px; font-weight: 700; color: var(--text); padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #edf1f7; line-height: 1.4; }
-    .proj-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(300px,max-content); gap: 18px; align-items: start; }
+    .proj-detail-layout { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px 24px; align-items: start; }
     .proj-detail-section { min-width: 0; }
+    .proj-detail-footer { display: flex; justify-content: flex-end; margin-top: 12px; padding-top: 10px; border-top: 1px solid #edf1f7; }
+    .proj-detail-delete { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid #f4b5b2; border-radius: var(--r-sm); background: #fff; color: #b3261e; font-family: 'Roboto', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .proj-detail-delete:hover { background: #fce8e6; }
+    .proj-detail-delete .material-symbols-outlined { font-size: 16px; }
+    /* PROJETOS: lista */
+    .proj-table-scroll { max-width: 100%; overflow-x: auto; }
+    .proj-table-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .proj-id { min-width: 0; }
+    .proj-sub { font-size: 11px; color: #7a8799; margin-top: 2px; }
+    .proj-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .proj-tags .chip { padding: 2px 7px; font-size: 10.5px; }
+    .proj-th-actions { text-align: right !important; padding-right: 20px !important; }
+    .proj-rec { min-width: 140px; max-width: 190px; }
+    .proj-rec-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 12px; color: var(--text-muted); }
+    .proj-rec-top strong { font-size: 14px; color: var(--text); }
+    .proj-rec-pct { font-size: 11px; font-weight: 700; color: #5f6b7c; white-space: nowrap; }
+    .proj-rec-bar { height: 6px; background: #eef1f5; border-radius: 999px; overflow: hidden; }
+    .proj-rec-fill { height: 100%; border-radius: 999px; }
+    .proj-rec-low { background: #9aa3b0; }
+    .proj-rec-mid { background: #e65100; }
+    .proj-rec-high { background: #1266f1; }
+    .proj-rec-full { background: #137333; }
+    .proj-rec-done-label { font-size: 11.5px; font-weight: 700; color: #137333; }
+    .proj-rec-done .proj-rec-top { margin-bottom: 0; }
+    .proj-rec-note { font-size: 11px; color: #7a8799; }
+    .proj-empty-link { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
+    /* PROJETOS: filtros */
+    .proj-toolbar { flex-wrap: wrap; }
+    .proj-toolbar .search-wrap { flex: 1 1 220px; min-width: 0; }
+    .proj-toolbar .search-wrap input { min-width: 0; }
+    .proj-seg { display: inline-flex; flex-shrink: 0; border: 1.5px solid #e0e6f0; border-radius: var(--r-sm); background: #f6f8ff; overflow: hidden; }
+    .proj-seg-btn { display: inline-flex; align-items: center; gap: 6px; height: 33px; padding: 0 11px; border: 0; border-right: 1px solid #e0e6f0; background: transparent; color: var(--text-muted); font-family: 'Roboto', sans-serif; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; }
+    .proj-seg-btn:last-child { border-right: 0; }
+    .proj-seg-btn:hover { background: #eaf0ff; }
+    .proj-seg-btn.active { background: var(--primary); color: #fff; font-weight: 600; }
+    .proj-seg-btn:focus-visible, .proj-stat-link:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+    .proj-seg-count { font-size: 11px; font-weight: 700; opacity: .75; }
+    .proj-status-select { height: 36px; font-size: 12px; color: var(--text-muted); border: 1.5px solid #e0e6f0; border-radius: var(--r-sm); background-color: #f6f8ff; padding: 0 30px 0 10px; }
+    .proj-dash-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 30px; padding: 0 4px 0 9px; border: 1px solid #c5d5fb; border-radius: 999px; background: var(--primary-light); color: var(--primary); font-size: 12px; font-weight: 600; }
+    .proj-dash-chip[hidden] { display: none; }
+    .proj-dash-chip > .material-symbols-outlined { font-size: 15px; }
+    .proj-dash-chip-clear { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; padding: 0; }
+    .proj-dash-chip-clear:hover { background: #d6e2fd; }
+    .proj-dash-chip-clear .material-symbols-outlined { font-size: 15px; }
+    .proj-stat-link { cursor: pointer; }
+    .proj-stat-link.active { background: #f3f7ff; }
+    .proj-stat-link.active::before { height: 4px; }
+    .proj-stat-sub { font-size: 10.5px; color: var(--text-faint); margin-top: 3px; overflow-wrap: anywhere; }
     .proj-detail-section-label { display: flex; align-items: center; gap: 5px; margin-bottom: 7px; color: #7a8799; font-size: 10px; font-weight: 700; letter-spacing: .45px; text-transform: uppercase; }
     .proj-detail-section-label .material-symbols-outlined { font-size: 15px; color: #8fa1b8; }
     .proj-detail-items { display: flex; flex-wrap: wrap; gap: 7px 22px; }
-    .proj-detail-logistics { padding-left: 18px; border-left: 1px solid #e8edf5; }
     .proj-courier-list { display: flex; flex-wrap: wrap; gap: 7px; }
     .proj-courier-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 5px 9px; border: 1px solid #d7e3f5; border-radius: 8px; background: #f6f9fe; color: #405169; font-size: 11.5px; white-space: nowrap; }
     .proj-courier-chip .material-symbols-outlined { font-size: 15px; color: var(--primary); }
     @media (max-width: 1100px) {
       .proj-detail-layout { grid-template-columns: 1fr; gap: 12px; }
-      .proj-detail-logistics { padding: 12px 0 0; border-left: 0; border-top: 1px solid #e8edf5; }
     }
     @media (max-width: 700px) {
-      .proj-detail-panel { margin-left: 0; padding: 11px 12px; }
+      .proj-detail-panel { position: sticky; left: 12px; width: calc(100vw - 50px); max-width: 100%; margin-left: 0; padding: 11px 12px; }
       .proj-detail-items { gap: 7px 14px; }
       .proj-courier-chip { white-space: normal; }
     }

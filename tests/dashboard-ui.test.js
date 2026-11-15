@@ -453,7 +453,7 @@ test('projetos, Dashboard e Estoque consomem a classificacao canonica do servido
   const core = readProjectFile('IndexCoreScripts.html');
   const webApp = readProjectFile('WebApp.gs');
   assert.match(webApp, /classificacaoStatus: str\(p\.classificacaoStatus\)/);
-  assert.match(core, /filter\(projetoEstaAtivo_\)/);
+  assert.match(core, /projetoEstaAtivo_\(p\) \? 'ativos'/);
   assert.match(core, /classificacao === 'cancelado'/);
   assert.match(core, /projetoStatusChip\(p\)/);
   assert.match(dashboard, /proj\.filter\(projetoEstaAtivo_\)/);
@@ -475,15 +475,17 @@ test('projeto nao selecionado nao exibe estatisticas de recrutamento, inclusive 
   const core = readProjectFile('IndexCoreScripts.html');
   const context = vm.createContext({ esc: String });
   vm.runInContext(sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(') +
-    sourceBetween(core, 'function recrutamentoProjetoHtml(', 'function projetoDetailValue(') +
-    sourceBetween(core, 'function recrutamentoProjetoImpressaoHtml_(', 'var FASE_COLORS'), context);
+    sourceBetween(core, 'function recrutamentoProjetoHtml(', 'function projetoDetailValue('), context);
   for (const count of [0, 12]) {
-    const html = context.recrutamentoProjetoHtml({classificacaoStatus:'nao_selecionado',participantesAtivos:count,totalParticipantes:count,metaRecrutamento:20,falhasTriagem:2});
-    assert.equal(html,'');
-    assert.equal(context.recrutamentoProjetoImpressaoHtml_(html),'');
+    const projeto = {classificacaoStatus:'nao_selecionado',participantesAtivos:count,totalParticipantes:count,metaRecrutamento:20,falhasTriagem:2};
+    assert.equal(context.recrutamentoProjetoHtml(projeto),'');
+    assert.equal(context.recrutamentoProjetoLinhas_(projeto).length,0);
   }
-  assert.match(context.recrutamentoProjetoHtml({classificacaoStatus:'ativo',participantesAtivos:3,metaRecrutamento:10}),/3 pacientes ativo\(s\)/);
-  assert.match(context.recrutamentoProjetoHtml({classificacaoStatus:'concluido',totalParticipantes:5}),/Projeto concluído/);
+  const ativo = context.recrutamentoProjetoHtml({classificacaoStatus:'ativo',participantesAtivos:3,metaRecrutamento:10});
+  assert.match(ativo,/<strong>3<\/strong> de 10 ativos/);
+  assert.match(ativo,/proj-rec-low" style="width:30%"/);
+  assert.match(context.recrutamentoProjetoHtml({classificacaoStatus:'ativo',participantesAtivos:1}),/<strong>1<\/strong> ativo<[\s\S]*sem meta/);
+  assert.match(context.recrutamentoProjetoHtml({classificacaoStatus:'concluido',totalParticipantes:5}),/Projeto concluído[\s\S]*5 participantes/);
 });
 
 test('resumo de Projetos exclui cancelados e nao selecionados dos indicadores ativos', () => {
@@ -491,7 +493,7 @@ test('resumo de Projetos exclui cancelados e nao selecionados dos indicadores at
   const rulesBlock = sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(');
   const renderBlock = sourceBetween(core, 'function renderProjetos(', 'function filtrarProjetos(');
   const elements = {};
-  ['projTotal', 'projFases', 'projEsps', 'projRecrutamento', 'projRecrutamentoPct', 'projConcluidos'].forEach((id) => {
+  ['projTotal', 'projFases', 'projOutros', 'projRecrutamento', 'projRecrutamentoPct', 'projConcluidos'].forEach((id) => {
     elements[id] = { textContent: '' };
   });
   const context = vm.createContext({
@@ -512,8 +514,75 @@ test('resumo de Projetos exclui cancelados e nao selecionados dos indicadores at
   assert.equal(elements.projTotal.textContent, 5);
   assert.equal(elements.projFases.textContent, 2);
   assert.equal(elements.projConcluidos.textContent, 1);
-  assert.equal(elements.projRecrutamento.textContent, '3 pacientes ativo(s)');
-  assert.equal(elements.projRecrutamentoPct.textContent, 'Meta 9 | Total 5 | Falhas 1');
+  assert.equal(elements.projOutros.textContent, 2);
+  assert.equal(elements.projRecrutamento.textContent, 3);
+  assert.equal(elements.projRecrutamentoPct.textContent, 'Meta 9 · Total 5 · Falhas de triagem 1');
+});
+
+test('lista de Projetos abre em Ativos e combina grupo, busca, status e filtro do Dashboard', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const content = readProjectFile('IndexContentAfterDashboard.html');
+  const rulesBlock = sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(');
+  const filtrosBlock = sourceBetween(core, 'var PROJ_GRUPOS', 'function projAtualizarFiltrosUi_(');
+  const filtrarBlock = sourceBetween(core, 'function filtrarProjetos(', '// A impressão parte dos dados exibidos');
+  const inputs = { searchProjetos: { value: '' }, filterStatusProj: { value: '' } };
+  const renders = [];
+  const context = vm.createContext({
+    document: { getElementById: (id) => inputs[id] || null },
+    normSelectValue: (value) => String(value || '').trim().toLowerCase(),
+    codexRunSearchFilter: (inputId, key, renderFn) => renderFn(),
+    projetoCorrespondeBusca_: (p, q) => String(p.nomeAbreviado).toLowerCase().includes(q),
+    projAtualizarFiltrosUi_: (contagem) => { context.contagem = contagem; },
+    renderTabelaProj: (lista, ocultos) => renders.push({ nomes: lista.map((p) => p.nomeAbreviado), ocultos })
+  });
+  vm.runInContext(rulesBlock + filtrosBlock + filtrarBlock + `
+    _projetos = [
+      { nomeAbreviado: 'ALFA', classificacaoStatus: 'ativo', status: 'Recrutamento aberto', coordenador: 'Ana' },
+      { nomeAbreviado: 'BETA', classificacaoStatus: 'ativo', status: 'Acompanhamento', coordenador: 'Bia' },
+      { nomeAbreviado: 'GAMA', classificacaoStatus: 'concluido', status: 'Concluído', coordenador: 'Ana' },
+      { nomeAbreviado: 'DELTA', classificacaoStatus: 'cancelado', status: 'Cancelado', coordenador: 'Bia' }
+    ];`, Object.assign(context, { _projetos: [] }));
+  const last = () => JSON.parse(JSON.stringify(renders[renders.length - 1]));
+
+  context.filtrarProjetos(true);
+  assert.deepEqual(last(), { nomes: ['ALFA', 'BETA'], ocultos: 2 });
+  assert.deepEqual(JSON.parse(JSON.stringify(context.contagem)), { ativos: 2, concluidos: 1, outros: 1, todos: 4 });
+
+  context.projSetGrupo('concluidos');
+  assert.deepEqual(last(), { nomes: ['GAMA'], ocultos: 3 });
+  context.projSetGrupo('outros');
+  assert.deepEqual(last().nomes, ['DELTA']);
+  context.projSetGrupo('todos');
+  assert.deepEqual(last(), { nomes: ['ALFA', 'BETA', 'GAMA', 'DELTA'], ocultos: 0 });
+
+  // Busca sem resultado no grupo informa quantos projetos os demais grupos escondem.
+  context.projSetGrupo('ativos');
+  inputs.searchProjetos.value = 'gama';
+  context.filtrarProjetos(true);
+  assert.deepEqual(last(), { nomes: [], ocultos: 1 });
+
+  // Filtros do Dashboard limpam busca e status e permanecem ate serem removidos.
+  inputs.filterStatusProj.value = 'Cancelado';
+  context.projetosAplicarFiltroDashboard_('coordenador', 'Ana');
+  assert.equal(inputs.searchProjetos.value, '');
+  assert.equal(inputs.filterStatusProj.value, '');
+  assert.deepEqual(last(), { nomes: ['ALFA'], ocultos: 1 });
+  context.projSetGrupo('todos');
+  assert.deepEqual(last().nomes, ['ALFA', 'GAMA']);
+  context.projLimparFiltroDash();
+  assert.deepEqual(last().nomes, ['ALFA', 'BETA', 'GAMA', 'DELTA']);
+
+  context.projetosAplicarFiltroDashboard_('recrutZero', '', { beta: true, delta: true }, (v) => String(v || '').toLowerCase());
+  assert.deepEqual(last().nomes, ['BETA', 'DELTA']);
+  context.projetosAplicarFiltroDashboard_('projetosAtivos');
+  assert.deepEqual(last(), { nomes: ['ALFA', 'BETA'], ocultos: 2 });
+
+  for (const grupo of ['ativos', 'concluidos', 'outros', 'todos']) {
+    assert.match(content, new RegExp('data-proj-grupo="' + grupo + '"[^>]*onclick="projSetGrupo\\(\'' + grupo + '\'\\)"'));
+    assert.match(content, new RegExp('data-proj-card-grupo="' + grupo + '"'));
+  }
+  assert.match(content, /id="projFiltroDash" hidden/);
+  assert.match(content, /onclick="projLimparFiltroDash\(\)"/);
 });
 
 test('pesquisa de Projetos encontra courier principal ou adicional pelo nome', () => {
@@ -645,27 +714,46 @@ test('projetos disponibiliza impressao da lista exibida', () => {
   assert.match(content, /class="btn-new proj-print-btn"/);
   assert.match(content, /onclick="imprimirProjetos\(\)"/);
   assert.match(core, /function imprimirProjetos\(\)/);
-  assert.match(core, /querySelectorAll\('tr\.proj-main'\)/);
-  assert.match(core, /slice\.call\(cells, 0, 8\)/);
-  assert.match(core, /querySelectorAll\('\.proj-toggle, \.row-avatar'\)/);
-  assert.match(core, /querySelectorAll\('button, \.material-symbols-outlined'\)/);
   assert.match(core, /window\.open\('', '_blank'\)/);
 });
 
-test('impressao de Projetos separa os indicadores de recrutamento por linha', () => {
+test('impressao de Projetos parte dos dados exibidos e separa o recrutamento por linha', () => {
   const core = readProjectFile('IndexCoreScripts.html');
-  const formatter = sourceBetween(core.replace(/\r\n/g, '\n'), 'function recrutamentoProjetoImpressaoHtml_(', '\n\nvar FASE_COLORS');
-  const context = vm.createContext({ esc: (value) => String(value) });
-  vm.runInContext(formatter, context);
+  const rulesBlock = sourceBetween(core, 'function projetoClassificacaoStatus_(', 'function applyDashboardPendingFilter_(');
+  const printBlock = sourceBetween(core, 'function imprimirProjetos(', 'var FASE_COLORS');
+  const linhasBlock = sourceBetween(core, 'function projetoRecrutamentoDados_(', 'function projetoDetailValue(');
+  const inputs = { searchProjetos: { value: 'alf' }, filterStatusProj: { value: '' } };
+  let written = '';
+  const context = vm.createContext({
+    document: { getElementById: (id) => inputs[id] || null, querySelector: () => null },
+    window: { open: () => ({ document: { open() {}, write(html) { written = html; }, close() {} } }) },
+    esc: (value) => String(value).replace(/</g, '&lt;'),
+    snack: (message) => { context.snackMessage = message; },
+    projetoFaseLabel_: (fase) => 'Fase ' + fase,
+    PROJ_GRUPOS: { ativos: 'Ativos', todos: 'Todos' },
+    _projGrupo: 'ativos',
+    _projFiltroDash: null,
+    _projetosExibidos: []
+  });
+  vm.runInContext(rulesBlock + printBlock + linhasBlock, context);
 
-  const html = context.recrutamentoProjetoImpressaoHtml_('1 pacientes ativo(s)12,5%Total: 7Meta: —');
-  assert.match(html, />1 pacientes ativo\(s\) \(12,5%\)<\/div>/);
-  assert.match(html, />Total: 7<\/div>/);
-  assert.match(html, />Meta: —<\/div>/);
-  assert.doesNotMatch(html, /Total: 7Meta:/);
+  // A impressao nao depende do HTML da tabela.
+  assert.doesNotMatch(printBlock, /querySelector(All)?\('tr|innerText|cloneNode/);
+  context.imprimirProjetos();
+  assert.equal(context.snackMessage, 'Não há projetos exibidos para imprimir.');
+  assert.equal(written, '');
 
-  const concluido = context.recrutamentoProjetoImpressaoHtml_('Projeto concluído Total: 7 Falha triagem: 1');
-  assert.match(concluido, />Projeto concluído<\/div>/);
-  assert.match(concluido, />Total: 7<\/div>/);
-  assert.match(concluido, />Falha triagem: 1<\/div>/);
+  context._projetosExibidos = [
+    { nomeAbreviado: 'ALFA <1>', codigo: 'C-01', fase: 'III', especialidade: 'Oncologia', investigador: 'Dra. A', subInvestigador1: 'Dr. S',
+      coordenador: 'Ana', patrocinador: 'Pat', cro: 'CRO X', centro: 'IPS', status: 'Recrutamento aberto',
+      classificacaoStatus: 'ativo', participantesAtivos: 1, metaRecrutamento: 8, totalParticipantes: 7, falhasTriagem: 0 },
+    { nomeAbreviado: 'GAMA', classificacaoStatus: 'concluido', status: 'Concluído', totalParticipantes: 7, falhasTriagem: 1 },
+    { nomeAbreviado: 'DELTA', classificacaoStatus: 'nao_selecionado', status: 'Não selecionado', participantesAtivos: 4 }
+  ];
+  context.imprimirProjetos();
+  assert.match(written, /Ativos · Busca: alf · 3 projetos/);
+  assert.match(written, /<td>ALFA &lt;1><br>C-01<\/td><td>Fase III<\/td><td>Oncologia<\/td><td>Dra\. A<br>Sub: Dr\. S<br>Coord\.: Ana<\/td><td>Pat<br>CRO X<\/td>/);
+  assert.match(written, />1 paciente ativo \(12,5%\)<\/div><div class="print-recruitment-line">Total: 7<\/div><div class="print-recruitment-line">Meta: 8<\/div>/);
+  assert.match(written, />Projeto concluído<\/div><div class="print-recruitment-line">Total: 7<\/div><div class="print-recruitment-line">Falha de triagem: 1<\/div><\/div>/);
+  assert.match(written, /<td>DELTA<\/td>[\s\S]*<td><div class="print-recruitment"><\/div><\/td><td>-<\/td><td>Não selecionado<\/td>/);
 });

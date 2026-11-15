@@ -43,7 +43,7 @@ async function projectModalBrowserFixture(page) {
     document.getElementById('topTitle').textContent = 'Projetos';
     document.getElementById('userEmail').textContent = 'Equipe IPS';
     document.getElementById('navCadastrosBody').classList.add('open');
-    document.getElementById('bodyProjetos').innerHTML = '<tr><td><strong>PROJETO EXEMPLO</strong></td><td>III</td><td>Oncologia</td><td>Equipe IPS</td><td>—</td><td>—</td><td>—</td><td>Ativo</td><td><button id="fixtureOpenProject">Editar</button></td></tr>';
+    document.getElementById('bodyProjetos').innerHTML = '<tr><td><strong>PROJETO EXEMPLO</strong></td><td>Equipe IPS</td><td>—</td><td>—</td><td>Ativo</td><td><button id="fixtureOpenProject">Editar</button></td></tr>';
     document.getElementById('fixtureOpenProject').onclick = function() { abrirOverlay('modalProjeto'); };
     document.getElementById('pNome').value = 'PROJETO EXEMPLO';
     document.getElementById('pFase').value = 'III';

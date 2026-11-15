@@ -1,38 +1,50 @@
     <!-- ═══ PROJETOS ═══ -->
     <div class="page" id="page-projetos">
       <div class="stats-row content-stats-row content-stats-cols-5">
-        <div class="stat-card stat-accent-blue stat-corner-left">
-          <div class="stat-value" id="projTotal">—</div>
-          <div class="stat-label">Total de projetos</div>
-          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
-        </div>
-        <div class="stat-card stat-accent-teal">
+        <div class="stat-card stat-accent-teal stat-corner-left proj-stat-link" data-proj-card-grupo="ativos" role="button" tabindex="0" title="Mostrar projetos ativos" onclick="projSetGrupo('ativos')" onkeydown="projStatKeydown(event,'ativos')">
           <div class="stat-value" id="projFases">—</div>
           <div class="stat-label">Projetos ativos</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">play_circle</span></div>
         </div>
-        <div class="stat-card stat-accent-purple">
-          <div class="stat-value" id="projEsps">—</div>
-          <div class="stat-label">Especialidades</div>
-          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">stethoscope</span></div>
-        </div>
         <div class="stat-card stat-accent-orange">
           <div class="stat-value" id="projRecrutamento">—</div>
-          <div class="stat-label" id="projRecrutamentoPct">Recrutamento</div>
+          <div class="stat-label">Pacientes ativos</div>
+          <div class="proj-stat-sub" id="projRecrutamentoPct"></div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">groups</span></div>
         </div>
-        <div class="stat-card stat-accent-green stat-corner-right">
+        <div class="stat-card stat-accent-green proj-stat-link" data-proj-card-grupo="concluidos" role="button" tabindex="0" title="Mostrar projetos concluídos" onclick="projSetGrupo('concluidos')" onkeydown="projStatKeydown(event,'concluidos')">
           <div class="stat-value" id="projConcluidos">—</div>
           <div class="stat-label">Projetos concluídos</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">task_alt</span></div>
         </div>
+        <div class="stat-card stat-accent-purple proj-stat-link" data-proj-card-grupo="outros" role="button" tabindex="0" title="Mostrar projetos cancelados, não selecionados e sem classificação" onclick="projSetGrupo('outros')" onkeydown="projStatKeydown(event,'outros')">
+          <div class="stat-value" id="projOutros">—</div>
+          <div class="stat-label">Cancelados / não selecionados</div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></div>
+        </div>
+        <div class="stat-card stat-accent-blue stat-corner-right proj-stat-link" data-proj-card-grupo="todos" role="button" tabindex="0" title="Mostrar todos os projetos" onclick="projSetGrupo('todos')" onkeydown="projStatKeydown(event,'todos')">
+          <div class="stat-value" id="projTotal">—</div>
+          <div class="stat-label">Total de projetos</div>
+          <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
+        </div>
       </div>
-      <div class="toolbar-card">
+      <div class="toolbar-card proj-toolbar">
+        <div class="proj-seg" role="group" aria-label="Filtrar projetos por situação">
+          <button type="button" class="proj-seg-btn active" data-proj-grupo="ativos" aria-pressed="true" onclick="projSetGrupo('ativos')">Ativos<span class="proj-seg-count" id="projSegAtivos"></span></button>
+          <button type="button" class="proj-seg-btn" data-proj-grupo="concluidos" aria-pressed="false" onclick="projSetGrupo('concluidos')">Concluídos<span class="proj-seg-count" id="projSegConcluidos"></span></button>
+          <button type="button" class="proj-seg-btn" data-proj-grupo="outros" aria-pressed="false" onclick="projSetGrupo('outros')">Outros<span class="proj-seg-count" id="projSegOutros"></span></button>
+          <button type="button" class="proj-seg-btn" data-proj-grupo="todos" aria-pressed="false" onclick="projSetGrupo('todos')">Todos<span class="proj-seg-count" id="projSegTodos"></span></button>
+        </div>
         <div class="search-wrap">
           <span class="material-symbols-outlined" aria-hidden="true">search</span>
           <input type="text" id="searchProjetos" placeholder="Buscar por código, título, coordenador, patrocinador ou courier…" oninput="filtrarProjetos()" aria-label="Buscar projetos">
         </div>
-        <select class="f-select" id="filterStatusProj" onchange="filtrarProjetos()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;" aria-label="Filtrar projetos por status">
+        <span class="proj-dash-chip" id="projFiltroDash" hidden>
+          <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+          <span id="projFiltroDashLabel"></span>
+          <button type="button" class="proj-dash-chip-clear" title="Remover este filtro" aria-label="Remover filtro vindo do Dashboard" onclick="projLimparFiltroDash()"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+        </span>
+        <select class="f-select proj-status-select" id="filterStatusProj" onchange="filtrarProjetos()" aria-label="Filtrar projetos por status">
           <option value="">Todos os status</option>
         </select>
         <button class="btn-new proj-print-btn" type="button" title="Imprimir projetos exibidos" onclick="imprimirProjetos()">
@@ -42,23 +54,20 @@
           <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Projeto
         </button>
       </div>
-      <div class="table-card">
+      <div class="table-card proj-table-scroll" role="region" aria-label="Tabela de projetos; role horizontalmente para ver todas as colunas" tabindex="0">
         <table class="data-table">
           <thead>
             <tr>
               <th>Projeto</th>
-              <th>Fase</th>
-              <th>Especialidade</th>
               <th>Equipe</th>
               <th>Patrocinador / CRO</th>
               <th>Recrutamento</th>
-              <th class="wide-only">Centro</th>
               <th>Status</th>
-              <th style="text-align:right; padding-right:20px;">Ações</th>
+              <th class="proj-th-actions">Ações</th>
             </tr>
           </thead>
           <tbody id="bodyProjetos">
-            <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
       </div>
