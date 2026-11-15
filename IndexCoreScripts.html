@@ -730,8 +730,12 @@ function startCodexAppOnce() {
   var bootstrapTraceId = codexClientBootstrapTraceId_();
   var bootstrapRequest = appInitialBootstrapRequest_() || {};
   bootstrapRequest.traceId = bootstrapTraceId;
+  // Verdadeiro somente enquanto a RPC inicial não respondeu (sucesso ou falha):
+  // a Agenda usa o sinal para aguardar as referências em vez de recarregar tudo.
+  window.APP_BOOTSTRAP_PENDING = true;
   google.script.run
     .withSuccessHandler(function(data) {
+      window.APP_BOOTSTRAP_PENDING = false;
       var rpcCompletedAt = codexClientNow_();
       var applyStartedAt = rpcCompletedAt;
       applyAppBootstrapData(data);
@@ -748,6 +752,7 @@ function startCodexAppOnce() {
       });
     })
     .withFailureHandler(function(error) {
+      window.APP_BOOTSTRAP_PENDING = false;
       var rpcCompletedAt = codexClientNow_();
       handleAppBootstrapFailure(error);
       abrirPaginaInicialApp();

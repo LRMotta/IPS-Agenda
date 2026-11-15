@@ -153,8 +153,19 @@
     }
     _agendaFormReadyQueue = [callback];
     agendaMostrarFormularioBloqueado_();
+    // Um clique durante a carga inicial aguarda as referências que já estão a
+    // caminho. A carga completa fica para quando não há resposta pendente: ela
+    // é mais lenta e desliga a carga por janela pelo resto da sessão.
+    if (agendaCargaInicialEmCurso_()) return false;
     agendaFallbackCargaCompleta_(null, { silent: true }, 'reference_incomplete');
     return false;
+  }
+
+  function agendaCargaInicialEmCurso_() {
+    // Todos estes caminhos terminam aplicando as referências (o que libera a
+    // fila) ou acionando eles próprios a carga completa em caso de falha.
+    return window.APP_BOOTSTRAP_PENDING === true ||
+      agendaBootstrapEstaEmCurso_() || _agendaFormDataLegacyLoading;
   }
 
   // Telemetria local da abertura de edição. Não registra ID, participante ou
@@ -688,10 +699,12 @@
   function preencherAgendaSelect(id, lista, placeholder) {
     var el = document.getElementById(id);
     if (!el) return;
-    el.innerHTML = '';
+    // Uma única atribuição: inserir opção por opção reanalisa o DOM a cada item
+    // e pesa nas listas longas (participantes) repetidas em dezenas de selects.
+    var html = [];
     if (placeholder !== null) {
       var label = placeholder === '' ? '' : (placeholder || '-- selecione --');
-      el.insertAdjacentHTML('beforeend', '<option value="">' + esc(label) + '</option>');
+      html.push('<option value="">' + esc(label) + '</option>');
     }
     (lista || []).forEach(function(v) {
       var participanteOption = id === 'agParticipante' && v && typeof v === 'object';
@@ -704,8 +717,9 @@
       var aliases = (codigo ? ' data-codigo="' + esc(codigo) + '"' : '') +
         (stableId ? ' data-id="' + esc(stableId) + '"' : '') +
         (participanteOption ? ' data-nome="' + esc(v.nome || '') + '" data-participante-id="' + esc(v.numId || '') + '"' : '');
-      el.insertAdjacentHTML('beforeend', '<option value="' + esc(value) + '"' + aliases + '>' + esc(label) + '</option>');
+      html.push('<option value="' + esc(value) + '"' + aliases + '>' + esc(label) + '</option>');
     });
+    el.innerHTML = html.join('');
     if (id === 'agProjeto' && typeof ativarAutocompleteProjeto === 'function') ativarAutocompleteProjeto(id);
     if (id === 'agStatus' && !el.value && el.options.length) el.value = 'Agendado';
   }
@@ -5477,7 +5491,10 @@
     agendaComFormularioPronto_(function() {
       if (agendaCreatePanelJaAberto_()) return;
       agendaAbrirCreatePanelNovoPronto_();
-      agendaRevalidarFormDataEmBackground(true);
+      // Só revalida referências vencidas (AGENDA_FORMDATA_TTL_MS). Forçar a cada
+      // abertura refazia todas as listas com o formulário já em uso; mutações
+      // continuam renovando as referências por notificarAgendaReferenciasAlteradas.
+      agendaRevalidarFormDataEmBackground(false);
     });
   }
 

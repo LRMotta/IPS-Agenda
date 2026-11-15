@@ -10,21 +10,43 @@
     return Array.prototype.map.call(bytes, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
   }
 
-  // Token por envio no navegador: repetir o mesmo token retoma a geração sem duplicar PDF ou rascunho.
-  function transpCentralTokenDoEnvio(agendaId, slot, renovar) {
-    var chave = 'tcToken:' + agendaId + '|' + slot;
-    var token = '';
-    try { token = renovar ? '' : (window.localStorage.getItem(chave) || ''); } catch (e) { token = ''; }
-    if (!/^[a-f0-9]{32}$/.test(token)) {
-      token = transpCentralTokenNovo();
-      try { window.localStorage.setItem(chave, token); } catch (e2) { /* sem armazenamento, o token vale só nesta tela */ }
-    }
-    return token;
-  }
+  // O token de geração mora no registro do envio, no servidor: outro navegador ou computador retoma a mesma
+  // geração sem duplicar PDF ou rascunho. O token da tela só serve à primeira tentativa de um envio.
 
   function transpCentralEnvioAtual(seq) {
     return TC_ENVIO.aberto && TC_ENVIO.seq === seq && getCurrentPage() === 'transporte-central';
   }
+
+  // O preparo expira no servidor em 15 minutos sem sinal. Enquanto a pessoa mexe na tela, um sinal a cada 4 minutos
+  // o mantém; sem atividade por 10 minutos os sinais param, para uma aba esquecida não prender o transporte.
+  var TC_PREPARO_SINAL_MS = 4 * 60 * 1000;
+  var TC_PREPARO_ATIVIDADE_MS = 10 * 60 * 1000;
+  var TC_PREPARO_ATIVIDADE = 0;
+
+  function transpCentralPreparoAtividade() { TC_PREPARO_ATIVIDADE = Date.now(); }
+
+  // forcar: retoma o preparo logo depois de o servidor avisar que ele expirou.
+  function transpCentralRenovarPreparo(forcar) {
+    if (!TC_ENVIO.aberto || !TC_ENVIO.dados || TC_ENVIO.passo === 'fim' || getCurrentPage() !== 'transporte-central') return;
+    if (!forcar && Date.now() - TC_PREPARO_ATIVIDADE > TC_PREPARO_ATIVIDADE_MS) return;
+    var seq = TC_ENVIO.seq;
+    google.script.run
+      .withSuccessHandler(function(resposta) {
+        if (!transpCentralEnvioAtual(seq) || !resposta || resposta.ok !== false) return;
+        // Outra pessoa assumiu enquanto a tela ficou parada: fecha sem gravar por cima.
+        snack(resposta.mensagem || 'Este transporte está sendo preparado por outra pessoa.');
+        TC_ENVIO.aberto = false;
+        appClearUnsavedChanges('tcWizard');
+        transpCentralMostrarWizard(false);
+        transpCentralCarregar(true);
+      })
+      .withFailureHandler(function() { /* o próximo sinal tenta de novo */ })
+      .renovarPreparoTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot);
+  }
+
+  document.addEventListener('pointerdown', transpCentralPreparoAtividade, true);
+  document.addEventListener('keydown', transpCentralPreparoAtividade, true);
+  setInterval(function() { transpCentralRenovarPreparo(false); }, TC_PREPARO_SINAL_MS);
 
   function transpCentralMostrarWizard(mostrar) {
     var wizard = document.getElementById('tcWizard');
@@ -32,6 +54,9 @@
     var paineis = document.querySelectorAll('#page-transporte-central .tc-panel');
     if (wizard) wizard.hidden = !mostrar;
     if (abas) abas.hidden = !!mostrar;
+    // "Atualizar tarefas" é da lista: no passo a passo ficava por cima do indicador "Passo N de M".
+    var atualizar = document.getElementById('tcRefresh');
+    if (atualizar) atualizar.hidden = !!mostrar;
     Array.prototype.forEach.call(paineis, function(p) { p.hidden = !!mostrar || p.id !== 'tcPanel' + TRANSP_CENTRAL_STATE.aba.charAt(0).toUpperCase() + TRANSP_CENTRAL_STATE.aba.slice(1); });
   }
 
@@ -67,7 +92,7 @@
   function transpCentralAbrirEnvio(agendaId, slot) {
     var seq = ++TC_ENVIO.seq;
     TC_ENVIO.aberto = true; TC_ENVIO.agendaId = agendaId; TC_ENVIO.slot = slot; TC_ENVIO.dados = null;
-    TC_ENVIO.resultado = null; TC_ENVIO.awbUltima = null; TC_ENVIO.pinex = null; TC_ENVIO.gerando = false; TC_ENVIO.matEdit = null; TC_ENVIO.ajuste = null; TC_ENVIO.aguardaPinex = false; TC_ENVIO.anvisa = null; TC_ENVIO.aguardaPeticionamento = false;
+    TC_ENVIO.resultado = null; TC_ENVIO.awbUltima = null; TC_ENVIO.pinex = null; TC_ENVIO.gerando = false; TC_ENVIO.matEdit = null; TC_ENVIO.ajuste = null; TC_ENVIO.aguardaPinex = false; TC_ENVIO.anvisa = null; TC_ENVIO.aguardaPeticionamento = false; TC_ENVIO.awbAviso = null; TC_ENVIO.awbConsultando = false; TC_ENVIO.checks = {};
     transpCentralMostrarWizard(true);
     transpCentralRenderWizard('<div class="tc-empty">Abrindo o transporte…</div>');
     google.script.run
@@ -83,7 +108,8 @@
         TC_ENVIO.dados = resposta;
         var passos = resposta.passos || [];
         TC_ENVIO.passo = passos.indexOf(resposta.passo) >= 0 ? resposta.passo : (resposta.passo === 'concluido' ? 'enviar' : passos[0]);
-        TC_ENVIO.token = transpCentralTokenDoEnvio(agendaId, slot, false);
+        TC_ENVIO.token = transpCentralTokenNovo();
+        if (resposta.dadosAtualizados) snack('Os dados deste transporte mudaram na Agenda. Confira de novo antes de gerar os documentos.');
         transpCentralRenderPasso();
       })
       .withFailureHandler(function(erro) {
@@ -119,13 +145,34 @@
       transpCentralLinha('Participante', registro.paciente) + transpCentralLinha('Estudo', registro.protocolo) +
       transpCentralLinha('Visita', tarefa && tarefa.visita) + transpCentralLinha('Courier', [registro.courier, registro.temperatura].filter(Boolean).join(' / ')) +
       transpCentralLinha('Tipo', rotulo) + transpCentralLinha('Data', transpCentralDataBr(registro.dataEnvio)) + transpCentralLinha('Destino', registro.destino) +
+      // A AWB digitada no passo AWB fica à vista até o fim, para ser conferida antes de gerar.
+      transpCentralLinha('AWB', registro.awb) +
       '</dl></aside>';
   }
 
+  // Trilha dos passos: feitos, o atual e os que faltam. O texto "Passo N de M" continua para leitores de tela
+  // e para telas estreitas, onde a trilha mostra só o nome do passo atual.
   function transpCentralBarra(passos, passo) {
     var indice = Math.max(0, passos.indexOf(passo));
+    var trilha = '<ol class="tc-trilha" aria-label="Passos deste envio">' + passos.map(function(p, n) {
+      var estado = n < indice ? 'feito' : (n === indice ? 'atual' : 'depois');
+      return '<li class="tc-trilha-item tc-trilha-' + estado + '"' + (estado === 'atual' ? ' aria-current="step"' : '') + '>' +
+        '<span class="tc-trilha-num" aria-hidden="true">' + (estado === 'feito' ? '✓' : (n + 1)) + '</span>' +
+        '<span class="tc-trilha-nome">' + esc(TC_PASSOS_ROTULO[p] || p) + (estado === 'feito' ? '<span class="sr-only"> (feito)</span>' : '') + '</span></li>';
+    }).join('') + '</ol>';
     return '<div class="tc-wiz-top"><button type="button" class="tc-link" data-tc-act="sair">Sair e continuar depois</button>' +
-      '<span class="tc-wiz-progress" role="status">Passo ' + (indice + 1) + ' de ' + passos.length + ' · ' + esc(TC_PASSOS_ROTULO[passo] || passo) + '</span></div>';
+      '<span class="tc-wiz-progress" role="status">Passo ' + (indice + 1) + ' de ' + passos.length + ' · ' + esc(TC_PASSOS_ROTULO[passo] || passo) + '</span></div>' + trilha;
+  }
+
+  // Uma linha com quem e o quê. completo: também courier, data, destino e AWB (o que o painel lateral mostra);
+  // serve às telas estreitas, onde o painel não aparece. No Conferir e no fim, esses dados já estão no conteúdo.
+  function transpCentralResumo(registro, tarefa, completo) {
+    var rotulo = tarefa ? (tarefa.transportes.filter(function(t) { return t.slot === TC_ENVIO.slot; })[0] || {}).slotRotulo : '';
+    var quem = [registro.protocolo, tarefa && tarefa.visita, rotulo].filter(Boolean).join(' · ');
+    var envio = completo ? [[registro.courier, registro.temperatura].filter(Boolean).join(' / '), transpCentralDataBr(registro.dataEnvio), registro.destino,
+      registro.awb ? 'AWB ' + registro.awb : ''].filter(Boolean).join(' · ') : '';
+    return '<div class="tc-wiz-resumo' + (completo ? ' tc-wiz-resumo-estreito' : '') + '"><strong>' + esc(registro.paciente || '') + '</strong>' +
+      (quem ? '<span>' + esc(quem) + '</span>' : '') + (envio ? '<span class="tc-dim">' + esc(envio) + '</span>' : '') + '</div>';
   }
 
   function transpCentralCampo(id, rotulo, valor, extra) {
@@ -149,7 +196,8 @@
     var linhas = TC_ENVIO.matEdit.map(function(m, i) {
       return '<div class="tc-mat-linha"><div class="field"><label class="field-label" for="tcMatTipo' + i + '">Material</label>' +
         '<select id="tcMatTipo' + i + '" class="f-input f-select" data-tc-mat="' + i + '" data-tc-mat-campo="material">' +
-        TC_MATERIAIS_TIPOS.map(function(t) { return '<option' + (t === m.material ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select></div>' +
+        // Material fora da lista aparece como está (o seletor não troca para o primeiro item sem a pessoa ver).
+        (TC_MATERIAIS_TIPOS.indexOf(m.material) < 0 && m.material ? [m.material] : []).concat(TC_MATERIAIS_TIPOS).map(function(t) { return '<option' + (t === m.material ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select></div>' +
         '<div class="field"><label class="field-label" for="tcMatFormula' + i + '">Tubos × volume</label>' +
         '<input id="tcMatFormula' + i + '" class="f-input" type="text" placeholder="2x1,5" value="' + esc(m.formula) + '" data-tc-mat="' + i + '" data-tc-mat-campo="formula" autocomplete="off"></div>' +
         '<div class="field"><label class="field-label" for="tcMatEnsaio' + i + '">Ensaio</label>' +
@@ -167,33 +215,43 @@
     var pinexAg = registro.courier === 'PINEX (Agendamento)';
     var caixa = registro.caixaTransporte && registro.caixaTransporte.tipoCaixa ? '<p class="tc-aviso" role="note">Caixa especial: ' + esc(registro.caixaTransporte.tipoCaixa) + '. Solicite com ' + (registro.caixaTransporte.tipoCaixa === 'EXTREME_AMBIENT' ? 3 : 2) + ' dias úteis de antecedência.</p>' : '';
     var avisos = ((TC_ENVIO.dados && TC_ENVIO.dados.avisos) || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('');
-    return '<section class="tc-bloco"><div class="tc-bloco-cab"><h3>Transporte</h3><button type="button" class="tc-link" data-tc-act="corrigir">Corrigir</button></div><dl class="tc-dl">' +
+    // Avisos primeiro; depois duas colunas: o que veio da Agenda (um só "Corrigir") e o que a pessoa confere e preenche.
+    return caixa + avisos + '<div class="tc-conferir"><section class="tc-bloco"><div class="tc-bloco-cab"><h3>Transporte</h3><button type="button" class="tc-link" data-tc-act="corrigir">Corrigir na Agenda</button></div><dl class="tc-dl">' +
         transpCentralLinha('Courier', registro.courier) + transpCentralLinha('Temperatura', registro.temperatura) +
-        transpCentralLinha('Coleta', transpCentralDataBr(registro.dataColeta)) + transpCentralLinha('AWB', registro.awb) + '</dl></section>' +
-      '<section class="tc-bloco"><div class="tc-bloco-cab"><h3>Destino</h3><button type="button" class="tc-link" data-tc-act="corrigir">Corrigir</button></div><dl class="tc-dl">' +
-        transpCentralLinha('Laboratório', registro.destino) + '</dl></section>' +
-      '<section class="tc-bloco"><div class="tc-bloco-cab"><h3>Materiais</h3>' + (TC_ENVIO.matEdit ? '' : '<button type="button" class="tc-link" data-tc-act="materiais-editar">Editar</button>') + '</div>' +
+        transpCentralLinha('Data do envio', transpCentralDataBr(registro.dataEnvio)) +
+        transpCentralLinha('Coleta', transpCentralDataBr(registro.dataColeta)) + transpCentralLinha('AWB', registro.awb) + '</dl>' +
+        '<h3 class="tc-bloco-sub">Destino</h3><dl class="tc-dl">' + transpCentralLinha('Laboratório', registro.destino) + '</dl></section>' +
+      '<div class="tc-conferir-col"><section class="tc-bloco"><div class="tc-bloco-cab"><h3>Materiais</h3>' + (TC_ENVIO.matEdit ? '' : '<button type="button" class="tc-link" data-tc-act="materiais-editar">Editar</button>') + '</div>' +
         (TC_ENVIO.matEdit ? transpCentralHtmlEditorMateriais() : (materiais.length ? '<ul class="tc-materiais">' + materiais.map(function(m) {
           return '<li>' + esc(m.material) + (m.tubos ? ' · ' + esc(m.tubos) + ' tubo(s)' : '') + (m.total !== '' && m.total !== undefined ? ' · ' + esc(m.total) + ' ' + esc(m.unit || 'mL') : '') + '</li>';
         }).join('') + '</ul><p class="tc-dim">Informados pelo laboratório.</p>' : '<p class="tc-dim">Nenhum material marcado.</p>') +
           (TC_ENVIO.ajuste ? '<p class="tc-aviso" role="note">Material ajustado na preparação do transporte. Valor anterior: ' + esc(TC_ENVIO.ajuste.anterior || '') + '.</p>' : '')) + '</section>' +
-      caixa + avisos +
-      '<section class="tc-bloco"><div class="tc-campos">' +
+      '<section class="tc-bloco"><h3>Para o pedido de coleta</h3><div class="tc-campos">' +
         transpCentralCampo('tcCampo_agendadoPor', 'Agendado por', registro.agendadoPor, 'required') +
         transpCentralCampo('tcCampo_horaEnvio', 'Janela de envio', registro.horaEnvio, 'required') +
         (pinexAg ? transpCentralCampo('tcCampo_responsavelEntrega', 'Quem entrega as amostras', registro.responsavelEntrega, 'required') : '') +
-      '</div></section>' +
+      '</div></section></div></div>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="conferido"><span class="material-symbols-outlined" aria-hidden="true">check</span>Sim, está tudo certo</button></div>';
+  }
+
+  // AWB de pacote recebido no início do estudo: MARKEN, e DHL só no Ambiente.
+  function transpCentralAwbDePacote(registro) {
+    var courier = String((registro && registro.courier) || '');
+    if (/marken/i.test(courier)) return true;
+    return /dhl/i.test(courier) && /^\s*ambiente\s*$/i.test(String((registro && registro.temperatura) || ''));
   }
 
   function transpCentralHtmlAwb(registro) {
     var courier = String(registro.courier || '');
     var ultima = TC_ENVIO.awbUltima && TC_ENVIO.awbUltima.awb ? '<p class="tc-dica">Última AWB usada neste estudo: <strong>' + esc(TC_ENVIO.awbUltima.awb) + '</strong>. A próxima do pacote recebido costuma ser a seguinte.</p>' : '';
     var texto = courier === 'OCASA' ? 'A AWB da OCASA é gerada no site da OCASA, pela guia modelo. “Gerar Pedido” já solicita a retirada; cancelar só por csbio@ocasa.com. Cole a AWB aqui.'
-      : (courier === 'MARKEN' || /dhl/i.test(courier) ? 'A AWB vem do pacote recebido no início do estudo, específico para este estudo.' : 'Informe a AWB deste transporte.');
+      : (transpCentralAwbDePacote(registro) ? 'A AWB vem do pacote recebido no início do estudo, específico para este estudo.' : 'Informe a AWB deste transporte.');
+    // AWB já usada em outro envio: avisa aqui, antes de gravar; a pessoa corrige ou confirma que é esta mesma.
+    var aviso = TC_ENVIO.awbAviso;
+    var usada = aviso && aviso.text ? '<p class="tc-aviso" role="alert">' + esc(aviso.text) + ' Confira o número. Se for este mesmo, clique de novo para continuar.</p>' : '';
     return '<section class="tc-bloco"><h3>AWB</h3><p>' + esc(texto) + '</p>' + ultima +
-      '<div class="tc-campos">' + transpCentralCampo('tcCampo_awb', 'AWB', registro.awb, 'required autocomplete="off"') + '</div></section>' +
-      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="awb-ok">Salvar AWB e continuar</button></div>';
+      '<div class="tc-campos">' + transpCentralCampo('tcCampo_awb', 'AWB', aviso && aviso.digitada ? aviso.digitada : registro.awb, 'required autocomplete="off"') + '</div>' + usada + '</section>' +
+      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="awb-ok">' + (usada ? 'Usar esta AWB e continuar' : 'Salvar AWB e continuar') + '</button></div>';
   }
 
   function transpCentralHtmlPinexNumeros(registro) {
@@ -242,6 +300,18 @@
       '<button type="button" class="btn-new" data-tc-act="anvisa-concluir"><span class="material-symbols-outlined" aria-hidden="true">send</span>Concluir e avisar quem peticiona</button></div>';
   }
 
+  // Assunto e destinatários vêm do resultado da geração ou, em outra sessão, do registro do envio. O link abre o
+  // Gmail na conta em uso, já procurando o rascunho por esse assunto; sem assunto conhecido, abre os rascunhos.
+  function transpCentralHtmlRascunho(registro, resultado) {
+    var assunto = String((resultado && resultado.draftSubject) || (registro && registro.rascunhoAssunto) || '').trim();
+    var para = String((resultado && resultado.draftRecipients) || (registro && registro.rascunhoDestinatarios) || '').trim();
+    if (!assunto) return '<a href="https://mail.google.com/mail/#drafts" target="_blank" rel="noopener">Abrir rascunhos</a>';
+    var busca = 'in:drafts subject:"' + assunto.replace(/"/g, ' ') + '"';
+    return '<a href="https://mail.google.com/mail/#search/' + esc(encodeURIComponent(busca)) + '" target="_blank" rel="noopener">Abrir este rascunho</a>' +
+      '<span class="tc-rascunho"><span><span class="tc-dim">Assunto</span> <strong>' + esc(assunto) + '</strong></span>' +
+      (para ? '<span><span class="tc-dim">Para</span> ' + esc(para) + '</span>' : '') + '</span>';
+  }
+
   function transpCentralHtmlEnviar(registro) {
     var r = TC_ENVIO.resultado;
     // Os documentos gerados são impressos, assinados e entregues ao agente da courier junto com as amostras.
@@ -249,12 +319,47 @@
     var courier = String((registro && registro.courier) || '').toUpperCase();
     var anexo = courier.indexOf('DHL') >= 0 ? 'O e-mail não leva anexos.' : (courier === 'MARKEN' || courier === 'OCASA' ? 'O e-mail leva a CE do estudo em anexo.' : '');
     var explicacao = r ? '' : '<p>Os documentos já foram gerados. Falta enviar o pedido de coleta à courier.</p>';
-    return '<section class="tc-bloco"><h3>Pedir a coleta à courier</h3>' + explicacao +
-      '<ol class="tc-lista-passos"><li>Imprima os documentos, assine onde for pedido e deixe-os com as amostras, para entregar ao agente da courier na retirada.</li>' +
-      '<li>Abra o rascunho do pedido de coleta no Gmail. <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Abrir rascunhos</a></li>' +
-      '<li>Confira o destinatário, a data e a janela de retirada.' + (anexo ? ' ' + esc(anexo) : '') + '</li><li>Clique em Enviar e volte aqui.</li></ol></section>' +
-      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="enviado"><span class="material-symbols-outlined" aria-hidden="true">send</span>Pronto, enviei</button></div>';
+    var avisos = ((TC_ENVIO.dados && TC_ENVIO.dados.avisos) || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('');
+    // Envio internacional com a GRU e o extrato prontos: anexar os dois é um passo próprio, antes de enviar.
+    var gru = !!(registro && registro.gruPronta);
+    // Cada item é marcado pela pessoa; "Pronto, enviei" só libera com todos marcados. texto: rótulo da caixa;
+    // extra: o que fica abaixo dele (link e assunto do rascunho), fora do rótulo.
+    var itens = [{ texto: 'Imprima os documentos, assine onde for pedido e deixe-os com as amostras, para entregar ao agente da courier na retirada.' }];
+    // PINEX com os números: o servidor não cria rascunho; os documentos seguem na conversa do agendamento.
+    if (courier === 'PINEX') itens.push({ texto: 'No Gmail, abra a conversa do agendamento com a PINEX (a que trouxe os números) e responda nela, anexando os documentos gerados.' });
+    else itens.push({ texto: 'Abra o rascunho do pedido de coleta no Gmail.', extra: transpCentralHtmlRascunho(registro, r) });
+    // Envio internacional com a GRU e o extrato prontos: anexar os dois é um item próprio, antes de enviar.
+    if (gru) itens.push({ texto: 'Anexe a GRU e o extrato ao e-mail. Eles estão na pasta deste envio, no servidor.', forte: true });
+    itens.push({ texto: 'Confira o destinatário, a data e a janela de retirada.' + (anexo ? ' ' + anexo : '') });
+    itens.push({ texto: 'Clique em Enviar no Gmail e volte aqui.' });
+    var marcados = TC_ENVIO.checks || (TC_ENVIO.checks = {});
+    var faltam = itens.filter(function(_item, i) { return !marcados[i]; }).length;
+    return '<section class="tc-bloco"><h3>' + (gru ? 'Anexar a GRU e o extrato e enviar à courier' : 'Pedir a coleta à courier') + '</h3>' + explicacao + avisos +
+      '<ol class="tc-checklist" data-tc-total="' + itens.length + '">' + itens.map(function(item, i) {
+        return '<li class="tc-check' + (marcados[i] ? ' feito' : '') + '"><input type="checkbox" id="tcCheck' + i + '" data-tc-check="' + i + '"' + (marcados[i] ? ' checked' : '') + '>' +
+          '<div><label for="tcCheck' + i + '">' + (item.forte ? '<strong>' + esc(item.texto) + '</strong>' : esc(item.texto)) + '</label>' + (item.extra ? '<div class="tc-check-extra">' + item.extra + '</div>' : '') + '</div></li>';
+      }).join('') + '</ol></section>' +
+      '<div class="tc-actions"><button type="button" class="btn-new" id="tcBtnEnviado" data-tc-act="enviado"' + (faltam ? ' disabled' : '') + '><span class="material-symbols-outlined" aria-hidden="true">send</span>Pronto, enviei</button>' +
+      '<span class="tc-dim" id="tcCheckDica"' + (faltam ? '' : ' hidden') + '>Marque os ' + itens.length + ' itens acima para liberar.</span></div>';
   }
+
+  // Marcar um item não é dado a salvar: atualiza a lista e o botão sem redesenhar o passo.
+  document.addEventListener('change', function(evento) {
+    var caixa = evento.target && evento.target.closest ? evento.target.closest('#tcWizard [data-tc-check]') : null;
+    if (!caixa) return;
+    var marcados = TC_ENVIO.checks || (TC_ENVIO.checks = {});
+    marcados[caixa.getAttribute('data-tc-check')] = !!caixa.checked;
+    var item = caixa.closest('.tc-check');
+    if (item) item.classList.toggle('feito', !!caixa.checked);
+    var lista = caixa.closest('.tc-checklist');
+    var total = Number(lista && lista.getAttribute('data-tc-total')) || 0;
+    var feitos = Object.keys(marcados).filter(function(k) { return marcados[k]; }).length;
+    var botao = document.getElementById('tcBtnEnviado');
+    var dica = document.getElementById('tcCheckDica');
+    if (botao) botao.disabled = feitos < total;
+    if (dica) dica.hidden = feitos >= total;
+    appClearUnsavedChanges('tcWizard');
+  });
 
   function transpCentralHtmlFim(tarefa) {
     transpCentralMarcarFeito(TC_ENVIO.agendaId, TC_ENVIO.slot);
@@ -263,8 +368,11 @@
     var botoes = proximo ? '<button type="button" class="btn-new" data-tc-act="proximo-transporte" data-tc-slot="' + esc(proximo.slot) + '">Ir ao próximo transporte desta visita</button>'
       : (outras.length ? '<button type="button" class="btn-new" data-tc-act="proxima-tarefa">Ir à próxima tarefa</button>' : '');
     var texto = TC_ENVIO.aguardaPeticionamento ? 'O formulário ANVISA foi enviado por e-mail a quem peticiona. Quando a GRU e o extrato estiverem prontos, esta tarefa volta para você: anexar e enviar à courier.' : TC_ENVIO.aguardaPinex ? 'O Formulário foi enviado. A PINEX responde por e-mail com os números no título; quando chegar, abra este transporte em Acompanhar e cole a linha.' : 'O monitor de e-mails reconhece o envio pelo Gmail.';
-    return '<section class="tc-bloco"><h3>' + (proximo || outras.length ? 'Envio concluído' : 'Tudo feito por agora') + '</h3><p>' + esc(texto) + '</p></section>' +
-      '<div class="tc-actions">' + botoes + '<button type="button" class="tc-link" data-tc-act="fechar">Voltar às tarefas</button></div>';
+    // Com próxima tarefa, ela é a ação principal; sem nenhuma, voltar à lista é a principal.
+    var voltar = '<button type="button" class="' + (botoes ? 'tc-acao' : 'btn-new') + '" data-tc-act="fechar">Voltar às tarefas</button>';
+    return '<section class="tc-bloco tc-fim"><span class="tc-fim-icone" aria-hidden="true">✓</span>' +
+      '<div><h3>' + (proximo || outras.length ? 'Envio concluído' : 'Tudo feito por agora') + '</h3><p>' + esc(texto) + '</p></div></section>' +
+      '<div class="tc-actions">' + botoes + voltar + '</div>';
   }
 
   function transpCentralRenderPasso() {
@@ -275,9 +383,14 @@
     var passo = TC_ENVIO.passo;
     var corpo = { conferir: transpCentralHtmlConferir, awb: transpCentralHtmlAwb, pinex_numeros: transpCentralHtmlPinexNumeros, gerar: transpCentralHtmlGerar, anvisa: transpCentralHtmlAnvisa, enviar: transpCentralHtmlEnviar }[passo];
     var conteudo = passo === 'fim' ? transpCentralHtmlFim(tarefa) : (corpo ? corpo(registro) : '');
-    transpCentralRenderWizard((passo === 'fim' ? '' : transpCentralBarra(dados.passos || [], passo)) +
-      '<div class="tc-wiz-grid"><main class="tc-wiz-main">' + conteudo + '</main>' + transpCentralPainelLateral(registro, tarefa) + '</div>');
-    if (passo === 'awb' && !TC_ENVIO.awbUltima && /marken|dhl/i.test(registro.courier || '')) transpCentralBuscarAwbUltima(registro);
+    // No Conferir o painel "Este envio" repetiria o que está ao lado, e no fim não há mais o que consultar: nesses
+    // dois a linha de resumo basta e o conteúdo usa a largura toda. Nos demais, painel ao lado (telas largas) ou
+    // a linha de resumo completa no topo (telas estreitas).
+    var semPainel = passo === 'conferir' || passo === 'fim';
+    transpCentralRenderWizard((passo === 'fim' ? '' : transpCentralBarra(dados.passos || [], passo)) + transpCentralResumo(registro, tarefa, !semPainel) +
+      '<div class="tc-wiz-grid' + (semPainel ? ' tc-wiz-grid-cheio' : '') + '"><main class="tc-wiz-main">' + conteudo + '</main>' +
+      (semPainel ? '' : transpCentralPainelLateral(registro, tarefa)) + '</div>');
+    if (passo === 'awb' && !TC_ENVIO.awbUltima && transpCentralAwbDePacote(registro)) transpCentralBuscarAwbUltima(registro);
     if (passo === 'anvisa') transpCentralMostrarAnvisa();
   }
 
@@ -311,7 +424,7 @@
       if (!transpCentralEnvioAtual(seq) || TC_ENVIO.passo !== 'awb') return;
       TC_ENVIO.awbUltima = resposta && resposta.ultima ? resposta.ultima : { awb: '' };
       if (TC_ENVIO.awbUltima.awb) transpCentralRenderPasso();
-    }).withFailureHandler(function() { /* a dica é opcional */ }).getTransporteAwbUltima(registro.protocolo, registro.courier);
+    }).withFailureHandler(function() { /* a dica é opcional */ }).getTransporteAwbUltima(registro.protocolo, registro.courier, registro.temperatura);
   }
 
   function transpCentralProximoPasso() {
@@ -332,7 +445,8 @@
         TC_ENVIO.dados.passos = resposta.passos || TC_ENVIO.dados.passos;
         Object.keys(campos || {}).forEach(function(k) { TC_ENVIO.dados.registro[k] = campos[k]; });
         appClearUnsavedChanges('tcWizard');
-        if (resposta.perdeuPreparo) snack('Seu preparo expirou; outra pessoa pode ter assumido este transporte.');
+        // O preparo expirou com a tela parada e ninguém assumiu: retoma para continuar sendo a única pessoa no envio.
+        if (resposta.perdeuPreparo) transpCentralRenovarPreparo(true);
         if (aoSalvar) aoSalvar(resposta);
       })
       .withFailureHandler(function(erro) {
@@ -385,7 +499,8 @@
       transpCentralCarregar(true);
       if (typeof aposSair === 'function') aposSair();
     }
-    if (!TC_ENVIO.dados || TC_ENVIO.passo === 'fim') { fechar(); return; }
+    // Durante a geração nada é gravado: o servidor termina sozinho e guarda o passo seguinte.
+    if (!TC_ENVIO.dados || TC_ENVIO.passo === 'fim' || TC_ENVIO.gerando) { fechar(); return; }
     google.script.run
       .withSuccessHandler(function() { if (transpCentralEnvioAtual(seq)) fechar(); })
       .withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seq)) { snackErro(erro); fechar(); } })
@@ -425,9 +540,23 @@
     transpCentralRenderPasso();
   }
 
+  function transpCentralDigitadoSemGravar() {
+    if (!TC_ENVIO.dados || TC_ENVIO.gerando) return false;
+    if (TC_ENVIO.matEdit) return true;
+    var pinex = document.getElementById('tcPinexTexto');
+    if (TC_ENVIO.passo === 'pinex_numeros' && pinex && String(pinex.value || '').trim() && !(TC_ENVIO.pinex && TC_ENVIO.pinex.ok)) return true;
+    var awb = document.getElementById('tcCampo_awb');
+    return TC_ENVIO.passo === 'awb' && !!awb && String(awb.value || '').trim() !== String((TC_ENVIO.dados.registro || {}).awb || '').trim();
+  }
+
   function transpCentralAcao(acao, alvo) {
     var registro = TC_ENVIO.dados && TC_ENVIO.dados.registro;
-    if (acao === 'sair' || acao === 'fechar') { transpCentralSair(); return; }
+    if (acao === 'sair' || acao === 'fechar') {
+      // Os campos do Conferir salvam sozinhos; estes três só gravam pelo próprio botão.
+      if (transpCentralDigitadoSemGravar()) appOpenUnsavedConfirm(function() { transpCentralSair(); });
+      else transpCentralSair();
+      return;
+    }
     if (acao.indexOf('materiais-') === 0) { transpCentralAcaoMateriais(acao, alvo); return; }
     if (acao === 'corrigir') { abrirPendenciaAgendaRegistro(TC_ENVIO.agendaId); return; }
     if (!registro) return;
@@ -447,7 +576,22 @@
       var awb = transpCentralValorCampo('awb');
       if (!awb) { snackErro('Informe a AWB.'); return; }
       var depois = transpCentralProximoPasso();
-      transpCentralSalvar({ awb: awb }, depois, function() { transpCentralIrParaPasso(depois); });
+      var gravarAwb = function() { TC_ENVIO.awbAviso = null; transpCentralSalvar({ awb: awb }, depois, function() { transpCentralIrParaPasso(depois); }); };
+      // Segundo clique com a mesma AWB já avisada: a pessoa confirmou. A geração continua recusando AWB duplicada.
+      if (TC_ENVIO.awbAviso && TC_ENVIO.awbAviso.digitada === awb) { gravarAwb(); return; }
+      if (TC_ENVIO.awbConsultando) return;
+      TC_ENVIO.awbConsultando = true;
+      var seqAwb = TC_ENVIO.seq;
+      google.script.run
+        .withSuccessHandler(function(resposta) {
+          TC_ENVIO.awbConsultando = false;
+          if (!transpCentralEnvioAtual(seqAwb) || TC_ENVIO.passo !== 'awb') return;
+          if (resposta && resposta.text) { TC_ENVIO.awbAviso = { text: String(resposta.text), digitada: awb }; transpCentralRenderPasso(); return; }
+          gravarAwb();
+        })
+        // O aviso é uma ajuda: sem ele, a AWB é gravada e a geração faz a conferência de sempre.
+        .withFailureHandler(function() { TC_ENVIO.awbConsultando = false; if (transpCentralEnvioAtual(seqAwb) && TC_ENVIO.passo === 'awb') gravarAwb(); })
+        .getTransporteAwbAviso(Object.assign({}, registro, { awb: awb }));
     } else if (acao === 'pinex-ler') {
       var texto = (document.getElementById('tcPinexTexto') || {}).value || '';
       var seq = TC_ENVIO.seq;
@@ -483,7 +627,6 @@
         if (resposta && resposta.versao) TC_ENVIO.dados.versao = resposta.versao;
         if (resposta && resposta.ok === false) { snackErro(resposta.erro || 'Não foi possível concluir. Tente de novo.'); return; }
         TC_ENVIO.aguardaPeticionamento = true;
-        try { window.localStorage.removeItem('tcToken:' + TC_ENVIO.agendaId + '|' + TC_ENVIO.slot); } catch (e) { /* sem armazenamento */ }
         transpCentralIrParaPasso('fim');
       }).withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seqAnvisa)) snackErro(erro); })
         .concluirAnvisaTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao);
@@ -493,7 +636,6 @@
         if (!transpCentralEnvioAtual(seqFim)) return;
         if (resposta && resposta.versao) TC_ENVIO.dados.versao = resposta.versao;
         TC_ENVIO.aguardaPinex = !!(resposta && resposta.aguardaPinex);
-        try { window.localStorage.removeItem('tcToken:' + TC_ENVIO.agendaId + '|' + TC_ENVIO.slot); } catch (e) { /* sem armazenamento */ }
         transpCentralIrParaPasso('fim');
       }).withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seqFim)) snackErro(erro); })
         .concluirEnvioTransporte(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao);

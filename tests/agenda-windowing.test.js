@@ -930,7 +930,8 @@ test('barreira mantem o formulario fechado e libera somente a ultima abertura so
     _agendaDados: null,
     _agendaFormReadyQueue: [],
     agendaMostrarFormularioBloqueado_: () => calls.push('blocked'),
-    agendaFallbackCargaCompleta_: () => calls.push('fallback')
+    agendaFallbackCargaCompleta_: () => calls.push('fallback'),
+    agendaCargaInicialEmCurso_: () => false
   });
   ['agendaReferenceDataValidation_', 'agendaFormularioEstaPronto_', 'agendaComFormularioPronto_', 'agendaLiberarFilaFormulario_']
     .forEach((name) => {
@@ -944,6 +945,61 @@ test('barreira mantem o formulario fechado e libera somente a ultima abertura so
   context._agendaReferenceDataConfirmed = true;
   context.agendaLiberarFilaFormulario_();
   assert.deepEqual(calls, ['blocked', 'fallback', 'blocked', 'fallback', 'second']);
+});
+
+test('clique durante a carga inicial aguarda as referencias sem acionar a carga completa', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const core = readProjectFile('IndexCoreScripts.html');
+  const calls = [];
+  const state = { windowBootstrap: false };
+  const context = vm.createContext({
+    Object,
+    Array,
+    window: {},
+    _agendaReferenceDataConfirmed: false,
+    _agendaDados: null,
+    _agendaFormReadyQueue: [],
+    _agendaFormDataLegacyLoading: false,
+    agendaBootstrapEstaEmCurso_: () => state.windowBootstrap,
+    agendaMostrarFormularioBloqueado_: () => calls.push('blocked'),
+    agendaFallbackCargaCompleta_: () => calls.push('fallback')
+  });
+  ['agendaReferenceDataValidation_', 'agendaFormularioEstaPronto_', 'agendaComFormularioPronto_',
+    'agendaLiberarFilaFormulario_', 'agendaCargaInicialEmCurso_']
+    .forEach((name) => {
+      const args = name === 'agendaReferenceDataValidation_' ? 'data' : name === 'agendaComFormularioPronto_' ? 'callback' : '';
+      vm.runInContext(`function ${name}(${args}) {${functionBody(client, name)}}`, context);
+    });
+
+  // RPC inicial do app ainda sem resposta.
+  context.window.APP_BOOTSTRAP_PENDING = true;
+  assert.equal(context.agendaComFormularioPronto_(() => calls.push('opened')), false);
+  assert.deepEqual(calls, ['blocked']);
+  // Bootstrap da janela e carga legada do formulario tambem seguram a fila.
+  context.window.APP_BOOTSTRAP_PENDING = false;
+  state.windowBootstrap = true;
+  context.agendaComFormularioPronto_(() => calls.push('opened'));
+  state.windowBootstrap = false;
+  vm.runInContext('_agendaFormDataLegacyLoading = true', context);
+  context.agendaComFormularioPronto_(() => calls.push('opened'));
+  assert.deepEqual(calls, ['blocked', 'blocked', 'blocked']);
+
+  // As referencias confirmadas liberam somente a ultima abertura pedida.
+  context._agendaDados = validAgendaReferenceData();
+  context._agendaReferenceDataConfirmed = true;
+  context.agendaLiberarFilaFormulario_();
+  assert.deepEqual(calls, ['blocked', 'blocked', 'blocked', 'opened']);
+
+  // Sem resposta pendente, o clique volta a acionar a carga completa.
+  context._agendaReferenceDataConfirmed = false;
+  vm.runInContext('_agendaFormDataLegacyLoading = false', context);
+  context.agendaComFormularioPronto_(() => calls.push('late'));
+  assert.deepEqual(calls.slice(-2), ['blocked', 'fallback']);
+
+  // O sinal e ligado antes da RPC inicial e desligado em sucesso e em falha.
+  const start = functionBody(core, 'startCodexAppOnce');
+  assert.ok(start.indexOf('window.APP_BOOTSTRAP_PENDING = true') < start.indexOf('google.script.run'));
+  assert.equal(start.split('window.APP_BOOTSTRAP_PENDING = false').length - 1, 2);
 });
 
 test('criacao, edicao, link direto e outros modulos passam pela prontidao central', () => {
@@ -965,9 +1021,55 @@ test('novo agendamento abre sem aguardar a revalidacao remota e ignora cliques r
   const toggle = functionBody(client, 'toggleAgendaCreate');
   const open = functionBody(client, 'agendaAbrirCreatePanelNovoPronto_');
   assert.match(toggle, /agendaCreatePanelJaAberto_\(\)\) return/);
-  assert.match(toggle, /agendaAbrirCreatePanelNovoPronto_\(\);\s*agendaRevalidarFormDataEmBackground\(true\);/);
+  // Abre primeiro e revalida somente referencias vencidas: a revalidacao
+  // forcada a cada abertura refazia as listas com o formulario em uso.
+  assert.ok(toggle.indexOf('agendaAbrirCreatePanelNovoPronto_();') < toggle.indexOf('agendaRevalidarFormDataEmBackground(false);'));
+  assert.doesNotMatch(toggle, /agendaRevalidarFormDataEmBackground\(true\)/);
+  assert.match(functionBody(client, 'agendaRevalidarFormDataEmBackground'), /!force && !agendaFormDataEstaDesatualizado\(\)/);
   assert.doesNotMatch(toggle, /onComplete/);
   assert.match(open, /agendaCreatePanelJaAberto_\(\)\) return/);
+});
+
+test('listas do formulario sao montadas com uma unica atribuicao de HTML', () => {
+  const client = readProjectFile('IndexAgendaScripts.html');
+  const select = { innerHTML: 'antigo', value: '', options: [], writes: 0 };
+  Object.defineProperty(select, 'innerHTML', {
+    set(value) { this.writes++; this.html = value; },
+    get() { return this.html; }
+  });
+  select.insertAdjacentHTML = () => { throw new Error('nao deve inserir opcao por opcao'); };
+  const context = vm.createContext({
+    document: { getElementById: () => select },
+    esc: (value) => String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+  });
+  vm.runInContext(`function preencherAgendaSelect(id, lista, placeholder) {${functionBody(client, 'preencherAgendaSelect')}}`, context);
+
+  select.writes = 0;
+  context.preencherAgendaSelect('agParticipante', [
+    { id: 'P-1', nome: 'Ana <b>', projeto: 'Alpha', numId: '001' },
+    { id: 'P-2', nome: 'Bia', projeto: '', numId: '' }
+  ], '');
+  assert.equal(select.writes, 1);
+  assert.equal(select.html,
+    '<option value=""></option>' +
+    '<option value="P-1" data-id="P-1" data-nome="Ana &lt;b>" data-participante-id="001">Ana &lt;b> — Alpha — ID 001</option>' +
+    '<option value="P-2" data-id="P-2" data-nome="Bia" data-participante-id="">Bia</option>');
+
+  select.writes = 0;
+  context.preencherAgendaSelect('agMedico', ['Dr. A'], null);
+  assert.equal(select.writes, 1);
+  assert.equal(select.html, '<option value="Dr. A">Dr. A</option>');
+});
+
+test('escritas pontuais na Agenda invalidam o cache de janelas de validade longa', () => {
+  const server = readProjectFile('WebApp.gs');
+  assert.match(server, /var AGENDA_WINDOW_CACHE_TTL_SECONDS_ = 300;/);
+  assert.match(server, /var AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_ = 300;/);
+  const vincular = functionBody(server, 'vincularReservaKitAgenda');
+  assert.ok(vincular.indexOf('AGENDA_CFG.col.id).setValue(agendaId)') < vincular.indexOf('agendaInvalidateWindowCache_()'));
+  const notificar = functionBody(server, 'verificarNotificacoes_');
+  assert.match(notificar, /if \(controleGravado\) agendaInvalidateWindowCache_\(\);/);
+  assert.equal(notificar.split('controleGravado = true').length - 1, 3);
 });
 
 test('fallback do formulario usa carga completa, legado validado e somente codigos permitidos', () => {

@@ -208,9 +208,16 @@ function transportePeticionamentoConcluir_(agendaId, slot, versao, usuario, opco
     // Guarda o envio antes do status: uma falha seguinte nao reenvia o e-mail na repeticao.
     lido.versao = transporteRegistroGravar_(agendaId, slot, enviado, { versaoEsperada: reserva.versao, usuario: usuario, agora: agora, passo: 'peticionando' }).versao;
   }
-  codexWithDocumentLock_('transportePeticionamentoStatus', function() {
-    transportePeticionamentoDefinirStatusAgenda_(agendaId, slot, TRANSPORTE_PETICIONAMENTO_STATUS_, ['docsgerados', 'peticionamento'], 'Formulário ANVISA conferido; aguardando GRU e extrato');
-  });
+  try {
+    codexWithDocumentLock_('transportePeticionamentoStatus', function() {
+      transportePeticionamentoDefinirStatusAgenda_(agendaId, slot, TRANSPORTE_PETICIONAMENTO_STATUS_, ['docsgerados', 'peticionamento'], 'Formulário ANVISA conferido; aguardando GRU e extrato');
+    });
+  } catch (erroStatus) {
+    // O e-mail ja saiu e esta guardado no registro: a tela recebe a versao atual e repete so a troca do status.
+    erroStatus.statusPendente = true;
+    erroStatus.versaoAtual = lido.versao;
+    throw erroStatus;
+  }
   return { ok: true, versao: lido.versao, destinatarios: destinatarios, avisos: form.avisos };
 }
 
@@ -230,6 +237,10 @@ function concluirAnvisaTransporteEnvio(agendaId, slot, versao) {
   } catch (erro) {
     // Falha de e-mail nao e excecao para a tela: ela mostra o erro, mantem o passo e tenta de novo com a versao atual.
     if (erro && erro.falhaEmail) return { ok: false, erro: 'Não foi possível enviar o e-mail de peticionamento: ' + String(erro.message || erro), versao: erro.versaoAtual };
+    if (erro && erro.statusPendente) {
+      return { ok: false, versao: erro.versaoAtual, erro: 'O e-mail de peticionamento foi enviado, mas o status na Agenda não mudou: ' +
+        String(erro.message || erro) + ' Clique de novo em concluir; o e-mail não será reenviado.' };
+    }
     throw erro;
   }
   transporteEnvioLiberar_(agendaId, slot, usuario);
