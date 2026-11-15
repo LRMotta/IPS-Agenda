@@ -101,6 +101,7 @@ function codexDoGet_(e, traceId) {
     // Index.html sempre resolve esta variavel de template, inclusive fora da Agenda.
     // O shell antecipado so se aplica a pagina principal da Agenda.
     tplDashboard.agendaCanaryShell = false;
+    tplDashboard.inlineBootstrap = null;
     tplDashboard.agendaAbrirInicial = '';
     tplDashboard.buscaInicial = '';
     tplDashboard.dashboardFiltroInicial = '';
@@ -116,6 +117,7 @@ function codexDoGet_(e, traceId) {
       ? 'pedidos'
       : (page === 'estoque-view' ? 'visualizacao' : codexInitialPage_(e && e.parameter && e.parameter.pagina, true));
     tplEstoque.agendaCanaryShell = false;
+    tplEstoque.inlineBootstrap = null;
     tplEstoque.agendaAbrirInicial = '';
     tplEstoque.buscaInicial = e && e.parameter ? (e.parameter.busca || '') : '';
     tplEstoque.dashboardFiltroInicial = '';
@@ -147,6 +149,12 @@ function codexDoGet_(e, traceId) {
     codexDoGetStage_('canary_flag', traceId, function() {
       return agendaWindowedLoadingV2EnabledForAccess_(access);
     });
+  var inlineMeta = { rowCount: 0 };
+  tplIndex.inlineBootstrap = tplIndex.agendaCanaryShell
+    ? codexDoGetStage_('inline_bootstrap', traceId, function() {
+      return codexDoGetInlineBootstrap_(traceId, inlineMeta);
+    }, inlineMeta)
+    : null;
   return codexDoGetEvaluate_(tplIndex, 'IPS | UCS', 'index', traceId);
 }
 
@@ -422,6 +430,103 @@ function getAppBootstrapData(request) {
     totalMeta.responseBytesMeasured = serializationMeta.responseBytesMeasured;
     return out;
   });
+}
+
+// Janela inicial da Agenda no fuso do script: semana atual, anterior e
+// posterior. Deve reproduzir appInitialBootstrapRequest_ no cliente, que
+// confere o periodo recebido e recorre a RPC se o navegador calcular outro.
+function agendaInitialWindowRange_() {
+  var monday = new Date();
+  monday.setHours(0, 0, 0, 0);
+  var day = monday.getDay();
+  monday.setDate(monday.getDate() + (day === 0 ? -6 : 1 - day));
+  var start = new Date(monday);
+  var endExclusive = new Date(monday);
+  start.setDate(start.getDate() - 7);
+  endExclusive.setDate(endExclusive.getDate() + 14);
+  function iso(date) {
+    return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + date.getDate()).slice(-2);
+  }
+  return { start: iso(start), endExclusive: iso(endExclusive) };
+}
+
+// Bootstrap embutido na pagina pelo doGet. Cada chamada ao servidor tem custo
+// fixo de cerca de 3 s (medido em 15/11/2026); quando referencias e janela ja
+// estao em cache, entrega-las com o HTML dispensa a RPC getAppBootstrapData.
+// Nunca le referencias nem eventos das planilhas: sem cache completo devolve
+// null e a abertura segue pela RPC, com o shell visivel mais cedo. Os dados
+// sao os mesmos que a RPC devolveria a partir desses caches.
+function codexDoGetInlineBootstrap_(traceId, metadata) {
+  metadata = metadata || {};
+  metadata.cacheHit = false;
+  metadata.cacheMiss = true;
+  try {
+    if (CODEX_CACHE_BYPASS_READS_) return null;
+    var referenceData = codexCacheGet_(agendaReferenceCacheKey_());
+    if (!referenceData) return null;
+    agendaValidateReferenceData_(referenceData);
+    // Sem geracao nao ha janela em cache: evita abrir a planilha a toa.
+    if (!agendaWindowCacheGeneration_(false)) return null;
+
+    var accessSnapshot = {};
+    var access = codexGetPageLoadAccess_(accessSnapshot, {});
+    if (!access || access.ok !== true || !agendaWindowedLoadingV2EnabledForAccess_(access)) return null;
+
+    var range = agendaInitialWindowRange_();
+    // A chave do cache depende da ultima linha, como em agendaGetEventosPorPeriodo_.
+    var lastRow = getAgendaSheetForRead_().getLastRow();
+    var cacheKey = agendaWindowCacheKey_(lastRow, range.start, range.endExclusive, AGENDA_WINDOW_MAX_RECORDS_);
+    var windowData = cacheKey ? agendaWindowCacheGet_(cacheKey) : null;
+    if (!windowData || !agendaWindowResultIsValid_(windowData) || windowData.truncated ||
+        windowData.total !== windowData.items.length) return null;
+
+    var out = {
+      bootstrapTraceId: traceId,
+      access: access,
+      auth: codexGetUserOAuthStatus_(),
+      appVersion: codexGetAppVersion_(),
+      webAppUrl: '',
+      agendaFormData: null,
+      errors: {},
+      features: { agendaWindowedLoadingV2: true },
+      // Mesmo formato de agendaGetBootstrapForAccess_.
+      agendaBootstrap: {
+        access: access,
+        referenceData: referenceData,
+        events: windowData.items,
+        range: {
+          start: range.start,
+          endExclusive: range.endExclusive,
+          loadedStart: range.start,
+          loadedEndExclusive: range.endExclusive,
+          total: windowData.total,
+          loaded: windowData.items.length,
+          outOfOrder: !!windowData.outOfOrder
+        },
+        revision: agendaBootstrapRevision_(referenceData, windowData.items, range.start, range.endExclusive),
+        truncated: false,
+        complete: true,
+        partialError: false
+      }
+    };
+    try {
+      out.webAppUrl = ScriptApp.getService().getUrl();
+    } catch (e1) {
+      out.errors.webAppUrl = e1.message || String(e1);
+    }
+    try {
+      out.teamBirthdays = codexGetTeamBirthdays_(accessSnapshot.users);
+    } catch (e2) {
+      out.errors.teamBirthdays = e2.message || String(e2);
+    }
+    metadata.cacheHit = true;
+    metadata.cacheMiss = false;
+    metadata.rowCount = windowData.items.length;
+    return out;
+  } catch (e) {
+    // Qualquer falha mantem a abertura normal pela RPC.
+    return null;
+  }
 }
 
 function codexGetAppVersion_() {

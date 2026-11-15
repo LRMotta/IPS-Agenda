@@ -999,7 +999,8 @@ test('clique durante a carga inicial aguarda as referencias sem acionar a carga 
   // O sinal e ligado antes da RPC inicial e desligado em sucesso e em falha.
   const start = functionBody(core, 'startCodexAppOnce');
   assert.ok(start.indexOf('window.APP_BOOTSTRAP_PENDING = true') < start.indexOf('google.script.run'));
-  assert.equal(start.split('window.APP_BOOTSTRAP_PENDING = false').length - 1, 2);
+  // Desligado na resposta da RPC (sucesso e falha) e ao aplicar o bootstrap embutido.
+  assert.equal(start.split('window.APP_BOOTSTRAP_PENDING = false').length - 1, 3);
 });
 
 test('criacao, edicao, link direto e outros modulos passam pela prontidao central', () => {
@@ -3201,4 +3202,176 @@ test('formatacao de datas repetidas reutiliza o resultado dentro da mesma execuc
   assert.equal(server.formatarDataSafe(b), '17/nov./2026');
   assert.equal(server.formatarHoraSafe_(b), '14:05');
   assert.equal(calls, 9);
+});
+
+
+function inlineBootstrapServer(overrides = {}) {
+  const calls = [];
+  const server = agendaServer({
+    ScriptApp: { getService: () => ({ getUrl: () => 'https://example.test/exec' }) },
+    Utilities: { formatDate: () => '20260910' },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  const referenceData = validAgendaReferenceData();
+  const state = Object.assign({
+    referenceData,
+    generation: 'GEN',
+    access: { ok: true, role: 'user' },
+    enabled: true,
+    window: { items: [{ rowIndex: 2, id: 'EVT-1', recordVersion: 'v1', editRecordVersion: 'e1' }], total: 1, truncated: false, outOfOrder: false }
+  }, overrides);
+  server.codexCacheGet_ = (key) => { calls.push('reference'); assert.match(key, /^AgendaBootstrapReferenceData:v3:/); return state.referenceData; };
+  server.agendaWindowCacheGeneration_ = (create) => { assert.equal(create, false); return state.generation; };
+  server.codexGetPageLoadAccess_ = (snapshot) => { snapshot.users = { 'a@example.test': {} }; return state.access; };
+  server.agendaWindowedLoadingV2EnabledForAccess_ = () => state.enabled;
+  server.getAgendaSheetForRead_ = () => { calls.push('sheet'); return { getLastRow: () => 10 }; };
+  server.agendaWindowCacheKey_ = (lastRow, start, end, max) => {
+    assert.equal(lastRow, 10);
+    assert.equal(max, server.AGENDA_WINDOW_MAX_RECORDS_);
+    return ['key', start, end].join(':');
+  };
+  server.agendaWindowCacheGet_ = (key) => { calls.push('window'); assert.match(key, /^key:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/); return state.window; };
+  server.codexGetUserOAuthStatus_ = () => ({ ok: true });
+  server.codexGetTeamBirthdays_ = (users) => { assert.ok(users); return []; };
+  // O bootstrap embutido nunca pode cair nas leituras de planilha da RPC.
+  server.agendaGetReferenceData_ = () => { throw new Error('nao deve reconstruir referencias'); };
+  server.agendaGetEventosPorPeriodo_ = () => { throw new Error('nao deve ler eventos'); };
+  return { server, calls, state, referenceData };
+}
+
+test('doGet embute o bootstrap da Agenda somente com referencias e janela em cache', () => {
+  const warm = inlineBootstrapServer();
+  const meta = {};
+  const out = warm.server.codexDoGetInlineBootstrap_('trace-inline-0001', meta);
+  const range = warm.server.agendaInitialWindowRange_();
+  assert.deepEqual(warm.calls, ['reference', 'sheet', 'window']);
+  assert.equal(out.bootstrapTraceId, 'trace-inline-0001');
+  assert.equal(out.access.ok, true);
+  assert.equal(out.webAppUrl, 'https://example.test/exec');
+  assert.deepEqual(Object.assign({}, out.features), { agendaWindowedLoadingV2: true });
+  assert.equal(out.agendaBootstrap.referenceData, warm.referenceData);
+  assert.equal(out.agendaBootstrap.events.length, 1);
+  assert.deepEqual(Object.assign({}, out.agendaBootstrap.range), {
+    start: range.start, endExclusive: range.endExclusive,
+    loadedStart: range.start, loadedEndExclusive: range.endExclusive,
+    total: 1, loaded: 1, outOfOrder: false
+  });
+  assert.match(out.agendaBootstrap.revision, /^agenda-bootstrap-v1-[0-9a-f]{8}$/);
+  assert.equal(out.agendaBootstrap.complete, true);
+  assert.equal(out.agendaBootstrap.truncated, false);
+  assert.equal(out.agendaBootstrap.partialError, false);
+  assert.equal(meta.cacheHit, true);
+  assert.equal(meta.rowCount, 1);
+  // Mesma revisao que a RPC produziria com esses dados.
+  assert.equal(out.agendaBootstrap.revision,
+    warm.server.agendaBootstrapRevision_(warm.referenceData, warm.state.window.items, range.start, range.endExclusive));
+
+  // Sem referencias ou sem geracao de janelas, nem abre a planilha.
+  const noReference = inlineBootstrapServer({ referenceData: null });
+  assert.equal(noReference.server.codexDoGetInlineBootstrap_('trace-inline-0002', {}), null);
+  assert.deepEqual(noReference.calls, ['reference']);
+  const noGeneration = inlineBootstrapServer({ generation: null });
+  assert.equal(noGeneration.server.codexDoGetInlineBootstrap_('trace-inline-0003', {}), null);
+  assert.deepEqual(noGeneration.calls, ['reference']);
+
+  // Janela ausente, truncada ou parcial, acesso negado, recurso desligado e
+  // referencias invalidas mantem a abertura pela RPC.
+  [
+    { window: null },
+    { window: { items: [], total: 0, truncated: true } },
+    { window: { items: [{ id: 'A' }], total: 2, truncated: false } },
+    { access: { ok: false } },
+    { enabled: false },
+    { referenceData: { participantes: [] } }
+  ].forEach((override) => {
+    const cold = inlineBootstrapServer(override);
+    const coldMeta = {};
+    assert.equal(cold.server.codexDoGetInlineBootstrap_('trace-inline-0004', coldMeta), null);
+    assert.equal(coldMeta.cacheHit, false);
+  });
+  const bypass = inlineBootstrapServer();
+  bypass.server.CODEX_CACHE_BYPASS_READS_ = true;
+  assert.equal(bypass.server.codexDoGetInlineBootstrap_('trace-inline-0005', {}), null);
+  assert.deepEqual(bypass.calls, []);
+  const failing = inlineBootstrapServer();
+  failing.server.getAgendaSheetForRead_ = () => { throw new Error('planilha indisponivel'); };
+  assert.equal(failing.server.codexDoGetInlineBootstrap_('trace-inline-0006', {}), null);
+});
+
+test('doGet fornece inlineBootstrap ao template em todas as rotas do Index', () => {
+  const templates = [];
+  const output = { addMetaTag() { return this; }, setTitle() { return this; } };
+  const server = agendaServer({
+    HtmlService: {
+      createTemplateFromFile() {
+        const template = { evaluate: () => output };
+        templates.push(template);
+        return template;
+      }
+    }
+  });
+  server.codexAuthorizeWebAppRequestSafe_ = () => ({ ok: true });
+  server.codexEstoqueCongelado_ = () => false;
+  const inline = { marker: true };
+  let enabled = true;
+  server.agendaWindowedLoadingV2EnabledForAccess_ = () => enabled;
+  server.codexDoGetInlineBootstrap_ = () => inline;
+
+  server.doGet({ parameter: {} });
+  assert.equal(templates[0].agendaCanaryShell, true);
+  assert.equal(templates[0].inlineBootstrap, inline);
+  // Outras paginas e a carga por janela desligada nao recebem dados embutidos.
+  server.doGet({ parameter: { pagina: 'participantes' } });
+  assert.equal(templates[1].inlineBootstrap, null);
+  enabled = false;
+  server.doGet({ parameter: {} });
+  assert.equal(templates[2].inlineBootstrap, null);
+  server.doGet({ parameter: { page: 'dashboard' } });
+  assert.equal(templates[3].inlineBootstrap, null);
+  server.doGet({ parameter: { page: 'estoque' } });
+  assert.equal(templates[4].inlineBootstrap, null);
+
+  const index = readProjectFile('Index.html');
+  assert.match(index, /window\.INDEX_INLINE_BOOTSTRAP = JSON\.parse\(<\?= codexJsonForScript_\(inlineBootstrap \|\| null\) \?>\);/);
+});
+
+test('cliente usa o bootstrap embutido somente para a Agenda e com o mesmo periodo', () => {
+  const core = readProjectFile('IndexCoreScripts.html');
+  const context = vm.createContext({
+    Array, Date,
+    window: { INDEX_INITIAL_PAGE: 'agenda' },
+    isEmbeddedModuleEnabled: () => false
+  });
+  vm.runInContext(`function appInlineBootstrapUsavel_(data, request) {${functionBody(core, 'appInlineBootstrapUsavel_')}}`, context);
+  vm.runInContext(`function appInitialBootstrapRequest_() {${functionBody(core, 'appInitialBootstrapRequest_')}}`, context);
+  const request = context.appInitialBootstrapRequest_();
+  const data = (overrides = {}) => Object.assign({
+    access: { ok: true },
+    agendaBootstrap: {
+      complete: true, events: [],
+      range: { start: request.agendaRange.start, endExclusive: request.agendaRange.endExclusive }
+    }
+  }, overrides);
+
+  assert.equal(context.appInlineBootstrapUsavel_(data(), request), true);
+  assert.equal(context.appInlineBootstrapUsavel_(null, request), false);
+  assert.equal(context.appInlineBootstrapUsavel_(data({ access: { ok: false } }), request), false);
+  assert.equal(context.appInlineBootstrapUsavel_(data(), { page: 'participantes' }), false);
+  assert.equal(context.appInlineBootstrapUsavel_(data({ agendaBootstrap: null }), request), false);
+  assert.equal(context.appInlineBootstrapUsavel_(data({
+    agendaBootstrap: { complete: true, events: [], range: { start: '2000-01-03', endExclusive: '2000-01-24' } }
+  }), request), false);
+  assert.equal(context.appInlineBootstrapUsavel_(data({
+    agendaBootstrap: { complete: false, events: [], range: request.agendaRange }
+  }), request), false);
+
+  // O servidor calcula a mesma janela que o navegador pede no mesmo fuso.
+  const serverRange = agendaServer().agendaInitialWindowRange_();
+  assert.deepEqual(Object.assign({}, serverRange), Object.assign({}, request.agendaRange));
+
+  const start = functionBody(core, 'startCodexAppOnce');
+  assert.ok(start.indexOf('abrirShellInicialAgendaCanario_()') < start.indexOf('appInlineBootstrapUsavel_(inlineBootstrap, bootstrapRequest)'));
+  assert.ok(start.indexOf('appInlineBootstrapUsavel_(inlineBootstrap, bootstrapRequest)') < start.indexOf('.getAppBootstrapData(bootstrapRequest)'));
+  assert.match(start, /window\.INDEX_INLINE_BOOTSTRAP = null;/);
+  assert.match(start, /window\.setTimeout\(function\(\) \{\s*window\.APP_BOOTSTRAP_PENDING = false;/);
 });

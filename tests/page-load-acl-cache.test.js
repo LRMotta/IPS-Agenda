@@ -141,9 +141,14 @@ test('doGet registra etapas fixas, includes e cache da ACL sem dados pessoais', 
   const entries = logs.filter((line) => line.startsWith('[CODEX_PERF] ')).map((line) => JSON.parse(line.slice(13)));
   const stages = entries.filter((entry) => entry.operation === 'doGet').map((entry) => entry.stage);
   assert.deepEqual(stages, [
-    'access', 'template', 'canary_flag', 'evaluate_index', 'includes_index', 'total',
+    'access', 'template', 'canary_flag', 'inline_bootstrap', 'evaluate_index', 'includes_index', 'total',
     'access', 'template', 'evaluate_transporte', 'includes_transporte', 'total'
   ]);
+  // Sem referencias em cache, a etapa registra a ausencia e a abertura segue pela RPC.
+  const inline = entries.find((entry) => entry.stage === 'inline_bootstrap');
+  assert.equal(inline.cacheHit, false);
+  assert.equal(inline.cacheMiss, true);
+  assert.equal(inline.rowCount, 0);
   const includes = entries.find((entry) => entry.stage === 'includes_index');
   assert.equal(includes.rowCount, 2);
   const accessEntries = entries.filter((entry) => entry.stage === 'access');

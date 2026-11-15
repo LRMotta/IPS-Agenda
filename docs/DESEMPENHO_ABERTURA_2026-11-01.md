@@ -90,6 +90,31 @@ Decisão de produto: a planilha não é editada diretamente pelos usuários.
   formatar data, nascimento e hora. `codexFormatDateMemo_` reaproveita o
   resultado por instante e padrão dentro da mesma execução.
 
+### Versão 374 e bootstrap embutido no doGet
+
+Medido na versão 374 com caches quentes: `getAppBootstrapData` com 1,7 s e
+3,3 s de código (5,4 s no painel), `hydrate_convert` 0,6 s, revalidação
+completa 13,7 s. O restante é o custo fixo por chamada.
+
+Por isso o `doGet` passou a embutir o bootstrap na página
+(`codexDoGetInlineBootstrap_`, etapa `inline_bootstrap` com `cacheHit`):
+
+- Somente na página principal da Agenda, com a carga por janela ativa, e
+  somente quando as referências e a janela inicial já estão no `CacheService`.
+  Nunca lê referências ou eventos das planilhas; sem cache completo devolve
+  `null` e a abertura segue pela RPC `getAppBootstrapData`, como antes.
+- Os dados são os mesmos que a RPC devolveria desses caches (mesmo formato e
+  mesma revisão), com o mesmo acesso de abertura (`codexGetPageLoadAccess_`).
+- O cliente só os usa se o período for o que ele próprio pediria
+  (`appInlineBootstrapUsavel_`); caso contrário faz a RPC.
+- Custo: com cache quente a estrutura da página chega depois (o `doGet` abre a
+  planilha para conferir a última linha e envia cerca de 0,4 MB a mais). Com as
+  referências em cache e a janela vencida, o `doGet` gasta essa conferência e
+  ainda segue pela RPC.
+
+Ganho esperado: uma chamada a menos por abertura quente (cerca de 3 s). Ainda
+não medido em produção.
+
 Não implementado: gatilho de aquecimento. Os gatilhos existentes já consomem
 cerca de 2 h por dia (`monitorarConfirmacoesCourierAgendadas` leva de 45 a
 130 s a cada 15 min); aguarda decisão.
