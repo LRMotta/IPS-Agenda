@@ -169,9 +169,31 @@ test('leitura fresca explicita e revalidacao periodica ainda recuperam alteracoe
   assert.deepEqual(Array.from(f.server.getAgendaReferenceDataFresh().medicos), ['medicos-2']);
   assert.ok(Object.values(f.reads).every(count => count === 2));
   f.revisions.medicos = 3;
+  // A carga que leu todas as listas ja vale como revalidacao: ate o marcador
+  // vencer, o pedido em segundo plano reaproveita o cache sem reler planilhas.
+  assert.deepEqual(Array.from(f.server.getAgendaReferenceDataBackgroundRevalidate().medicos), ['medicos-2']);
+  assert.ok(Object.values(f.reads).every(count => count === 2));
+  // Marcador vencido (TTL de AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_).
+  f.entries.delete(f.server.agendaReferenceBackgroundRevalidateKey_());
   assert.deepEqual(Array.from(f.server.getAgendaReferenceDataBackgroundRevalidate().medicos), ['medicos-3']);
   assert.ok(Object.values(f.reads).every(count => count === 3));
   assert.equal(f.server.CODEX_CACHE_BYPASS_READS_, false);
+});
+
+test('carga com alguma lista vinda do cache de partes nao dispensa a revalidacao', () => {
+  const f = fixture();
+  f.server.agendaGetReferenceData_(false, true);
+  const marker = f.server.agendaReferenceBackgroundRevalidateKey_();
+  assert.ok(f.entries.has(marker));
+  // Uma mutacao de medicos remove o marcador e somente a lista afetada.
+  f.revisions.medicos = 2;
+  f.server.clearCodexRuntimeCaches_(['medicos']);
+  assert.equal(f.entries.has(marker), false);
+  f.server.agendaGetReferenceData_(false, true);
+  assert.equal(f.entries.has(marker), false);
+  // A reconstrucao forcada nao grava o marcador por conta propria.
+  f.server.agendaGetReferenceData_(true, true);
+  assert.equal(f.entries.has(marker), false);
 });
 
 test('cache vazio ou indisponivel reconstrói formulario completo sem omitir listas', () => {

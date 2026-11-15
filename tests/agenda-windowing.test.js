@@ -1294,8 +1294,16 @@ test('referencias do bootstrap usam TTL proprio, telemetria sem dados e evitam c
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
   });
   let writes = 0;
+  let markers = 0;
   server.codexCacheGet_ = () => null;
   server.codexCachePut_ = (key, value, ttl) => {
+    // A carga fresca tambem grava o marcador que dispensa a revalidacao imediata.
+    if (/^AgendaBootstrapReferenceRevalidated:v2:/.test(key)) {
+      markers += 1;
+      assert.equal(ttl, server.AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_);
+      assert.deepEqual(Object.assign({}, value), { refreshed: true });
+      return true;
+    }
     writes += 1;
     assert.match(key, /^AgendaBootstrapReferenceData:v3:/);
     assert.equal(ttl, server.AGENDA_REFERENCE_CACHE_TTL_SECONDS_);
@@ -1305,6 +1313,7 @@ test('referencias do bootstrap usam TTL proprio, telemetria sem dados e evitam c
 
   assert.deepEqual(server.agendaGetReferenceData_(false, true).medicos, []);
   assert.equal(writes, 1);
+  assert.equal(markers, 1);
   const telemetry = logs.map((message) => JSON.parse(message.replace(/^\[CODEX_AGENDA_REFERENCE_CACHE\]\s*/, '')));
   assert.deepEqual(telemetry.map((entry) => entry.outcome), ['miss', 'stored']);
   assert.equal(telemetry.every((entry) => Object.keys(entry).sort().join(',') === 'bytes,forceRefresh,outcome,ttlSeconds'), true);
@@ -3153,4 +3162,43 @@ test('composicao operacional preserva texto escapado, status e rótulos conforme
   assert.match(styles, /\.ag-event-type\{[^}]*font-size:12px/);
   assert.match(styles, /\.ag-wk-proj\{font-size:12px/);
   assert.match(styles, /\.ag-wk-type\{font-size:12px/);
+});
+
+test('formatacao de datas repetidas reutiliza o resultado dentro da mesma execucao', () => {
+  let calls = 0;
+  const server = agendaServer({
+    Utilities: {
+      formatDate: (date, tz, pattern) => {
+        calls += 1;
+        assert.equal(tz, 'America/Sao_Paulo');
+        const pad = (n) => String(n).padStart(2, '0');
+        return ({
+          dd: pad(date.getDate()), M: String(date.getMonth() + 1), yyyy: String(date.getFullYear()),
+          'HH:mm': pad(date.getHours()) + ':' + pad(date.getMinutes()),
+          'dd/MM/yyyy HH:mm': pad(date.getDate()) + '/' + pad(date.getMonth() + 1) + '/' + date.getFullYear() + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes())
+        })[pattern];
+      }
+    },
+    Session: { getScriptTimeZone: () => 'America/Sao_Paulo' }
+  });
+  // Datas do mesmo realm do servidor simulado, para satisfazer instanceof Date.
+  const ServerDate = vm.runInContext("Date", server);
+  const a = new ServerDate(2026, 10, 16, 9, 30);
+  const sameInstant = new ServerDate(a.getTime());
+  const b = new ServerDate(2026, 10, 17, 14, 5);
+
+  assert.equal(server.formatarDataSafe(a), '16/nov./2026');
+  assert.equal(calls, 3);
+  assert.equal(server.formatarDataSafe(sameInstant), '16/nov./2026');
+  assert.equal(server.formatarDataMesCurtoPt_(sameInstant, '-'), '16-nov.-2026');
+  assert.equal(calls, 3);
+  assert.equal(server.formatarHoraSafe_(a), '09:30');
+  assert.equal(server.formatarHoraSafe_(sameInstant), '09:30');
+  assert.equal(server.formatAgendaDateTimeSafe_(a), '16/11/2026 09:30');
+  assert.equal(server.formatAgendaDateTimeSafe_(sameInstant), '16/11/2026 09:30');
+  assert.equal(calls, 5);
+  // Outro instante nunca reaproveita o resultado anterior.
+  assert.equal(server.formatarDataSafe(b), '17/nov./2026');
+  assert.equal(server.formatarHoraSafe_(b), '14:05');
+  assert.equal(calls, 9);
 });
