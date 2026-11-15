@@ -66,6 +66,30 @@ Decisão de produto: a planilha não é editada diretamente pelos usuários.
   a carga completa, que desligava a carga por janela pelo resto da sessão.
 - `preencherAgendaSelect` monta cada lista com uma única atribuição de HTML.
 
-Pendente: conferir nos logs de produção `put_too_large` (`[CODEX_CACHE]`) e
-`skip_oversize` (`[CODEX_AGENDA_REFERENCE_CACHE]`) antes de decidir sobre
-gravação das referências em blocos e gatilho de aquecimento.
+### Medição nos logs de produção (versão 372, abertura fria de 14/11, 13:14)
+
+| Execução | Painel | Medido no código |
+| --- | ---: | ---: |
+| `doGet` | 6,4 s | 2,9 s (`access` sem cache 2,3 s; `evaluate` 0,4 s) |
+| `getAppBootstrapData` | 18,6 s | 15,1 s |
+| `getAgendaReferenceDataBackgroundRevalidate` | 31,4 s | 28,4 s |
+
+- Custo fixo por chamada: `getAppRuntimeInfo`, que não lê planilha, levou em
+  média 2,8 s (41 execuções, 1,8–3,9 s). A diferença entre painel e código nas
+  linhas acima (~3,5 s) é o mesmo custo. A causa não foi isolada.
+- Bootstrap frio: `reference` 9,1 s, `date_index` 1,6 s, `row_read` 0,3 s,
+  `hydrate_convert` 1,9 s (141 eventos), `hydrate_participant_index` 0,6 s.
+- Tamanho dos caches: referências com 72.995 bytes (limite de 95.000,
+  `stored`); janela com 250 KB em 3 blocos. Nenhum `skip_oversize` ou
+  `put_too_large` nessas execuções; gravação das referências em blocos não é
+  necessária hoje.
+- A revalidação em segundo plano reconstruía todas as listas logo depois de o
+  bootstrap frio tê-las lido. Agora `agendaGetReferenceData_` grava o marcador
+  de revalidação quando nenhuma lista veio do cache de partes.
+- `hydrate_convert`: cada linha fazia de 12 a 16 chamadas de serviço para
+  formatar data, nascimento e hora. `codexFormatDateMemo_` reaproveita o
+  resultado por instante e padrão dentro da mesma execução.
+
+Não implementado: gatilho de aquecimento. Os gatilhos existentes já consomem
+cerca de 2 h por dia (`monitorarConfirmacoesCourierAgendadas` leva de 45 a
+130 s a cada 15 min); aguarda decisão.

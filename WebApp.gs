@@ -18774,7 +18774,7 @@ function formatAgendaDateTimeSafe_(value) {
   try {
     var d = value instanceof Date ? value : new Date(value);
     if (d && !isNaN(d.getTime())) {
-      return Utilities.formatDate(d, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+      return codexFormatDateMemo_(d, 'dd/MM/yyyy HH:mm');
     }
   } catch (e) {}
   return String(value || '');
@@ -19291,6 +19291,13 @@ function agendaGetReferenceData_(forceRefresh, useCanaryCache, measureStage) {
     agendaLogReferenceCache_('stored', bytes, !!forceRefresh);
   } else {
     agendaLogReferenceCache_('store_failed', bytes, !!forceRefresh);
+  }
+  // Uma carga que acabou de ler todas as listas nas planilhas ja e a revalidacao:
+  // sem o marcador, o cliente pedia a reconstrucao integral segundos depois
+  // (cerca de 28 s medidos em 14/11/2026). Com alguma lista vinda do cache de
+  // partes, a revalidacao em segundo plano continua necessaria.
+  if (!forceRefresh && !Object.keys(parts.cached || {}).length) {
+    codexCachePut_(agendaReferenceBackgroundRevalidateKey_(), { refreshed: true }, AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_);
   }
   return agendaValidateReferenceData_(data);
 }
@@ -20975,11 +20982,23 @@ function formatarDataMesCurtoPt_(valor, separador) {
   if (!(d instanceof Date) || isNaN(d.getTime())) return String(valor);
 
   var meses = ['jan.','fev.','mar.','abr.','mai.','jun.','jul.','ago.','set.','out.','nov.','dez.'];
-  var tz = Session.getScriptTimeZone();
-  var dia = Utilities.formatDate(d, tz, 'dd');
-  var mes = meses[Number(Utilities.formatDate(d, tz, 'M')) - 1] || '';
-  var ano = Utilities.formatDate(d, tz, 'yyyy');
+  var dia = codexFormatDateMemo_(d, 'dd');
+  var mes = meses[Number(codexFormatDateMemo_(d, 'M')) - 1] || '';
+  var ano = codexFormatDateMemo_(d, 'yyyy');
   return dia + sep + mes + sep + ano;
+}
+
+// Memo somente da execucao atual. A conversao de cada linha da Agenda formata
+// data, nascimento e hora com varias chamadas de servico, e os mesmos instantes
+// se repetem em muitas linhas (141 eventos custavam cerca de 1,9 s em 14/11/2026).
+var CODEX_DATE_FORMAT_MEMO_ = {};
+
+function codexFormatDateMemo_(date, pattern) {
+  var key = pattern + '|' + date.getTime();
+  if (!Object.prototype.hasOwnProperty.call(CODEX_DATE_FORMAT_MEMO_, key)) {
+    CODEX_DATE_FORMAT_MEMO_[key] = Utilities.formatDate(date, Session.getScriptTimeZone(), pattern);
+  }
+  return CODEX_DATE_FORMAT_MEMO_[key];
 }
 
 function formatarDataHoraMesCurtoPt_(valor) {
@@ -20992,7 +21011,7 @@ function formatarDataHoraMesCurtoPt_(valor) {
 function formatarHoraSafe_(valor) {
   if (!valor) return '';
   if (valor instanceof Date && !isNaN(valor.getTime())) {
-    return Utilities.formatDate(valor, Session.getScriptTimeZone(), 'HH:mm');
+    return codexFormatDateMemo_(valor, 'HH:mm');
   }
   return String(valor);
 }
