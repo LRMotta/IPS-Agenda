@@ -28,7 +28,8 @@ test('Transporte (piloto): admin no servidor e no cliente, includes na ordem e p
   assert.ok(posicao('IndexTransporteCentralEnvio') > posicao('IndexTransporteCentralScripts'));
   const publicas = funcoesPublicas();
   for (const rpc of ['getTransporteEnvio', 'salvarTransporteEnvio', 'registrarRespostaPinexEnvio', 'getTransporteAwbUltima',
-    'gerarDocumentosTransporteEnvio', 'sairEnvioTransporte', 'concluirEnvioTransporte', 'editarMateriaisTransporteEnvio']) {
+    'gerarDocumentosTransporteEnvio', 'sairEnvioTransporte', 'concluirEnvioTransporte', 'editarMateriaisTransporteEnvio',
+    'renovarPreparoTransporteEnvio']) {
     assert.ok(publicas.has(rpc), rpc);
     assert.ok(readProjectFile('IndexTransporteCentralEnvio.html').includes('.' + rpc + '('), rpc);
   }

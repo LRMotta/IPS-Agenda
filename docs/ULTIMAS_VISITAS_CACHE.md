@@ -2,7 +2,7 @@
 
 `clearCodexRuntimeCaches_(parts, eventScope)` mantém a limpeza completa quando o segundo argumento é omitido. Os cadastros auditados usam `references` (referências apenas) ou `participants` (referências, hidratação e geração de eventos, preservando o índice de datas). Escritas na Agenda continuam invalidando o índice e a geração.
 
-O mapa usado pela listagem de Participantes mantém ID de cadastro e fallback por nome, com visitas concluídas até o dia atual em `America/Sao_Paulo`. A chave contém versão, geração da Agenda, quantidade de linhas e dia. O armazenamento reutiliza segmentação, checksum e proteção de geração do cache de janelas, com TTL de 45 segundos. Falhas usam leitura fresca ou o fallback histórico sem armazenar resultado parcial. `forceRefresh === true` e `CODEX_CACHE_BYPASS_READS_` ignoram a leitura do cache.
+O mapa usado pela listagem de Participantes mantém ID de cadastro e fallback por nome, com visitas concluídas até o dia atual em `America/Sao_Paulo`. A chave contém versão, geração da Agenda, quantidade de linhas e dia. O armazenamento reutiliza segmentação, checksum e proteção de geração do cache de janelas, com o mesmo TTL (`AGENDA_WINDOW_CACHE_TTL_SECONDS_`, 300 segundos desde 15/11/2026). Falhas usam leitura fresca ou o fallback histórico sem armazenar resultado parcial. `forceRefresh === true` e `CODEX_CACHE_BYPASS_READS_` ignoram a leitura do cache.
 
 Nos logs `[CODEX_PERF]`, filtre `operation: Participantes` e `stage: ultima_visita`:
 

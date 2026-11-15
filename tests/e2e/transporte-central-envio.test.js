@@ -90,12 +90,18 @@ test('passo a passo MARKEN: conferir, gerar, enviar e concluir', async () => {
       await iniciar(page);
       assert.equal(await page.locator('#tcWizard').isVisible(), true);
       assert.equal(await page.locator('#tcTabs').isVisible(), false);
+      assert.equal(await page.locator('#tcRefresh').isVisible(), false, 'o botão da lista não cobre o indicador de passo');
       assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 1 de 3 · Conferir/);
       assert.match(await page.locator('.tc-wiz-main').innerText(), /Transporte[\s\S]*MARKEN[\s\S]*Destino[\s\S]*LAB X[\s\S]*Materiais[\s\S]*Soro/);
       assert.doesNotMatch(await page.locator('.tc-wiz-main').innerText(), /Urina/, 'só os materiais marcados');
-      assert.match(await page.locator('.tc-wiz-side').innerText(), /Pessoa A[\s\S]*Estudo X[\s\S]*V1/);
+      // No Conferir o painel lateral não aparece (repetiria o conteúdo): a linha de resumo diz de quem é o envio.
+      assert.match(await page.locator('.tc-wiz-resumo').innerText(), /Pessoa A[\s\S]*Estudo X[\s\S]*V1/);
+      assert.equal(await page.locator('.tc-wiz-side').count(), 0);
+      assert.deepEqual(await page.locator('.tc-trilha-item').evaluateAll((itens) => itens.map((li) => li.className.replace('tc-trilha-item tc-trilha-', '') + ':' + li.querySelector('.tc-trilha-nome').textContent)),
+        ['atual:Conferir', 'depois:Gerar', 'depois:Enviar']);
+      assert.equal(await page.getByRole('button', { name: 'Corrigir' }).count(), 1, 'um só Corrigir na Agenda');
       assert.equal(await page.getByRole('button', { name: 'Editar' }).isEnabled(), true);
-      assert.match(await page.locator('.tc-wiz-side').innerText(), /16\/11\/2026/);
+      assert.match(await page.locator('.tc-wiz-main').innerText(), /Data do envio[\s\S]*16\/11\/2026/);
       const pasta = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(pasta, { recursive: true });
       await page.screenshot({ path: path.join(pasta, 'transporte-envio-conferir-' + width + '.png'), fullPage: true });
@@ -124,6 +130,16 @@ test('passo a passo MARKEN: conferir, gerar, enviar e concluir', async () => {
       // Documentos impressos vão com as amostras; o e-mail é só o pedido de coleta (MARKEN: com a CE do estudo).
       assert.match(await page.locator('.tc-wiz-main').innerText(), /Imprima os documentos[\s\S]*agente da courier[\s\S]*Abra o rascunho do pedido de coleta no Gmail[\s\S]*CE do estudo[\s\S]*Clique em Enviar/);
       assert.doesNotMatch(await page.locator('.tc-wiz-main').innerText(), /PDFs anexados/);
+      // Lista de marcar: o botão só libera com todos os itens marcados; a trilha mostra os passos feitos.
+      assert.deepEqual(await page.locator('.tc-trilha-item').evaluateAll((itens) => itens.map((li) => li.className.replace('tc-trilha-item tc-trilha-', ''))), ['feito', 'feito', 'atual']);
+      const caixas = page.locator('[data-tc-check]');
+      const total = await caixas.count();
+      assert.equal(total, 4);
+      for (let i = 0; i < total; i++) {
+        assert.equal(await page.getByRole('button', { name: /Pronto, enviei/ }).isDisabled(), true);
+        await caixas.nth(i).check();
+      }
+      assert.equal(await page.locator('#tcCheckDica').isVisible(), false);
       await page.getByRole('button', { name: /Pronto, enviei/ }).click();
       assert.deepEqual(await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'concluirEnvioTransporte').args), ['a1', '1', 5]);
       await responder(page, 'concluirEnvioTransporte', { ok: true, versao: 6 });
@@ -149,13 +165,24 @@ test('passo AWB com dica da última AWB; números da PINEX com aviso de data', a
     await iniciar(page, envio({ passo: 'awb', passos: ['conferir', 'awb', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { awb: '' }) }));
     assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 2 de 4 · AWB/);
     const ultima = await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'getTransporteAwbUltima').args);
-    assert.deepEqual(ultima, ['Estudo X', 'MARKEN']);
+    assert.deepEqual(ultima, ['Estudo X', 'MARKEN', 'CONGELADO']);
     await responder(page, 'getTransporteAwbUltima', { ok: true, ultima: { awb: '999888777666' } });
     assert.match(await page.locator('.tc-dica').innerText(), /999888777666/);
     await page.getByRole('button', { name: /Salvar AWB/ }).click();
     assert.match(await page.evaluate(() => window.__msgs.join('|')), /Informe a AWB/);
-    await page.fill('#tcCampo_awb', '123456789012');
+    // AWB já usada: avisa antes de gravar; corrigir consulta de novo e só então grava.
+    await page.fill('#tcCampo_awb', '111111111111');
     await page.getByRole('button', { name: /Salvar AWB/ }).click();
+    const consulta = await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'getTransporteAwbAviso').args[0]);
+    assert.deepEqual([consulta.awb, consulta.courier], ['111111111111', 'MARKEN']);
+    await responder(page, 'getTransporteAwbAviso', { awb: '111111111111', text: 'A AWB já foi utilizada em outro envio: Transporte I · Pessoa B.' });
+    assert.match(await page.locator('.tc-wiz-main').innerText(), /já foi utilizada em outro envio[\s\S]*Confira o número/);
+    assert.equal(await page.locator('#tcCampo_awb').inputValue(), '111111111111');
+    assert.equal(await page.evaluate(() => window.__rpc.some((p) => p.rpc === 'salvarTransporteEnvio')), false);
+    await page.fill('#tcCampo_awb', '123456789012');
+    await page.getByRole('button', { name: /Usar esta AWB/ }).click();
+    await responder(page, 'getTransporteAwbAviso', null);
+    assert.match(await page.locator('.tc-wiz-side').innerText(), /AWB/);
     assert.deepEqual(await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'salvarTransporteEnvio').args), ['a1', '1', 3, { awb: '123456789012' }, 'gerar']);
     await responder(page, 'salvarTransporteEnvio', { ok: true, versao: 4, passos: ['conferir', 'gerar', 'enviar'] });
     assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 2 de 3 · Gerar/);
@@ -204,7 +231,7 @@ test('outra pessoa no envio, falha e nova tentativa com o mesmo token, saída e 
     assert.equal(pedidos, 2);
     await page.evaluate(() => { window.__rpc[1].ok({ ok: true, versao: 9, passo: 'conferir', passos: ['conferir', 'gerar', 'enviar'], registro: { paciente: 'ATUAL', courier: 'MARKEN', materiais: [] } }); });
     await page.evaluate(() => { window.__rpc[0].ok({ ok: true, versao: 1, passo: 'conferir', passos: ['conferir', 'gerar', 'enviar'], registro: { paciente: 'ANTIGA', courier: 'MARKEN', materiais: [] } }); });
-    assert.match(await page.locator('.tc-wiz-side').innerText(), /ATUAL/);
+    assert.match(await page.locator('.tc-wiz-resumo').innerText(), /ATUAL/);
     // Sair e continuar depois guarda o passo e volta às tarefas.
     await page.evaluate(() => window.__rpc.splice(0));
     await page.getByRole('button', { name: 'Sair e continuar depois' }).click();
@@ -308,5 +335,145 @@ test('visita com 3 transportes: "Ir ao próximo" nunca volta a um transporte já
     assert.deepEqual(resultado.comecandoPeloII, ['3', '1', null]);
     assert.deepEqual(erros, []);
     await page.close();
+  } finally { await browser.close(); }
+});
+
+test('Agenda alterada avisa; sair durante a geração não grava; preparo expirado é retomado', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const { page, erros } = await abrir(browser, 1280);
+    // Sair com a geração em andamento: o servidor termina sozinho; a tela não grava o passo por cima.
+    await iniciar(page, envio({ passo: 'gerar' }));
+    await page.getByRole('button', { name: /Gerar documentos/ }).click();
+    assert.match(await page.locator('.tc-wiz-main').innerText(), /Gerando os documentos/);
+    await page.getByRole('button', { name: 'Sair e continuar depois' }).click();
+    assert.equal(await page.evaluate(() => window.__rpc.some((p) => p.rpc === 'sairEnvioTransporte')), false);
+    assert.equal(await page.locator('#tcTabs').isVisible(), true);
+    await responder(page, 'getTransporteTarefas', TAREFAS);
+    // Reabrir com a Agenda alterada: aviso (o token de geração é descartado no servidor).
+    await page.evaluate(() => window.__rpc.splice(0));
+    await page.locator('[data-tc-comecar]').click();
+    await responder(page, 'getTransporteEnvio', envio({ dadosAtualizados: true }));
+    assert.match(await page.evaluate(() => window.__msgs.join('|')), /mudaram na Agenda/);
+    assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 1 de 3 · Conferir/);
+    // Gravação com o preparo expirado: a tela retoma o preparo; se outra pessoa assumiu, fecha.
+    await page.fill('#tcCampo_agendadoPor', 'Ana');
+    await page.locator('#tcCampo_agendadoPor').press('Tab');
+    await responder(page, 'salvarTransporteEnvio', { ok: true, versao: 4, passos: ['conferir', 'gerar', 'enviar'], perdeuPreparo: true });
+    assert.deepEqual(await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'renovarPreparoTransporteEnvio').args), ['a1', '1']);
+    await responder(page, 'renovarPreparoTransporteEnvio', { ok: true, versao: 4 });
+    assert.equal(await page.locator('#tcWizard').isVisible(), true);
+    await page.evaluate(() => window.transpCentralRenovarPreparo(true));
+    await responder(page, 'renovarPreparoTransporteEnvio', { ok: false, motivo: 'EM_PREPARO', comPessoa: 'Bia', mensagem: 'Com Bia agora. Este transporte está sendo preparado por outra pessoa.' });
+    assert.equal(await page.locator('#tcWizard').isVisible(), false);
+    assert.equal(await page.locator('#tcTabs').isVisible(), true);
+    assert.match(await page.evaluate(() => window.__msgs.join('|')), /Com Bia agora/);
+    // Sem envio aberto, o sinal periódico não chama o servidor.
+    await page.evaluate(() => { window.__rpc.splice(0); window.transpCentralRenovarPreparo(false); });
+    assert.equal(await page.evaluate(() => window.__rpc.some((p) => p.rpc === 'renovarPreparoTransporteEnvio')), false);
+    assert.deepEqual(erros, []);
+  } finally { await browser.close(); }
+});
+
+test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser confirmada; material fora da lista', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const { page, erros } = await abrir(browser, 1280);
+    // OCASA internacional com a GRU pronta: anexar é um passo da lista.
+    await iniciar(page, envio({ passo: 'enviar', passos: ['enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', gruPronta: true }) }));
+    const ocasa = await page.locator('.tc-wiz-main').innerText();
+    assert.match(ocasa, /Anexar a GRU e o extrato e enviar à courier[\s\S]*Abra o rascunho[\s\S]*Anexe a GRU e o extrato[\s\S]*pasta deste envio/);
+    await page.close();
+    // PINEX com os números: não há rascunho; responde na conversa do agendamento.
+    const p2 = await abrir(browser, 1280);
+    await iniciar(p2.page, envio({ passo: 'enviar', passos: ['enviar'], registro: Object.assign(envio().registro, { courier: 'PINEX', gruPronta: true }) }));
+    const pinex = await p2.page.locator('.tc-wiz-main').innerText();
+    assert.match(pinex, /conversa do agendamento com a PINEX[\s\S]*Anexe a GRU e o extrato/);
+    assert.doesNotMatch(pinex, /Abra o rascunho/);
+    await p2.page.close();
+    // Sem GRU (envio nacional), o texto segue o de sempre.
+    const p3 = await abrir(browser, 1280);
+    await iniciar(p3.page, envio({ passo: 'enviar' }));
+    const marken = await p3.page.locator('.tc-wiz-main').innerText();
+    assert.match(marken, /Pedir a coleta à courier[\s\S]*Abra o rascunho/);
+    assert.doesNotMatch(marken, /GRU/);
+    await p3.page.close();
+    // Mesma AWB avisada, segundo clique: grava sem nova consulta.
+    const p4 = await abrir(browser, 1280);
+    await iniciar(p4.page, envio({ passo: 'awb', passos: ['conferir', 'awb', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', awb: '' }) }));
+    await p4.page.fill('#tcCampo_awb', 'PK2AAA000001');
+    await p4.page.getByRole('button', { name: /Salvar AWB/ }).click();
+    await responder(p4.page, 'getTransporteAwbAviso', { awb: 'PK2AAA000001', text: 'A AWB já foi utilizada em outro envio.' });
+    await p4.page.getByRole('button', { name: /Usar esta AWB/ }).click();
+    assert.equal(await p4.page.evaluate(() => window.__rpc.some((p) => p.rpc === 'getTransporteAwbAviso')), false);
+    assert.deepEqual(await p4.page.evaluate(() => window.__rpc.find((p) => p.rpc === 'salvarTransporteEnvio').args.slice(3)), [{ awb: 'PK2AAA000001' }, 'gerar']);
+    await p4.page.close();
+    // Falha da consulta não impede gravar: a geração confere a AWB de qualquer forma.
+    const p5 = await abrir(browser, 1280);
+    await iniciar(p5.page, envio({ passo: 'awb', passos: ['conferir', 'awb', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', awb: '' }) }));
+    await p5.page.fill('#tcCampo_awb', 'PK2AAA000002');
+    await p5.page.getByRole('button', { name: /Salvar AWB/ }).click();
+    await p5.page.evaluate(() => { const i = window.__rpc.findIndex((p) => p.rpc === 'getTransporteAwbAviso'); window.__rpc.splice(i, 1)[0].falha(new Error('indisponível')); });
+    assert.deepEqual(await p5.page.evaluate(() => window.__rpc.find((p) => p.rpc === 'salvarTransporteEnvio').args.slice(3)), [{ awb: 'PK2AAA000002' }, 'gerar']);
+    await p5.page.close();
+    // Material fora da lista do editor aparece como está, não como o primeiro item.
+    const p6 = await abrir(browser, 1280);
+    await iniciar(p6.page, envio({ registro: Object.assign(envio().registro, { materiais: [{ ativo: true, material: 'Líquor', tubos: 1, total: 1, unit: 'mL' }] }) }));
+    await p6.page.getByRole('button', { name: 'Editar' }).click();
+    assert.equal(await p6.page.locator('#tcMatTipo0').inputValue(), 'Líquor');
+    assert.deepEqual(erros.concat(p2.erros, p3.erros, p4.erros, p5.erros, p6.erros), []);
+  } finally { await browser.close(); }
+});
+
+test('rascunho pelo assunto, dica da AWB só no pacote do estudo e confirmação ao sair com algo digitado', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    // Passo Enviar em outra sessão: assunto e destinatários vêm do registro; o link procura o rascunho no Gmail.
+    const { page, erros } = await abrir(browser, 1280);
+    const assunto = 'Estudo X - 111122223333 - 16NOV2026 - LAB X - AGENDAMENTO DE COLETA';
+    await iniciar(page, envio({ passo: 'enviar', registro: Object.assign(envio().registro, { rascunhoAssunto: assunto, rascunhoDestinatarios: 'courier@example.invalid' }) }));
+    assert.match(await page.locator('.tc-rascunho').innerText(), /Assunto[\s\S]*AGENDAMENTO DE COLETA[\s\S]*Para[\s\S]*courier@example\.invalid/);
+    const href = await page.getByRole('link', { name: 'Abrir este rascunho' }).getAttribute('href');
+    assert.equal(href, 'https://mail.google.com/mail/#search/' + encodeURIComponent('in:drafts subject:"' + assunto + '"'));
+    assert.equal(readProjectFile('IndexTransporteCentralEnvio.html').includes('localStorage'), false, 'o token de geração não fica mais no navegador');
+    await page.close();
+    // Sem assunto conhecido (envio antigo): a lista de rascunhos, sem conta fixa.
+    const p2 = await abrir(browser, 1280);
+    await iniciar(p2.page, envio({ passo: 'enviar' }));
+    assert.equal(await p2.page.getByRole('link', { name: 'Abrir rascunhos' }).getAttribute('href'), 'https://mail.google.com/mail/#drafts');
+    await p2.page.close();
+    // DHL congelado: sem dica de pacote nem consulta; DHL Ambiente: consulta com a temperatura.
+    const awb = (temperatura) => envio({ passo: 'awb', passos: ['conferir', 'awb', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { courier: 'DHL', temperatura, awb: '' }) });
+    const p3 = await abrir(browser, 1280);
+    await iniciar(p3.page, awb('CONGELADO'));
+    assert.match(await p3.page.locator('.tc-wiz-main').innerText(), /Informe a AWB deste transporte/);
+    assert.equal(await p3.page.evaluate(() => window.__rpc.some((p) => p.rpc === 'getTransporteAwbUltima')), false);
+    await p3.page.close();
+    const p4 = await abrir(browser, 1280);
+    await iniciar(p4.page, awb('AMBIENTE'));
+    assert.match(await p4.page.locator('.tc-wiz-main').innerText(), /pacote recebido no início do estudo/);
+    assert.deepEqual(await p4.page.evaluate(() => window.__rpc.find((p) => p.rpc === 'getTransporteAwbUltima').args), ['Estudo X', 'DHL', 'AMBIENTE']);
+    // AWB digitada e não gravada: sair pede confirmação; confirmar sai.
+    await p4.page.evaluate(() => { window.__confirmacoes = []; window.appOpenUnsavedConfirm = (sim) => { window.__confirmacoes.push(sim); }; });
+    await p4.page.fill('#tcCampo_awb', '1234567890');
+    await p4.page.getByRole('button', { name: 'Sair e continuar depois' }).click();
+    assert.equal(await p4.page.evaluate(() => window.__confirmacoes.length), 1);
+    assert.equal(await p4.page.evaluate(() => window.__rpc.some((p) => p.rpc === 'sairEnvioTransporte')), false);
+    assert.equal(await p4.page.locator('#tcWizard').isVisible(), true);
+    await p4.page.evaluate(() => window.__confirmacoes[0]());
+    assert.equal(await p4.page.evaluate(() => window.__rpc.some((p) => p.rpc === 'sairEnvioTransporte')), true);
+    await p4.page.close();
+    // Editor de materiais aberto: confirma; sem nada digitado: sai direto.
+    const p5 = await abrir(browser, 1280);
+    await iniciar(p5.page);
+    await p5.page.evaluate(() => { window.__confirmacoes = []; window.appOpenUnsavedConfirm = (sim) => { window.__confirmacoes.push(sim); }; });
+    await p5.page.getByRole('button', { name: 'Editar' }).click();
+    await p5.page.getByRole('button', { name: 'Sair e continuar depois' }).click();
+    assert.equal(await p5.page.evaluate(() => window.__confirmacoes.length), 1);
+    await p5.page.getByRole('button', { name: 'Cancelar' }).click();
+    await p5.page.getByRole('button', { name: 'Sair e continuar depois' }).click();
+    assert.equal(await p5.page.evaluate(() => window.__confirmacoes.length), 1);
+    assert.equal(await p5.page.evaluate(() => window.__rpc.some((p) => p.rpc === 'sairEnvioTransporte')), true);
+    assert.deepEqual(erros.concat(p2.erros, p3.erros, p4.erros, p5.erros), []);
   } finally { await browser.close(); }
 });

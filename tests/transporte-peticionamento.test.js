@@ -307,3 +307,27 @@ test('Transporte (piloto): com a GRU pronta a tarefa pede anexar e enviar; sem e
     ['Anexar a GRU e o extrato e enviar à courier']);
   void Hoje;
 });
+
+test('status da Agenda falha depois do e-mail: a tela recebe a versão, repetir acerta o status sem reenviar', () => {
+  const s = servidor();
+  const v = preparar(s);
+  const original = s.transportePeticionamentoDefinirStatusAgenda_;
+  s.transportePeticionamentoDefinirStatusAgenda_ = () => { throw new Error('Outra operação está gravando no sistema.'); };
+  const falhou = plano(s.concluirAnvisaTransporteEnvio('ab12cd34', '1', v));
+  assert.equal(falhou.ok, false);
+  assert.match(falhou.erro, /e-mail de peticionamento foi enviado[\s\S]*não será reenviado/);
+  assert.equal(s.enviados.length, 1);
+  assert.equal(s.statusCelula(), 'Docs gerados');
+  const lido = s.transporteRegistroLer_('ab12cd34', '1');
+  assert.deepEqual([lido.passo, lido.versao, lido.emPreparoPor], ['peticionando', falhou.versao, ADMIN], 'o preparo continua com quem está na tela');
+  // Antes da GRU não há passo de envio: reabrir cai no ANVISA, e "Pronto, enviei" é recusado no servidor.
+  assert.deepEqual(plano(s.transporteEnvioPassos_(lido.registro)), ['anvisa']);
+  assert.throws(() => s.concluirEnvioTransporte('ab12cd34', '1', lido.versao), /ainda não está no passo de envio/);
+  s.transportePeticionamentoDefinirStatusAgenda_ = original;
+  const repetido = plano(s.concluirAnvisaTransporteEnvio('ab12cd34', '1', falhou.versao));
+  assert.equal(repetido.ok, true);
+  assert.equal(s.enviados.length, 1);
+  assert.equal(s.statusCelula(), 'Aguardando peticionamento');
+  s.usuario = ALINE;
+  assert.equal(plano(s.marcarGruExtratoProntosTransporte('ab12cd34', '1')).ok, true);
+});

@@ -43,7 +43,10 @@ function transportePinexParseResposta_(texto) {
  * Ultima AWB usada no estudo com a courier (MARKEN e DHL Ambiente: pacote recebido no inicio do
  * estudo). Leitura sem lock de AWB_Utilizadas; nao altera a aba.
  */
-function transporteAwbUltimaDoEstudo_(projeto, courier) {
+function transporteAwbUltimaDoEstudo_(projeto, courier, temperatura) {
+  // DHL: so o Ambiente usa AWB do pacote do estudo; a do congelado vem na resposta da courier e nao serve de dica.
+  var soAmbiente = transporteIsDhl_(transporteNormalizeCourierFromCodex_(courier));
+  if (soAmbiente && transporteNormalizeTemperaturaFromCodex_(temperatura) !== 'AMBIENTE') return null;
   var sh = getCodexSpreadsheet_().getSheetByName('AWB_Utilizadas');
   if (!sh || sh.getLastRow() < 2) return null;
   var valores = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getValues();
@@ -52,15 +55,16 @@ function transporteAwbUltimaDoEstudo_(projeto, courier) {
   for (var i = valores.length - 1; i >= 0; i--) {
     var linha = valores[i];
     if (transporteNorm_(transporteNormalizeCourierFromCodex_(linha[4])) !== chaveCourier) continue;
+    if (soAmbiente && transporteNormalizeTemperaturaFromCodex_(linha[5]) !== 'AMBIENTE') continue;
     if (transporteParticipantKey_(transporteProjetoDisplay_(linha[7])) !== chaveProjeto) continue;
     return { awb: String(linha[0] || ''), data: linha[8] instanceof Date ? linha[8].toISOString() : String(linha[8] || ''), temperatura: String(linha[5] || '') };
   }
   return null;
 }
 
-function getTransporteAwbUltima(projeto, courier) {
+function getTransporteAwbUltima(projeto, courier, temperatura) {
   codexAssertAdmin_();
-  return { ok: true, ultima: transporteAwbUltimaDoEstudo_(projeto, courier) };
+  return { ok: true, ultima: transporteAwbUltimaDoEstudo_(projeto, courier, temperatura) };
 }
 
 /* ---------- Passos ---------- */
@@ -114,6 +118,9 @@ function transporteEnvioPassos_(registro) {
   // da GRU e do extrato (Aguardando peticionamento). Com a GRU pronta, so falta anexar e enviar.
   if (transporteEnvioInternacional_(registro) && !registro.peticionamentoEnviadoEm) return passos.concat(['anvisa']);
   if (registro.gruPronta) return ['enviar'];
+  // Formulario ja enviado a quem peticiona e GRU ainda nao pronta: nao ha envio a courier. O unico passo e o ANVISA,
+  // cuja conclusao e idempotente (nao reenvia o e-mail) e acerta o status da Agenda se ele nao chegou a mudar.
+  if (registro.peticionamentoEnviadoEm) return ['anvisa'];
   return passos.concat(['enviar']);
 }
 
@@ -121,7 +128,30 @@ function transporteEnvioPassos_(registro) {
 
 // Campos que a pessoa preenche no passo a passo e que a reconstrucao pela Agenda nao pode apagar.
 var TRANSPORTE_ENVIO_CAMPOS_LOCAIS_ = ['agendadoPor', 'pinexAgendadoPor', 'responsavelEntrega', 'horaEnvio', 'solicitarCaixa',
-  'pinexColeta', 'pinexProtocolo', 'observacoes', 'fasePinex', 'passoNumero', 'peticionamentoEnviadoEm', 'peticionamentoEnviadoPor', 'gruPronta', 'gruProntaEm', 'gruProntaPor'];
+  'pinexColeta', 'pinexProtocolo', 'observacoes', 'fasePinex', 'passoNumero', 'peticionamentoEnviadoEm', 'peticionamentoEnviadoPor', 'gruPronta', 'gruProntaEm', 'gruProntaPor',
+  'geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios'];
+
+// Dados da geracao em curso (token de recuperacao e rascunho criado). Valem para um conjunto de dados: quando a
+// Agenda muda e o preparo recomeca, sao descartados e a geracao seguinte nasce do zero.
+var TRANSPORTE_ENVIO_CAMPOS_GERACAO_ = ['geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios'];
+
+// Campos que o navegador pode gravar por salvarTransporteEnvio. Os de controle (fase da PINEX, numero do passo,
+// peticionamento, GRU) so mudam pelas rotas do servidor que os decidem.
+var TRANSPORTE_ENVIO_CAMPOS_TELA_ = ['agendadoPor', 'pinexAgendadoPor', 'responsavelEntrega', 'horaEnvio', 'solicitarCaixa',
+  'pinexColeta', 'pinexProtocolo', 'observacoes', 'awb'];
+
+// Dados que vem da Agenda e entram nos documentos e no e-mail. Se mudam, o que ja foi conferido ou gerado nao vale mais.
+var TRANSPORTE_ENVIO_CAMPOS_DOCUMENTO_ = ['dataEnvio', 'dataColeta', 'courier', 'temperatura', 'destino', 'awb', 'protocolo', 'paciente'];
+
+function transporteEnvioDadosDocumentoMudaram_(antigo, novo) {
+  if (!antigo || !novo) return false;
+  function texto(valor) { return String(valor === null || valor === undefined ? '' : valor).trim(); }
+  function materiais(registro) {
+    return JSON.stringify(transporteGenerationCanonical_((registro.materiais || []).filter(function(m) { return m && m.ativo && m.material; })));
+  }
+  return TRANSPORTE_ENVIO_CAMPOS_DOCUMENTO_.some(function(campo) { return texto(antigo[campo]) !== texto(novo[campo]); }) ||
+    materiais(antigo) !== materiais(novo);
+}
 
 function transporteEnvioMesclarLocais_(novo, antigo) {
   if (!antigo) return novo;
@@ -191,18 +221,49 @@ function getTransporteEnvio(agendaId, slot) {
   var claim = transporteEnvioReivindicar_(agendaId, slot, usuario);
   if (!claim.ok) return transporteEnvioRespostaOcupado_({ emPreparoPor: claim.emPreparoPor }, transporteTarefasNomes_());
   var lido = transporteRegistroLer_(agendaId, slot);
-  var emAndamento = lido.registro && ['gerar', 'anvisa', 'enviar', 'concluido', 'peticionando'].indexOf(lido.passo) >= 0;
+  // Com os documentos gerados, o registro e o que foi impresso: so volta a seguir a Agenda se ela mudou.
+  var comDocumentos = !!lido.registro && ['anvisa', 'enviar', 'concluido', 'peticionando'].indexOf(lido.passo) >= 0;
   var registro = lido.registro;
   var versao = lido.versao;
   var passoInicial = lido.passo || 'conferir';
-  if (!emAndamento) {
-    var montado = transporteEnvioMesclarLocais_(transporteEnvioMontarRegistro_(agendaId, slot), lido.registro);
-    // Pedido de coleta a PINEX ja enviado fora do passo a passo (Transporte_Operacoes): comeca pelos numeros.
-    if (transporteEnvioFamiliaPinex_(montado.courier) && (!montado.fasePinex || montado.fasePinex === 'agendamento') &&
-        transporteTarefaPinexPedidos_(transporteOperacoesRows_())[agendaId + '|' + slot]) montado.fasePinex = 'resposta';
-    registro = transporteEnvioAplicarFasePinex_(montado, lido.registro);
+  var dadosAtualizados = false;
+  var avisosAgenda = [];
+  var montado = null;
+  if (comDocumentos) {
+    try {
+      montado = transporteEnvioAplicarFasePinex_(transporteEnvioMesclarLocais_(transporteEnvioMontarRegistro_(agendaId, slot), lido.registro), lido.registro);
+    } catch (erroMontar) {
+      // Sem a Agenda (linha removida, cadastro indisponivel), o envio abre como estava.
+      Logger.log('Envio com documentos aberto sem comparar com a Agenda.');
+      montado = null;
+    }
+    if (montado && transporteEnvioDadosDocumentoMudaram_(lido.registro, montado)) {
+      if (lido.registro.peticionamentoEnviadoEm) {
+        // O formulario ANVISA ja seguiu para quem peticiona: refazer e decisao de pessoas, nao do sistema.
+        avisosAgenda.push('Os dados deste transporte mudaram na Agenda depois do formulário ANVISA. Confira com quem peticiona antes de enviar à courier.');
+      } else {
+        comDocumentos = false;
+      }
+    }
+  }
+  if (!comDocumentos) {
+    if (!montado) {
+      montado = transporteEnvioMesclarLocais_(transporteEnvioMontarRegistro_(agendaId, slot), lido.registro);
+      // Pedido de coleta a PINEX ja enviado fora do passo a passo (Transporte_Operacoes): comeca pelos numeros.
+      if (transporteEnvioFamiliaPinex_(montado.courier) && (!montado.fasePinex || montado.fasePinex === 'agendamento') &&
+          transporteTarefaPinexPedidos_(transporteOperacoesRows_())[agendaId + '|' + slot]) montado.fasePinex = 'resposta';
+      montado = transporteEnvioAplicarFasePinex_(montado, lido.registro);
+    }
+    registro = montado;
     if (!lido.passo && registro.fasePinex === 'resposta') passoInicial = 'pinex_numeros';
-    if (!lido.registro || JSON.stringify(lido.registro) !== JSON.stringify(registro)) {
+    // Ja conferido (ou com documentos) e a Agenda mudou: a pessoa confere de novo e os documentos sao refeitos.
+    if (lido.registro && ['gerar', 'anvisa', 'enviar', 'concluido'].indexOf(lido.passo) >= 0 &&
+        transporteEnvioDadosDocumentoMudaram_(lido.registro, registro)) {
+      passoInicial = 'conferir';
+      dadosAtualizados = true;
+      TRANSPORTE_ENVIO_CAMPOS_GERACAO_.forEach(function(campo) { delete registro[campo]; });
+    }
+    if (!lido.registro || dadosAtualizados || JSON.stringify(lido.registro) !== JSON.stringify(registro)) {
       registro.passoNumero = transporteEnvioNumeroPasso_(registro, passoInicial);
       var gravado = transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: lido.versao, usuario: usuario, passo: passoInicial });
       versao = gravado.versao;
@@ -210,8 +271,21 @@ function getTransporteEnvio(agendaId, slot) {
   }
   return {
     ok: true, registro: registro, versao: versao, passo: passoInicial, passos: transporteEnvioPassos_(registro),
-    internacional: transporteEnvioInternacional_(registro), avisos: transporteEnvioAvisos_(registro)
+    internacional: transporteEnvioInternacional_(registro), avisos: transporteEnvioAvisos_(registro).concat(avisosAgenda),
+    // Os documentos anteriores, se existem, foram feitos com outros dados: o token de geracao foi descartado acima.
+    dadosAtualizados: dadosAtualizados
   };
+}
+
+/**
+ * Sinal de atividade da tela: renova o preparo de quem esta com o envio aberto (ou o retoma, se expirou e
+ * ninguem assumiu). Outra pessoa com o preparo ativo: { ok: false, comPessoa }.
+ */
+function renovarPreparoTransporteEnvio(agendaId, slot) {
+  var usuario = transporteEnvioUsuario_(codexAssertAdmin_());
+  var posse = transporteEnvioReivindicar_(agendaId, slot, usuario);
+  if (!posse.ok) return transporteEnvioRespostaOcupado_({ emPreparoPor: posse.emPreparoPor }, transporteTarefasNomes_());
+  return { ok: true, versao: posse.versao };
 }
 
 var TRANSPORTE_ENVIO_PASSOS_VALIDOS_ = ['conferir', 'awb', 'pinex_numeros', 'gerar', 'anvisa', 'enviar', 'concluido'];
@@ -223,13 +297,19 @@ var TRANSPORTE_ENVIO_PASSOS_VALIDOS_ = ['conferir', 'awb', 'pinex_numeros', 'ger
 function salvarTransporteEnvio(agendaId, slot, versao, campos, passo) {
   var access = codexAssertAdmin_();
   var usuario = transporteEnvioUsuario_(access);
+  var salvo = transporteEnvioSalvar_(agendaId, slot, versao, campos, passo, usuario);
+  return { ok: true, versao: salvo.versao, passo: salvo.passo, passos: salvo.passos, perdeuPreparo: salvo.perdeuPreparo };
+}
+
+// Nucleo de salvarTransporteEnvio, tambem usado pelas rotas do servidor (resposta da PINEX, sair, concluir).
+function transporteEnvioSalvar_(agendaId, slot, versao, campos, passo, usuario) {
   campos = campos && typeof campos === 'object' ? campos : {};
   if (passo === null) passo = undefined; // google.script.run entrega null no lugar de undefined
   if (passo !== undefined && passo !== null && TRANSPORTE_ENVIO_PASSOS_VALIDOS_.indexOf(String(passo)) < 0) throw new Error('Passo inválido.');
   var lido = transporteRegistroLer_(agendaId, slot);
   if (!lido.registro) throw new Error('Abra o envio antes de salvar.');
   var registro = Object.assign({}, lido.registro);
-  TRANSPORTE_ENVIO_CAMPOS_LOCAIS_.concat(['awb']).forEach(function(campo) {
+  TRANSPORTE_ENVIO_CAMPOS_TELA_.forEach(function(campo) {
     if (campos[campo] !== undefined) registro[campo] = String(campos[campo] === null ? '' : campos[campo]).trim();
   });
   if (campos.awb !== undefined) {
@@ -242,7 +322,8 @@ function salvarTransporteEnvio(agendaId, slot, versao, campos, passo) {
   if (passo !== undefined) registro.passoNumero = transporteEnvioNumeroPasso_(registro, passo);
   if (registro.solicitarCaixa) registro.solicitarCaixa = transporteNormalizeSimNao_(registro.solicitarCaixa, transporteDefaultSolicitarCaixa_(registro.courier));
   var gravado = transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: versao, usuario: usuario, passo: passo === undefined ? undefined : String(passo) });
-  return { ok: true, versao: gravado.versao, passo: gravado.passo, passos: transporteEnvioPassos_(registro), perdeuPreparo: gravado.perdeuPreparo };
+  // registro: so para as rotas do servidor, que assim nao releem a aba depois de gravar.
+  return { ok: true, versao: gravado.versao, passo: gravado.passo, passos: transporteEnvioPassos_(registro), perdeuPreparo: gravado.perdeuPreparo, registro: registro };
 }
 
 /**
@@ -251,16 +332,15 @@ function salvarTransporteEnvio(agendaId, slot, versao, campos, passo) {
  * envio PINEX real.
  */
 function registrarRespostaPinexEnvio(agendaId, slot, versao, texto) {
-  codexAssertAdmin_();
-  var lido = transporteRegistroLer_(agendaId, slot);
+  var usuario = transporteEnvioUsuario_(codexAssertAdmin_());
   var leitura = transportePinexParseResposta_(texto);
   if (!leitura.ok) return { ok: false, mensagem: 'Não encontrei: ' + leitura.faltando.join(', ') + '. Cole a linha completa da PINEX.' };
-  var resposta = salvarTransporteEnvio(agendaId, slot, versao, { pinexColeta: leitura.coleta, awb: leitura.frete, pinexProtocolo: leitura.protocolo }, 'conferir');
+  // Uma leitura da aba (a do salvar): o registro gravado volta na resposta, sem reler antes nem depois.
+  var salvo = transporteEnvioSalvar_(agendaId, slot, versao, { pinexColeta: leitura.coleta, awb: leitura.frete, pinexProtocolo: leitura.protocolo }, 'conferir', usuario);
   var avisos = [];
-  var dataEnvio = lido.registro && lido.registro.dataEnvio ? String(lido.registro.dataEnvio).slice(0, 10) : '';
+  var dataEnvio = salvo.registro.dataEnvio ? String(salvo.registro.dataEnvio).slice(0, 10) : '';
   if (dataEnvio && /^\d{4}-\d{2}-\d{2}$/.test(dataEnvio) && dataEnvio !== leitura.dataColeta) {
     avisos.push('A PINEX marcou a coleta para ' + leitura.dataColeta.split('-').reverse().join('/') + ', diferente da data do envio (' + dataEnvio.split('-').reverse().join('/') + ').');
   }
-  var atualizado = transporteRegistroLer_(agendaId, slot);
-  return Object.assign({}, resposta, { leitura: leitura, avisos: avisos, registro: atualizado.registro, passos: transporteEnvioPassos_(atualizado.registro) });
+  return Object.assign({}, salvo, { leitura: leitura, avisos: avisos });
 }

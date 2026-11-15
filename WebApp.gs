@@ -2403,9 +2403,12 @@ var AGENDA_REFERENCE_BACKGROUND_REVALIDATE_TTL_SECONDS_ = 300;
 // Diretorio minimo para completar eventos historicos sem
 // reler todas as colunas da aba Participantes a cada bootstrap de janela.
 var AGENDA_PARTICIPANT_HYDRATION_CACHE_TTL_SECONDS_ = 300;
-// O indice conserva somente timestamps e offsets. TTL curto limita a defasagem
-// caso a planilha seja alterada fora do Web App; toda escrita da Agenda o limpa.
-var AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_ = 60;
+// O indice conserva somente timestamps e offsets. Toda escrita da Agenda pelo
+// Web App o limpa. Decisao de produto (15/11/2026): a planilha nao e editada
+// diretamente, entao o TTL limita apenas a defasagem de uma eventual edicao
+// manual ou de uma escrita que deixe de invalidar. A atualizacao explicita e a
+// revalidacao do cliente (forceRefresh) continuam ignorando este cache.
+var AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_ = 300;
 
 function agendaReferenceCacheKey_() {
   return 'AgendaBootstrapReferenceData:v3:' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
@@ -10816,6 +10819,8 @@ function vincularReservaKitAgenda(payload) {
       agendaId = 'AG-' + gerarIdLoteEstoque_();
       shAgenda.getRange(linhaAgenda, AGENDA_CFG.col.id).setValue(agendaId);
       agendaRow[AGENDA_CFG.idx.id] = agendaId;
+      // O ID faz parte do evento em cache; as datas nao mudam.
+      agendaInvalidateWindowCache_();
     }
     var agendaParticipanteId = String(agendaRow[AGENDA_CFG.idx.idParticipante] || '').trim();
     var agendaParticipante = String(agendaRow[AGENDA_CFG.idx.participante] || '').trim();
@@ -15502,6 +15507,9 @@ function agendaAuditFields_() {
     { field: 'Backup - Status', idx: i.cb.status },
     { field: 'Backup - Material', idx: i.cb.material },
     { field: 'Backup - Destino', idx: i.cb.destino },
+    // A edicao que tira o Backup de um status vinculado apaga o vinculo (agendaSetBackupLinha_);
+    // sem este campo a remocao nao ficava no historico (envio 22a2c270, 04/11/2026).
+    { field: 'Backup - Agendamento', idx: i.backupAgendaRef },
     { field: 'Backup II - Dados', idx: i.backup2Dados },
     { field: 'Status Requisição', idx: i.reqStatus },
     { field: 'Monitor', idx: i.monitorName },
@@ -19463,7 +19471,8 @@ function getAgendaBootstrap(inicioIso, fimIso, forceRefresh, refreshReason) {
 
 var AGENDA_WINDOW_CACHE_SCHEMA_VERSION_ = 5;
 var AGENDA_WINDOW_CACHE_MAX_ENTRY_BYTES_ = 90000;
-var AGENDA_WINDOW_CACHE_TTL_SECONDS_ = 45;
+// Mesmo prazo e mesma decisao de AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_.
+var AGENDA_WINDOW_CACHE_TTL_SECONDS_ = 300;
 var AGENDA_WINDOW_CACHE_GENERATION_KEY_ = 'AgendaWindowCacheGeneration:v2';
 
 function agendaWindowCacheGeneration_(createIfMissing) {
@@ -20621,6 +20630,7 @@ function verificarNotificacoes_(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva
     control: controle,
     dateChanged: mudouData
   });
+  var controleGravado = false;
   if (notificationAction === 'agendamento') {
     if (agendaEmailEnabled_()) {
       enviarEmailAgendamento_(sheet, linha, e.user);
@@ -20628,15 +20638,21 @@ function verificarNotificacoes_(e, idAtivo, dataAnterior, sheetAtiva, linhaAtiva
     } else {
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Pendente notificacao - modo teste');
     }
+    controleGravado = true;
   } else if (notificationAction === 'reagendamento') {
     if (agendaEmailEnabled_()) enviarEmailReagendamento_(sheet, linha, e.user, dataAnterior);
     sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Reagendado ' + formatarDataSafe(dataAtual));
+    controleGravado = true;
   } else if (notificationAction === 'cancelamento') {
     if (agendaEmailEnabled_()) {
       enviarEmailCancelamento_(sheet, linha, e.user);
       sheet.getRange(linha, AGENDA_CFG.col.controle).setValue('Cancelado');
+      controleGravado = true;
     }
   }
+  // O controle integra o evento em cache e e gravado depois da escrita principal;
+  // sem isto, uma janela lida nesse intervalo guardaria o valor anterior.
+  if (controleGravado) agendaInvalidateWindowCache_();
 }
 
 function datasAgendaDiferentes_(a, b) {

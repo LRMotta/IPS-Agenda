@@ -10,7 +10,7 @@ var TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_ = 7;
 var TRANSPORTE_TAREFAS_SLOTS_ = [['1', 'Transporte I', 'c1'], ['2', 'Transporte II', 'c2'], ['3', 'Transporte III', 'c3'], ['4', 'Transporte IV', 'c4']];
 
 /**
- * Resumo do preparo de cada envio, lido sem o JSON dos dados (colunas A e E:J), em 2 leituras.
+ * Resumo do preparo de cada envio, em 1 leitura da aba (o JSON e lido, mas nao interpretado nem devolvido).
  * Devolve { chave: { passo, versao, emPreparoPor, emPreparoDesde } }. Sem aba: {}. Nao altera schema.
  */
 function transporteRegistrosResumo_() {
@@ -18,25 +18,26 @@ function transporteRegistrosResumo_() {
   if (!sh) return {};
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return {};
-  transporteRegistrosValidarCabecalhos_(sh);
-  var chaves = sh.getRange(2, 1, lastRow - 1, 1).getValues();
-  var meta = sh.getRange(2, 5, lastRow - 1, 6).getValues();
-  // A fase da PINEX vem do texto do JSON por expressao regular: sem parse e sem guardar o JSON.
-  var dados = sh.getRange(2, 4, lastRow - 1, 1).getValues();
+  // Uma leitura so (cabecalho + linhas): cada chamada ao Sheets tem custo fixo maior que o das celulas a mais.
+  var valores = sh.getRange(1, 1, lastRow, TRANSPORTE_REGISTROS_HEADERS_.length).getValues();
+  transporteRegistrosCabecalhosDe_(valores[0]);
   var out = {};
-  chaves.forEach(function(linha, i) {
+  for (var n = 1; n < valores.length; n++) {
+    var linha = valores[n];
     var chave = String(linha[0] || '');
-    if (!chave) return;
+    if (!chave) continue;
+    // Fase da PINEX, GRU e numero do passo vem do texto do JSON por expressao regular: sem parse e sem guardar o JSON.
+    var dados = String(linha[3] || '');
     out[chave] = {
-      passo: String(meta[i][0] || ''),
-      versao: Number(meta[i][1]) || 0,
-      emPreparoPor: String(meta[i][4] || '').trim().toLowerCase(),
-      emPreparoDesde: meta[i][5] instanceof Date ? meta[i][5].toISOString() : String(meta[i][5] || ''),
-      fasePinex: (/"fasePinex":"(\w+)"/.exec(String(dados[i][0] || '')) || [])[1] || '',
-      gruPronta: /"gruPronta":true/.test(String(dados[i][0] || '')),
-      passoNumero: Number((/"passoNumero":(\d+)/.exec(String(dados[i][0] || '')) || [])[1]) || 0
+      passo: String(linha[4] || ''),
+      versao: Number(linha[5]) || 0,
+      emPreparoPor: String(linha[8] || '').trim().toLowerCase(),
+      emPreparoDesde: linha[9] instanceof Date ? linha[9].toISOString() : String(linha[9] || ''),
+      fasePinex: (/"fasePinex":"(\w+)"/.exec(dados) || [])[1] || '',
+      gruPronta: /"gruPronta":true/.test(dados),
+      passoNumero: Number((/"passoNumero":(\d+)/.exec(dados) || [])[1]) || 0
     };
-  });
+  }
   return out;
 }
 
@@ -222,13 +223,21 @@ function transporteTarefasConstruir_(ctx) {
       var fasePinex = transporteEnvioFamiliaPinex_(nome) ? transporteTarefaFasePinex_(ctx.preparos[chaveEnvio], pedidoPinex, awb) : '';
       // Aguardando a resposta da PINEX: tarefa "Informar os números da PINEX" (o item tambem fica em Acompanhar).
       var pinexResposta = fasePinex === 'resposta' && ['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(status) >= 0;
+      var preparoEnvio = ctx.preparos[chaveEnvio] || null;
       if (pinexResposta) situacao = 'pinex_numeros';
+      // Envio internacional parado no formulario ANVISA (por concluir, ou ja enviado sem o status da Agenda ter
+      // mudado, por falha na troca): falta concluir o passo ANVISA, nao enviar a courier.
+      else if (preparoEnvio && ['anvisa', 'peticionando'].indexOf(preparoEnvio.passo) >= 0 && status === 'docsgerados') situacao = 'preparar';
       // Status Agendado: o pedido de coleta ja saiu (o monitor so promove a Agendado ao achar o e-mail enviado). Um PDF
       // gerado depois disso, como o da DHL congelado com a WB recebida na resposta da courier, e para imprimir: sem tarefa.
       else if (docs[chaveEnvio] && ['naoagendado', 'pendente', 'docsgerados'].indexOf(status) >= 0) situacao = 'enviar_doc';
       // PINEX com o pedido de coleta ja enviado e a AWB recebida, sem documento pendente: "Docs gerados" e do
       // Formulario ja usado. Falta gerar os documentos da PINEX.
-      else if (pedidoPinex && fasePinex === 'documentos' && ['naoagendado', 'pendente', 'docsgerados'].indexOf(status) >= 0) situacao = 'preparar';
+      // A PINEX nao registra operacao no monitor: com os documentos dela ja gerados no passo a passo (GRU pronta, ou
+      // passo de envio), o que falta e enviar, nao preparar.
+      else if (pedidoPinex && fasePinex === 'documentos' && ['naoagendado', 'pendente', 'docsgerados'].indexOf(status) >= 0) {
+        situacao = preparoEnvio && (preparoEnvio.gruPronta || ['enviar', 'concluido'].indexOf(preparoEnvio.passo) >= 0) ? 'enviar_doc' : 'preparar';
+      }
       else if (status === 'docsgerados') situacao = 'enviar_doc';
       else if (AgendaServerRules_.courierNeedsSchedule(statusTexto, awb)) {
         situacao = transporteEnvioFamiliaPinex_(nome) && fasePinex !== 'documentos' ? 'pinex_pedir' : 'preparar';

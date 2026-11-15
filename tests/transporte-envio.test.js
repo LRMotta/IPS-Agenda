@@ -60,7 +60,8 @@ test('passos: Conferir, AWB ou números da PINEX só se faltar, Gerar e Enviar',
   assert.deepEqual(passos({ courier: 'PINEX', awb: '94624', pinexColeta: '78429' }), ['conferir', 'gerar', 'anvisa']);
   // Envio internacional já peticionado: só falta anexar a GRU e o extrato e enviar.
   assert.deepEqual(passos({ courier: 'PINEX', awb: '94624', pinexColeta: '78429', peticionamentoEnviadoEm: '2026-11-09T10:00:00.000Z', gruPronta: true }), ['enviar']);
-  assert.deepEqual(passos({ courier: 'PINEX', awb: '94624', pinexColeta: '78429', peticionamentoEnviadoEm: '2026-11-09T10:00:00.000Z' }), ['conferir', 'gerar', 'enviar']);
+  assert.deepEqual(passos({ courier: 'PINEX', awb: '94624', pinexColeta: '78429', peticionamentoEnviadoEm: '2026-11-09T10:00:00.000Z' }), ['anvisa'],
+    'antes da GRU e do extrato não há passo de envio à courier (o teste anterior aceitava conferir, gerar, enviar)');
   assert.deepEqual(passos({ courier: 'PINEX (Agendamento)', awb: '' }), ['conferir', 'gerar', 'enviar']);
 });
 
@@ -139,11 +140,16 @@ test('última AWB do estudo e da courier, lida sem alterar a aba', () => {
     ['111', 'o1', 'a', '1', 'MARKEN', 'CONGELADO', 'P', 'Estudo X', '2026-10-01', '', ''],
     ['222', 'o2', 'b', '1', 'DHL', 'AMBIENTE', 'P', 'Estudo X', '2026-10-02', '', ''],
     ['333', 'o3', 'c', '1', 'MARKEN', 'CONGELADO', 'P', 'Estudo Y', '2026-10-03', '', ''],
-    ['444', 'o4', 'd', '1', 'MARKEN', 'CONGELADO', 'P', 'Estudo X', '2026-10-04', '', '']]) });
+    ['444', 'o4', 'd', '1', 'MARKEN', 'CONGELADO', 'P', 'Estudo X', '2026-10-04', '', ''],
+    ['555', 'o5', 'e', '1', 'DHL', 'CONGELADO', 'P', 'Estudo X', '2026-10-05', '', '']]) });
   const s = servidor(book);
   s.transporteProjetoDisplay_ = (p) => String(p || '').trim();
   assert.equal(s.transporteAwbUltimaDoEstudo_('Estudo X', 'MARKEN').awb, '444');
-  assert.equal(s.transporteAwbUltimaDoEstudo_('Estudo X', 'DHL').awb, '222');
+  // DHL: só o Ambiente usa AWB do pacote do estudo; a mais recente, de congelado, não serve de dica.
+  assert.equal(s.transporteAwbUltimaDoEstudo_('Estudo X', 'DHL', 'Ambiente').awb, '222');
+  assert.equal(s.transporteAwbUltimaDoEstudo_('Estudo X', 'DHL', 'CONGELADO'), null);
+  assert.equal(s.transporteAwbUltimaDoEstudo_('Estudo X', 'DHL'), null);
+  assert.equal(plano(s.getTransporteAwbUltima('Estudo X', 'DHL', 'AMBIENTE')).ultima.awb, '222');
   assert.equal(s.transporteAwbUltimaDoEstudo_('Estudo Z', 'MARKEN'), null);
   assert.equal(plano(s.getTransporteAwbUltima('Estudo Y', 'MARKEN')).ultima.awb, '333');
   assert.equal(book.sheets.AWB_Utilizadas.writes, 0);

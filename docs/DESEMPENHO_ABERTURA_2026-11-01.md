@@ -43,3 +43,29 @@ para valer **somente na abertura da página** (`doGet` e etapa `access` de
 - `CODEX_CACHE_BYPASS_READS_` ignora a leitura do cache.
 
 Os ganhos em produção precisam ser medidos após publicação.
+
+## Ajustes de 15/11/2026
+
+Decisão de produto: a planilha não é editada diretamente pelos usuários.
+
+- `AGENDA_DATE_INDEX_CACHE_TTL_SECONDS_` (60 s) e
+  `AGENDA_WINDOW_CACHE_TTL_SECONDS_` (45 s) passaram a 300 s. Escritas da
+  Agenda pelo Web App continuam invalidando ambos; `forceRefresh` (atualização
+  explícita e revalidação do cliente após 3 min) continua ignorando o cache.
+  Uma edição manual na planilha pode levar até 5 min para aparecer na abertura.
+  O cache de últimas visitas usa o mesmo TTL.
+- `vincularReservaKitAgenda` (ao gerar o ID de um evento legado) e
+  `verificarNotificacoes_` (ao gravar o controle do Lab Central) passaram a
+  invalidar o cache de janelas.
+- Novo Agendamento: a abertura só revalida referências vencidas
+  (`AGENDA_FORMDATA_TTL_MS`, 10 min) em vez de forçar a cada clique. Cadastros
+  feitos por outro usuário podem levar até esse prazo para aparecer nas listas;
+  o salvamento continua validado no servidor.
+- Clique durante a carga inicial (`APP_BOOTSTRAP_PENDING`, bootstrap da janela
+  ou carga legada do formulário em voo) aguarda as referências em vez de acionar
+  a carga completa, que desligava a carga por janela pelo resto da sessão.
+- `preencherAgendaSelect` monta cada lista com uma única atribuição de HTML.
+
+Pendente: conferir nos logs de produção `put_too_large` (`[CODEX_CACHE]`) e
+`skip_oversize` (`[CODEX_AGENDA_REFERENCE_CACHE]`) antes de decidir sobre
+gravação das referências em blocos e gatilho de aquecimento.

@@ -161,8 +161,8 @@ test('resumo dos preparos lê só as colunas necessárias, ignora o JSON e não 
     getRange: (r, c, n, w) => { faixas.push([r, c, n, w]); return { getValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(c - 1, c - 1 + w)) }; }
   };
   s.transporteRegistrosSheetLeitura_ = () => sh;
-  // A validação dos cabeçalhos faz sua própria leitura da linha 1.
   const resumo = plano(s.transporteRegistrosResumo_());
+  assert.deepEqual(faixas, [[1, 1, 4, 10]], 'uma leitura só: cabeçalho e linhas juntos (eram quatro chamadas)');
   assert.deepEqual(resumo, {
     'k1|1': { passo: '3', versao: 2, emPreparoPor: 'ana@example.invalid', emPreparoDesde: '2026-10-02T10:00:00.000Z', fasePinex: '', gruPronta: false, passoNumero: 0 },
     'k2|1': { passo: 'pinex_numeros', versao: 4, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false, passoNumero: 0 }
@@ -307,4 +307,28 @@ test('"Parou no passo N" vem do número gravado com o passo e some quando o pass
     'n2|1': { passo: 'concluido', passoNumero: 0, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false } };
   const r = construir(s, [linha(s, 'n1', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n2', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n3', '06/10/2026', [{ nome: 'OCASA' }])], { preparos });
   assert.deepEqual(r.tarefas.map((x) => [x.agendaId, x.parouNoPasso]), [['n1', 3], ['n2', 0], ['n3', 0]]);
+});
+
+test('PINEX com os documentos gerados no passo a passo: enviar (com a GRU no título), não preparar de novo', () => {
+  const s = servidor();
+  const formulario = { agendaId: 'p1', slot: '1', courier: 'PINEX (Agendamento)', estado: 'INATIVA', pdfId: 'PDF', emailIdentificadoEm: '01/10/2026', emailEnviadoEm: '' };
+  const linhas = [linha(s, 'p1', '06/10/2026', [{ nome: 'Pinex', status: 'Docs gerados', awb: '94624' }])];
+  const preparo = (extra) => ({ 'p1|1': Object.assign({ passo: 'enviar', passoNumero: 1, versao: 9, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'documentos', gruPronta: true }, extra) });
+  const titulo = (preparos) => construir(s, linhas, { operacoes: [formulario], preparos }).tarefas.map((t) => [t.titulo, t.transportes[0].situacao]);
+  assert.deepEqual(titulo(preparo()), [['Anexar a GRU e o extrato e enviar à courier', 'enviar_doc']]);
+  assert.deepEqual(titulo(preparo({ passo: 'concluido', passoNumero: 0 })), [['Anexar a GRU e o extrato e enviar à courier', 'enviar_doc']]);
+  // Números recebidos e documentos ainda por gerar: continua "Preparar".
+  assert.deepEqual(titulo(preparo({ passo: 'conferir', gruPronta: false })), [['Preparar o transporte', 'preparar']]);
+  assert.deepEqual(titulo({}), [['Preparar o transporte', 'preparar']]);
+});
+
+test('envio internacional parado no formulário ANVISA com status "Docs gerados": a tarefa não manda enviar à courier', () => {
+  const s = servidor();
+  const linhas = [linha(s, 'o1', '06/10/2026', [{ nome: 'OCASA', status: 'Docs gerados', awb: 'PK2' }])];
+  const operacoes = [{ agendaId: 'o1', slot: '1', courier: 'OCASA', estado: 'ATIVA', pdfId: 'PDF', emailEnviadoEm: '', emailIdentificadoEm: '' }];
+  const titulo = (passo, gruPronta) => construir(s, linhas, { operacoes, preparos: { 'o1|1': { passo, passoNumero: 1, fasePinex: '', gruPronta: !!gruPronta } } }).tarefas[0].titulo;
+  assert.equal(titulo('anvisa'), 'Preparar o transporte');
+  assert.equal(titulo('peticionando'), 'Preparar o transporte');
+  assert.equal(titulo('enviar', true), 'Anexar a GRU e o extrato e enviar à courier');
+  assert.equal(titulo('enviar'), 'Enviar o pedido de coleta à courier');
 });

@@ -204,7 +204,9 @@ function transporteRegistroGravar_(agendaId, slot, registro, opcoes) {
     if (versaoAtual !== esperada) {
       throw transporteRegistroErro_('TRANSPORTE_REGISTRO_VERSAO', 'Este transporte foi alterado por outra pessoa. Recarregue antes de continuar.');
     }
-    var versao = versaoAtual + 1;
+    // manterVersao: anotacao do proprio servidor (token de geracao), que nao e dado preenchido por ninguem. A
+    // versao que a tela tem continua valendo; a conferencia acima e a mesma.
+    var versao = opcoes.manterVersao ? versaoAtual : versaoAtual + 1;
     // Quem era dono, deixou o preparo expirar e grava: avisa que outra pessoa pode assumir.
     var perdeuPreparo = !!(atual && atual.emPreparoPor === usuario && usuario && !dono);
     // Dono ativo: renova o sinal. Preparo expirado nao fica como dono: quem grava sem reivindicar nao o herda.

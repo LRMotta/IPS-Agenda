@@ -92,6 +92,39 @@ function transporteEnvioGerarPdf_(registro, request, usuario) {
 }
 
 /**
+ * Grava o passo seguinte depois de PDF e rascunho prontos. Se o registro mudou de versao durante a geracao sem
+ * mudar os dados dos documentos (a propria pessoa clicou em "Sair e continuar depois", por exemplo), grava sobre
+ * a versao atual: a geracao nao pode terminar em erro com tudo ja feito. Dados diferentes mantem a recusa.
+ */
+function transporteEnvioGravarAposGerar_(agendaId, slot, registro, lido, usuario, proximoPasso) {
+  try {
+    return transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: lido.versao, usuario: usuario, passo: proximoPasso });
+  } catch (erro) {
+    if (!erro || erro.code !== 'TRANSPORTE_REGISTRO_VERSAO') throw erro;
+    var atual = transporteRegistroLer_(agendaId, slot);
+    if (!atual.registro || transporteEnvioDadosDocumentoMudaram_(lido.registro, atual.registro)) throw erro;
+    return transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: atual.versao, usuario: usuario, passo: proximoPasso });
+  }
+}
+
+/**
+ * Abre (ou retoma) o registro de recuperacao da geracao. Token ausente ou invalido continua recusado.
+ * Token de outros dados (o registro mudou em algo que nao reinicia o preparo, como um cadastro): a geracao
+ * anterior nao serve mais e comeca outra, em vez de prender o envio no erro. Devolve { request, token }.
+ */
+function transporteEnvioIniciarGeracao_(token, dadosDoToken, usuario) {
+  function novo() { return Utilities.getUuid().replace(/-/g, '').toLowerCase(); }
+  function abrir(t) { return transporteGenerationBegin_({ generationRequestId: t, payload: dadosDoToken, criarRascunho: true, requestedByEmail: usuario }); }
+  try {
+    return { request: abrir(token), token: token };
+  } catch (erro) {
+    if (!/pertence a outros dados/.test(String(erro && erro.message || ''))) throw erro;
+    token = novo();
+    return { request: abrir(token), token: token };
+  }
+}
+
+/**
  * RPC do passo "Gerar". versao: a do registro na tela. generationRequestId: token (32 hex) por tentativa;
  * repetir o mesmo token retoma sem duplicar PDF ou rascunho.
  */
@@ -109,16 +142,31 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
   transporteValidarObrigatoriosWebApp_(registro);
   transporteValidarDataEnvioMinima_(registro.dataEnvio);
   codexMatBioValidateTransportPayload_(registro);
-  // O token identifica os DADOS do envio: o numero do passo muda a cada gravacao e nao entra no hash.
+  // O token identifica os DADOS do envio: o numero do passo e os dados da propria geracao (token, rascunho)
+  // mudam a cada gravacao e nao entram no hash.
   var dadosDoToken = JSON.parse(JSON.stringify(registro));
   delete dadosDoToken.passoNumero;
-  var request = transporteGenerationBegin_({ generationRequestId: generationRequestId, payload: dadosDoToken, criarRascunho: true, requestedByEmail: usuario });
-  request.record.generationRequestId = String(generationRequestId || '');
+  TRANSPORTE_ENVIO_CAMPOS_GERACAO_.forEach(function(campo) { delete dadosDoToken[campo]; });
+  // O token mora no registro do envio: outro navegador ou computador retoma a mesma geracao. O da tela so vale
+  // na primeira tentativa, quando o registro ainda nao tem um.
+  var inicio = transporteEnvioIniciarGeracao_(String(lido.registro.geracaoToken || generationRequestId || ''), dadosDoToken, usuario);
+  var request = inicio.request;
+  generationRequestId = inicio.token;
+  if (registro.geracaoToken !== generationRequestId) {
+    // Guardado antes de qualquer arquivo: se a execucao morrer no meio, a proxima tentativa encontra o token.
+    var comToken = Object.assign({}, lido.registro, { geracaoToken: generationRequestId });
+    // Sem mudar a versao: se a geracao falhar adiante, a tela tenta de novo com a versao que ja tem.
+    transporteRegistroGravar_(agendaId, slot, comToken, { versaoEsperada: lido.versao, usuario: usuario, manterVersao: true });
+    lido.registro = comToken;
+    registro.geracaoToken = generationRequestId;
+  }
+  request.record.generationRequestId = generationRequestId;
   TRANSPORTE_GENERATION_REQUEST_ = request;
   TRANSPORTE_GENERATION_WARNINGS_ = [];
   try {
     var repetido = transporteGenerationReplay_(request.record);
-    if (repetido) return Object.assign({ ok: true }, repetido);
+    // O resultado guardado traz a versao da epoca; a tela precisa da atual para continuar gravando.
+    if (repetido) return Object.assign({ ok: true }, repetido, { versao: lido.versao });
     // AWB e Agenda: escritas curtas, em lock, antes de qualquer arquivo.
     transporteAwbReservarEnvio_(agendaId, slot, usuario, { strict: true });
     codexWithDocumentLock_('transporteEnvioSincronizarAgenda', function() { return transporteSincronizarAgenda_(registro); });
@@ -133,8 +181,14 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
     var resultado = Object.assign({}, pdf, {
       draftOk: !!rascunho.ok, draftId: rascunho.draftId || '', draftError: rascunho.ok ? '' : String(rascunho.message || rascunho.error || ''),
       draftSkipped: !!rascunho.skipped, draftMessage: rascunho.message || '', monitorRef: monitorRef, manifestoPdfHash: docHash,
+      draftSubject: rascunho.ok ? String(rascunho.subject || '') : '', draftRecipients: rascunho.ok ? String(rascunho.recipients || '') : '',
       ce: transporteEnvioCeStatus_(registro.protocolo)
     });
+    // Assunto e destinatarios ficam no registro: o passo Enviar aponta o rascunho certo mesmo em outro dia ou computador.
+    if (rascunho.ok && rascunho.subject) {
+      registro.rascunhoAssunto = String(rascunho.subject);
+      registro.rascunhoDestinatarios = String(rascunho.recipients || '');
+    }
     // Documentacao registrada para o monitor de e-mails (PINEX e Backup nao promovem status).
     if (monitorRef && transporteNormalizeCourierFromCodex_(registro.courier) !== 'PINEX') {
       try {
@@ -156,7 +210,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
     // Envio internacional: o proximo passo e o formulario ANVISA; o e-mail a courier so depois da GRU e do extrato.
     var proximoPasso = transporteEnvioInternacional_(registro) && !registro.peticionamentoEnviadoEm ? 'anvisa' : 'enviar';
     registro.passoNumero = transporteEnvioNumeroPasso_(registro, proximoPasso);
-    var gravado = transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: lido.versao, usuario: usuario, passo: proximoPasso });
+    var gravado = transporteEnvioGravarAposGerar_(agendaId, slot, registro, lido, usuario, proximoPasso);
     resultado.versao = gravado.versao;
     resultado.passo = proximoPasso;
     if (rascunho.ok || rascunho.skipped) transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: resultado, pdf: null, draft: null });
@@ -181,6 +235,10 @@ function concluirEnvioTransporte(agendaId, slot, versao) {
     transporteEnvioLiberar_(agendaId, slot, usuario);
     return { ok: true, versao: gravado.versao, aguardaPinex: true };
   }
+  // Envio internacional antes da GRU e do extrato (ou sem o formulario ANVISA concluido): nao ha o que enviar ainda.
+  if (lido.registro && transporteEnvioPassos_(lido.registro).indexOf('enviar') < 0) {
+    throw new Error('Este transporte ainda não está no passo de envio à courier. Conclua o formulário ANVISA e aguarde a GRU e o extrato.');
+  }
   var resposta = salvarTransporteEnvio(agendaId, slot, versao, {}, 'concluido');
   transporteEnvioLiberar_(agendaId, slot, usuario);
   return { ok: true, versao: resposta.versao };
@@ -190,7 +248,12 @@ function concluirEnvioTransporte(agendaId, slot, versao) {
 function sairEnvioTransporte(agendaId, slot, versao, passo) {
   var access = codexAssertAdmin_();
   var usuario = transporteEnvioUsuario_(access);
-  var resposta = salvarTransporteEnvio(agendaId, slot, versao, {}, passo);
-  transporteEnvioLiberar_(agendaId, slot, usuario);
+  var resposta;
+  try {
+    resposta = salvarTransporteEnvio(agendaId, slot, versao, {}, passo);
+  } finally {
+    // Mesmo sem conseguir guardar o passo, quem saiu nao fica como dono do preparo.
+    transporteEnvioLiberar_(agendaId, slot, usuario);
+  }
   return { ok: true, versao: resposta.versao, passo: resposta.passo };
 }
