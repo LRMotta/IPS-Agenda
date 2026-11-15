@@ -730,6 +730,32 @@ function startCodexAppOnce() {
   var bootstrapTraceId = codexClientBootstrapTraceId_();
   var bootstrapRequest = appInitialBootstrapRequest_() || {};
   bootstrapRequest.traceId = bootstrapTraceId;
+  // Com caches quentes o doGet já entrega o bootstrap na página, o que dispensa
+  // a RPC inicial. O período precisa ser o mesmo que este navegador pediria.
+  var inlineBootstrap = window.INDEX_INLINE_BOOTSTRAP;
+  window.INDEX_INLINE_BOOTSTRAP = null;
+  if (appInlineBootstrapUsavel_(inlineBootstrap, bootstrapRequest)) {
+    // Aplicado fora do DOMContentLoaded, como a resposta da RPC sempre foi:
+    // os demais ouvintes de carga da página terminam antes.
+    window.APP_BOOTSTRAP_PENDING = true;
+    window.setTimeout(function() {
+      window.APP_BOOTSTRAP_PENDING = false;
+      var inlineApplyStartedAt = codexClientNow_();
+      applyAppBootstrapData(inlineBootstrap);
+      var inlineApplyCompletedAt = codexClientNow_();
+      abrirPaginaInicialApp();
+      codexLogClientBootstrapPerformance_({
+        traceId: inlineBootstrap.bootstrapTraceId || bootstrapTraceId,
+        page: window.INDEX_INITIAL_PAGE || 'agenda',
+        success: true,
+        rpcDurationMs: 0,
+        applyDurationMs: inlineApplyCompletedAt - inlineApplyStartedAt,
+        readyDurationMs: codexClientNow_() - bootstrapStartedAt,
+        payloadBytes: codexClientBootstrapPayloadBytes_(inlineBootstrap)
+      });
+    }, 0);
+    return;
+  }
   // Verdadeiro somente enquanto a RPC inicial não respondeu (sucesso ou falha):
   // a Agenda usa o sinal para aguardar as referências em vez de recarregar tudo.
   window.APP_BOOTSTRAP_PENDING = true;
@@ -771,6 +797,17 @@ function startCodexAppOnce() {
 }
 
 document.addEventListener('DOMContentLoaded', startCodexAppOnce);
+
+function appInlineBootstrapUsavel_(data, request) {
+  var requested = request && request.agendaRange;
+  var range = data && data.agendaBootstrap && data.agendaBootstrap.range;
+  // Só a Agenda recebe bootstrap embutido. Qualquer divergência (acesso,
+  // período calculado em outro fuso, resposta incompleta) mantém a RPC.
+  return !!data && typeof data === 'object' && !!data.access && data.access.ok === true &&
+    !!request && request.page === 'agenda' && !!requested && !!range &&
+    range.start === requested.start && range.endExclusive === requested.endExclusive &&
+    data.agendaBootstrap.complete === true && Array.isArray(data.agendaBootstrap.events);
+}
 
 function appInitialBootstrapRequest_() {
   var page = String(window.INDEX_INITIAL_PAGE || 'agenda');
