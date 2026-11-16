@@ -85,7 +85,7 @@ function clientFixture() {
     appServerRun: opts => requests.push(opts), appErrorMessage: e => e.message, snackErro() {},
     participanteBloquearDetalhes_: busy => disabled.push(busy),
     abrirFormPartPreenchido_: p => rendered.push(p), appConfirmNavigationIfDirty: () => true,
-    appClearUnsavedChanges() {}, participacoesDaPessoa_: p => [p],
+    appClearUnsavedChanges() {}, participacoesDaPessoa_: p => [p], participanteAtualizarReciboPendencias_() {},
     normSelectValue: value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(),
     prepararNovaParticipacaoPessoa_: p => { c.newParticipation = p; }
   });

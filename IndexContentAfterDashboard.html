@@ -622,46 +622,51 @@
     <!-- ═══ PARTICIPANTES ═══ -->
     <div class="page" id="page-participantes">
       <div class="stats-row content-stats-row content-stats-cols-4">
-        <div class="stat-card stat-accent-blue stat-corner-left">
+        <div class="stat-card stat-accent-blue stat-corner-left par-stat-link" data-par-card-grupo="todos" role="button" tabindex="0" title="Mostrar todos os participantes" onclick="parSetGrupo('todos')" onkeydown="parStatKeydown(event,'todos')">
           <div class="stat-value" id="parTotal">—</div>
           <div class="stat-label">Total cadastrados</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">group</span></div>
         </div>
-        <div class="stat-card stat-accent-green">
+        <div class="stat-card stat-accent-green par-stat-link" data-par-card-grupo="ativos" role="button" tabindex="0" title="Mostrar participantes ativos ou em seguimento" onclick="parSetGrupo('ativos')" onkeydown="parStatKeydown(event,'ativos')">
           <div class="stat-value" id="parAtivos">—</div>
           <div class="stat-label">Ativos / Em Seguimento</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">favorite</span></div>
         </div>
-        <div class="stat-card stat-accent-orange">
+        <div class="stat-card stat-accent-orange par-stat-link" data-par-card-grupo="triagem" role="button" tabindex="0" title="Mostrar participantes em triagem" onclick="parSetGrupo('triagem')" onkeydown="parStatKeydown(event,'triagem')">
           <div class="stat-value" id="parTriagem">—</div>
           <div class="stat-label">Em triagem</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">pending</span></div>
         </div>
         <div class="stat-card stat-accent-purple stat-corner-right">
           <div class="stat-value" id="parProjetos">—</div>
-          <div class="stat-label">Projetos ativos</div>
+          <div class="stat-label">Projetos com participantes</div>
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">folder_open</span></div>
         </div>
       </div>
-      <div class="toolbar-card">
+      <div class="toolbar-card par-toolbar">
         <div class="search-wrap">
           <span class="material-symbols-outlined" aria-hidden="true">search</span>
-          <input type="text" id="searchParticipantes" placeholder="Buscar por nome, projeto ou status…" oninput="filtrarParticipantes()" aria-label="Buscar participantes">
+          <input type="text" id="searchParticipantes" placeholder="Buscar por nome, ID, CPF, projeto ou status…" oninput="filtrarParticipantes()" aria-label="Buscar participantes">
         </div>
-        <select class="f-select" id="filterStatusPar" onchange="filtrarParticipantes()" style="height:36px;font-size:12px;color:var(--text-muted);border:1.5px solid #e0e6f0;border-radius:var(--r-sm);background:#f6f8ff;padding:0 30px 0 10px;" aria-label="Filtrar participantes por status">
+        <select class="f-select par-filter-select" id="filterProjetoPar" onchange="filtrarParticipantes()" aria-label="Filtrar participantes por projeto">
+          <option value="">Todos os projetos</option>
+        </select>
+        <select class="f-select par-filter-select" id="filterStatusPar" onchange="parStatusFiltroAlterado()" aria-label="Filtrar participantes por status">
           <option value="">Todos os status</option>
         </select>
         <button class="btn-new" onclick="abrirFormParticipante(null)">
           <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Participante
         </button>
       </div>
-      <div class="table-card">
+      <div class="par-result-bar">
+        <span id="parContagem" role="status" aria-live="polite"></span>
+        <button type="button" class="proj-empty-link" id="parLimparFiltros" onclick="parLimparFiltros()" hidden>Limpar filtros</button>
+      </div>
+      <div class="table-card par-table-scroll">
         <table class="data-table">
           <thead>
             <tr>
-              <th style="width:36px;"></th>
               <th>Participante</th>
-              <th>Data de Nascimento</th>
               <th>Projeto</th>
               <th>Status</th>
               <th>Última Visita Realizada</th>
@@ -669,7 +674,7 @@
             </tr>
           </thead>
           <tbody id="bodyParticipantes">
-            <tr class="loading-row"><td colspan="7"><div class="spinner"></div>Carregando…</td></tr>
+            <tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
       </div>

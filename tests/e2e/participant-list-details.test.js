@@ -22,7 +22,8 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       const source = readProjectFile('IndexCoreScripts.html');
       const names = ['limparErro', 'participanteRenderHistorico_', 'participanteBloquearDetalhes_', 'participanteAvisoCarregando_', 'abrirFormPart', 'abrirFormPartPreenchido_', 'participanteDefinirPessoaSomenteLeitura_',
         'participanteMonitorarIdentidadeDoModal_', 'participantePreservarIdentidadeOriginal_', 'renderAcompanhantesPart_', 'lerAcompanhantesPart_',
-        'participantePodeNovaParticipacao_', 'salvarPartApp', 'fecharOverlay', 'abrirNovaParticipacaoPessoa', 'prepararNovaParticipacaoPessoa_', 'preencherMarcosParticipacao_', 'lerMarcosParticipacao_'];
+        'participantePodeNovaParticipacao_', 'participanteAcompanhantesAbertos_', 'participanteDefinirAcompanhanteAberto_', 'participanteRevelarCampoAcompanhante_',
+        'participanteAtualizarReciboPendencias_', 'participanteMonitorarReciboPendencias_', 'participanteResumoCabecalho_', 'salvarPartApp', 'fecharOverlay', 'abrirNovaParticipacaoPessoa', 'prepararNovaParticipacaoPessoa_', 'preencherMarcosParticipacao_', 'lerMarcosParticipacao_'];
       const functions = names.map(name => { const m = source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}')); assert.ok(m, name); return m[0]; }).join('\n');
       await page.addScriptTag({ content: `
         var _participanteDetalhesConsulta=null,_participanteDetalhesPendente=false,_participanteDetalhesDisabled=[],_participanteEdicaoAtual=null;
@@ -41,7 +42,7 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
         function renderBracosParticipante(){} function renderParticipacoesPessoa_(){}
         function preencherProjetosParticipante(v){document.getElementById('ptProjeto').value=v;}
         function atualizarParticipanteIdObrigatorio(){return true;}
-        function participanteValidarCpfsDoFormulario_(){return true;} function participanteValidarLocalidadesFormulario_(){return true;}
+        function participanteValidarCpfsDoFormulario_(){return true;} function participanteFormatarEValidarCpf_(){} function participanteValidarCpfCampo_(){return true;}function participanteValidarLocalidadesFormulario_(){return true;}
         function participanteProjetoCadastrado(){return true;} function appRequiredFeedback(entries){return entries.every(e=>!!e.value);}
         function appSetButtonBusy(btn,busy){btn.disabled=busy;} function appSetStatus(id,s){document.getElementById(id).textContent=s;}
         function participanteStatusEncerrado_(){return true;}
@@ -63,12 +64,37 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       assert.equal(await page.locator('#ptCarregandoAviso').isVisible(), false);
       assert.equal(await page.evaluate(() => window.requests[1].method), 'getParticipanteHistoricoCadastro');
       await page.evaluate(h => window.requests[1].onSuccess(h), historico);
+      // Cabeçalho identifica o cadastro e as ações ficam visíveis sem rolar o formulário longo.
+      assert.equal(await page.locator('#modalPartSub').textContent(), 'Pessoa · Aurora · ID PT-1 · ' + participantStatus);
+      const saveBox = await page.locator('#btnSalvarPart').boundingBox();
+      assert.ok(saveBox && saveBox.y >= 0 && saveBox.y + saveBox.height <= 900, 'Salvar fora da área visível');
+      assert.equal(await page.locator('#modalParticipante .modal-box').evaluate(el => el.scrollHeight > el.clientHeight), true);
+      // Pendências do recibo refletem os campos e acompanham a digitação.
+      assert.equal(await page.locator('#ptReciboPendenciasTexto').textContent(), 'Para gerar recibo ainda faltam: CPF, telefone com DDD.');
+      await page.locator('#ptCpf').fill('123.456.789-09');
+      await page.locator('#ptTelefone').fill('(54) 99999 0000');
+      assert.equal(await page.locator('#ptReciboPendenciasTexto').textContent(), 'Dados completos para gerar recibo.');
+      await page.locator('#ptCpf').fill('');
+      await page.locator('#ptTelefone').fill('');
+      // Acompanhante já identificado abre recolhido; campo inválido reabre o cartão em vez de travar o salvamento em silêncio.
+      assert.equal(await page.locator('#ptAco0_corpo').isVisible(), false);
+      assert.match(await page.locator('.participant-companion-summary').textContent(), /^Acompanhante/);
+      await page.locator('#ptAco0_nome').evaluate(el => { el.value = ''; });
+      await page.locator('#btnSalvarPart').click();
+      assert.equal(await page.evaluate(() => window.requests.length), 2);
+      assert.equal(await page.locator('#ptAco0_corpo').isVisible(), true);
+      assert.equal(await page.locator('.participant-companion-toggle').getAttribute('aria-expanded'), 'true');
+      await page.locator('#ptAco0_nome').fill('Acompanhante');
+      await page.locator('.participant-companion-toggle').click();
+      assert.equal(await page.locator('#ptAco0_corpo').isVisible(), false);
+      await page.screenshot({ path: path.join(process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright'), 'participant-modal-top-' + width + '.png') });
+      await page.locator('.participant-companion-toggle').click();
       const sexArtifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
       fs.mkdirSync(sexArtifacts, { recursive: true });
       await page.locator('#ptSexoNascimento').locator('xpath=../..').screenshot({ path: path.join(sexArtifacts, 'participant-identification-' + width + '.png') });
       assert.equal(await page.locator('#ptHistoricoCadastro').getAttribute('open'), null);
       assert.equal(await page.locator('#ptCadastroData').isVisible(), false);
-      assert.equal(await page.locator('#ptHistoricoCadastro').evaluate(el => el.previousElementSibling.textContent.includes('Contato e Notas')), true);
+      assert.equal(await page.locator('#ptHistoricoCadastro').evaluate(el => el.previousElementSibling.textContent.includes('Observações')), true);
       await page.locator('#ptHistoricoCadastro summary').click();
       assert.equal(await page.locator('#ptCadastroData').isVisible(), true);
       assert.equal(await page.locator('#ptCadastroData').textContent(), '01/10/2026 09:20');

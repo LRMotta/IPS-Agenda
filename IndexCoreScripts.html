@@ -996,18 +996,8 @@ function applyDashboardPendingFilter_(pagina) {
     if (filtro !== 'participantes' && filtro !== 'participantesAtivos') return;
     DASHBOARD_PENDING_FILTER = '';
     DASHBOARD_PENDING_KEYS = '';
-    var searchPart = document.getElementById('searchParticipantes');
-    var statusPart = document.getElementById('filterStatusPar');
-    if (searchPart) searchPart.value = '';
-    if (statusPart) statusPart.value = '';
-    if (filtro === 'participantes') {
-      filtrarParticipantes();
-      return;
-    }
-    renderTabelaPart((_participantes || []).filter(function(p) {
-      var st = normSelectValue(p && p.status);
-      return st === 'ativo' || st === 'em seguimento';
-    }));
+    parLimparFiltros();
+    if (filtro === 'participantesAtivos') parSetGrupo('ativos');
     return;
   }
   if (pagina === 'projetos') {
@@ -3502,7 +3492,7 @@ function garantirParticipanteConfig(callback) {
 
 function carregarParticipantes(force) {
   document.getElementById('bodyParticipantes').innerHTML =
-    '<tr class="loading-row"><td colspan="6"><div class="spinner"></div>Carregando…</td></tr>';
+    '<tr class="loading-row"><td colspan="5"><div class="spinner"></div>Carregando…</td></tr>';
   getCadastrosBootstrapCached('participantes',
     function(res) {
       var cfg = (res && res.config) || {};
@@ -3514,22 +3504,111 @@ function carregarParticipantes(force) {
     !!force);
 }
 
+// ── Filtros da lista ─────────────────────────────────────────
+// Os cartões do topo filtram por grupo de status; o seletor de status é a
+// alternativa detalhada, por isso um limpa o outro. Busca e projeto combinam com ambos.
+var PAR_GRUPOS = { todos: 'Todos', ativos: 'Ativos / Em seguimento', triagem: 'Em triagem' };
+var _parGrupo = 'todos';
+var _parTotalPessoas = 0;
+
+function participanteNoGrupo_(p, grupo) {
+  var st = normSelectValue(p && p.status);
+  if (grupo === 'ativos') return st === 'ativo' || st === 'em seguimento';
+  if (grupo === 'triagem') return st === 'em triagem';
+  return true;
+}
+
+// Mesma contagem que a lista exibe ao filtrar pelo grupo: pessoas, não participações.
+function participantesContarGrupo_(lista, grupo) {
+  return participantesParaListagemUnificada_((lista || []).filter(function(p) {
+    return participanteNoGrupo_(p, grupo);
+  })).length;
+}
+
+function participanteProjetoChave_(p) {
+  var cadastro = encontrarProjetoParticipante((p && p.projeto) || '');
+  return normSelectValue((cadastro && cadastro.nome) || (p && p.projeto) || '');
+}
+
+function parPreencherFiltroProjeto_(lista) {
+  var select = document.getElementById('filterProjetoPar');
+  if (!select) return;
+  var atual = select.value;
+  var nomes = {};
+  (lista || []).forEach(function(p) {
+    var chave = participanteProjetoChave_(p);
+    if (!chave || nomes[chave]) return;
+    var cadastro = encontrarProjetoParticipante(p.projeto || '');
+    nomes[chave] = String((cadastro && cadastro.nome) || p.projeto || '').trim();
+  });
+  select.replaceChildren();
+  var todos = document.createElement('option');
+  todos.value = '';
+  todos.textContent = 'Todos os projetos';
+  select.appendChild(todos);
+  Object.keys(nomes).sort(function(a, b) { return nomes[a].localeCompare(nomes[b], 'pt-BR'); }).forEach(function(chave) {
+    var opt = document.createElement('option');
+    opt.value = chave;
+    opt.textContent = nomes[chave];
+    select.appendChild(opt);
+  });
+  select.value = nomes[atual] ? atual : '';
+}
+
+function parSetGrupo(grupo) {
+  _parGrupo = PAR_GRUPOS[grupo] ? grupo : 'todos';
+  var status = document.getElementById('filterStatusPar');
+  if (status) status.value = '';
+  filtrarParticipantes(true);
+}
+
+function parStatKeydown(ev, grupo) {
+  if (!ev || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+  ev.preventDefault();
+  parSetGrupo(grupo);
+}
+
+function parStatusFiltroAlterado() {
+  var status = document.getElementById('filterStatusPar');
+  if (status && status.value) _parGrupo = 'todos';
+  filtrarParticipantes(true);
+}
+
+function parLimparFiltros() {
+  ['searchParticipantes', 'filterProjetoPar', 'filterStatusPar'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  _parGrupo = 'todos';
+  filtrarParticipantes(true);
+}
+
+function parAtualizarFiltrosUi_(exibidos, filtrado) {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-par-card-grupo]'), function(card) {
+    var ativo = card.getAttribute('data-par-card-grupo') === _parGrupo;
+    card.classList.toggle('active', ativo);
+    card.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+  });
+  var contagem = document.getElementById('parContagem');
+  if (contagem) {
+    contagem.textContent = filtrado
+      ? exibidos + ' de ' + _parTotalPessoas + (_parTotalPessoas === 1 ? ' participante' : ' participantes')
+      : _parTotalPessoas + (_parTotalPessoas === 1 ? ' participante' : ' participantes');
+  }
+  var limpar = document.getElementById('parLimparFiltros');
+  if (limpar) limpar.hidden = !filtrado;
+}
+
 function renderParticipantes(lista) {
   _participantes = lista;
-  var pessoas = participantesParaListagemUnificada_(lista);
-  var ativos = pessoas.filter(function(p){
-    var st = normSelectValue(p.status);
-    return st === 'ativo' || st === 'em seguimento';
-  }).length;
-  var triagem = pessoas.filter(function(p){
-    return normSelectValue(p.status) === 'em triagem';
-  }).length;
+  _parTotalPessoas = participantesParaListagemUnificada_(lista).length;
   var projs  = {};
-  lista.forEach(function(p){ if(p.projeto) projs[p.projeto]=1; });
-  document.getElementById('parTotal').textContent    = pessoas.length || '0';
-  document.getElementById('parAtivos').textContent   = ativos       || '0';
-  document.getElementById('parTriagem').textContent  = triagem      || '0';
+  lista.forEach(function(p){ var chave = participanteProjetoChave_(p); if (chave) projs[chave] = 1; });
+  document.getElementById('parTotal').textContent    = _parTotalPessoas || '0';
+  document.getElementById('parAtivos').textContent   = participantesContarGrupo_(lista, 'ativos') || '0';
+  document.getElementById('parTriagem').textContent  = participantesContarGrupo_(lista, 'triagem') || '0';
   document.getElementById('parProjetos').textContent = Object.keys(projs).length || '0';
+  parPreencherFiltroProjeto_(lista);
   filtrarParticipantes(true);
   applyDashboardPendingFilter_('participantes');
 }
@@ -3565,6 +3644,7 @@ function filtrarParticipantes(forceNow) {
   codexRunSearchFilter('searchParticipantes', 'participantes', function() {
     var q  = document.getElementById('searchParticipantes').value.toLowerCase().trim();
     var st = document.getElementById('filterStatusPar') ? document.getElementById('filterStatusPar').value : '';
+    var projetoFiltro = document.getElementById('filterProjetoPar') ? document.getElementById('filterProjetoPar').value : '';
     var f  = _participantes.filter(function(p){
       var projetoCadastro = encontrarProjetoParticipante(p.projeto || '');
       var matchQ = !q
@@ -3576,9 +3656,13 @@ function filtrarParticipantes(forceNow) {
         || (p.idPessoa||'').toLowerCase().includes(q)
         || (p.cpf||'').toLowerCase().includes(q);
       var matchSt = !st || (p.status||'') === st;
-      return matchQ && matchSt;
+      var matchProjeto = !projetoFiltro || participanteProjetoChave_(p) === projetoFiltro;
+      return matchQ && matchSt && matchProjeto && participanteNoGrupo_(p, _parGrupo);
     });
-    renderTabelaPart(participantesParaListagemUnificada_(f));
+    var pessoas = participantesParaListagemUnificada_(f);
+    var filtrado = !!(q || st || projetoFiltro || _parGrupo !== 'todos');
+    parAtualizarFiltrosUi_(pessoas.length, filtrado);
+    renderTabelaPart(pessoas, filtrado);
   }, !!forceNow);
 }
 
@@ -3633,57 +3717,80 @@ function participanteUltimaVisitaCellHtml(participante) {
   return '<div class="row-name" style="font-size:13px;">' + esc(visita) + '</div>' + dataHtml;
 }
 
-function renderTabelaPart(lista) {
+function participanteDetalheItemHtml_(icone, rotulo, valorHtml, classeValor) {
+  return '<span class="det-item"><span class="material-symbols-outlined" aria-hidden="true">' + icone + '</span>'
+    + '<span' + (classeValor ? ' class="' + classeValor + '"' : '') + '><span class="par-det-label">' + rotulo + ':</span> ' + valorHtml + '</span></span>';
+}
+
+function toggleParticipanteDetalhe(id) {
+  var row = document.getElementById(id);
+  if (!row) return;
+  var open = row.classList.toggle('open');
+  var btn = document.querySelector('[data-par-detail-target="' + id + '"]');
+  if (!btn) return;
+  var main = btn.closest ? btn.closest('tr') : null;
+  if (main) main.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  var icon = btn.querySelector('.material-symbols-outlined');
+  if (icon) icon.textContent = open ? 'expand_less' : 'expand_more';
+}
+
+function renderTabelaPart(lista, filtrado) {
   var tb = document.getElementById('bodyParticipantes');
   if (!lista.length) {
-    tb.innerHTML='<tr class="empty-row"><td colspan="7">Nenhum participante encontrado.</td></tr>';
+    tb.innerHTML='<tr class="empty-row"><td colspan="5">Nenhum participante encontrado.'
+      +(filtrado?' <button class="proj-empty-link" type="button" onclick="parLimparFiltros()">Limpar filtros</button>':'')
+      +'</td></tr>';
     return;
   }
   tb.innerHTML = lista.map(function(p,idx){
     var ini  = (p.nome||'?')[0].toUpperCase();
-    var pid  = 'par-row-'+idx;
+    var pid  = 'par-detail-'+idx;
     var nascFmt = formatDateBr(p.dataNascimento);
-    var nascIdadeHtml = (nascFmt || p.idade)
-      ? esc(nascFmt || '—') + (p.idade ? '<br><span style="font-size:0.85em;color:#666;">' + esc(p.idade) + ' anos</span>' : '')
-      : '<span style="color:#9aa3b0;">—</span>';
-    var r1 = '<tr class="par-main" data-pair="'+pid+'">'
-      +'<td style="width:36px;"><div class="row-avatar" style="border-radius:8px;">'+ini+'</div></td>'
-      +'<td><div class="row-name">'+esc(p.nome||'—')+'</div>'
-      +(p.idParticipante?'<div style="font-size:11px;color:#9aa3b0;margin-top:2px;">ID: '+esc(p.idParticipante)+'</div>':'')
-      +(p.quantidadeParticipacoes > 1?'<div style="font-size:11px;color:#5f6b7c;margin-top:2px;">'+esc(p.quantidadeParticipacoes)+' participações vinculadas</div>':'')
-      +'</td>'
-      +'<td style="color:#5f6b7c;line-height:1.25;">'+nascIdadeHtml+'</td>'
+    var sub = [];
+    if (p.idParticipante) sub.push('ID: '+esc(p.idParticipante));
+    if (nascFmt) sub.push('Nasc. '+esc(nascFmt)+(p.idade?' ('+esc(p.idade)+' anos)':''));
+    else if (p.idade) sub.push(esc(p.idade)+' anos');
+    var r1 = '<tr class="part-row">'
+      +'<td><div class="name-cell">'
+      +'<button class="icon-btn proj-toggle" type="button" title="Detalhes do participante" aria-label="Detalhes de '+esc(p.nome||'participante')+'" aria-expanded="false" aria-controls="'+pid+'" data-par-detail-target="'+pid+'">'
+      +'<span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button>'
+      +'<div class="row-avatar part-avatar" aria-hidden="true">'+esc(ini)+'</div>'
+      +'<div class="part-id"><div class="row-name">'+esc(p.nome||'—')+'</div>'
+      +(sub.length?'<div class="proj-sub">'+sub.join(' · ')+'</div>':'')
+      +(p.quantidadeParticipacoes > 1?'<div class="proj-sub">'+esc(p.quantidadeParticipacoes)+' participações vinculadas</div>':'')
+      +'</div></div></td>'
       +'<td>'+participanteProjetoCellHtml(p)+'</td>'
       +'<td>'+chipStatus(p.status||'—')+'</td>'
       +'<td style="color:#5f6b7c;">'+participanteUltimaVisitaCellHtml(p)+'</td>'
       +'<td style="text-align:right;"><div class="action-btns">'
-      +'<button class="icon-btn" title="Linha do tempo e prontidão" data-record-action="journey" data-record-index="'+idx+'">'
-      +'<span class="material-symbols-outlined">timeline</span></button>'
-      +'<button class="icon-btn" title="Editar" data-record-action="edit" data-record-index="'+idx+'">'
-      +'<span class="material-symbols-outlined">edit</span></button>'
-      +'<button class="icon-btn del" title="Excluir" data-record-action="delete" data-record-index="'+idx+'">'
-      +'<span class="material-symbols-outlined">delete</span></button>'
+      +'<button class="icon-btn" title="Linha do tempo e prontidão" aria-label="Linha do tempo de '+esc(p.nome||'participante')+'" data-record-action="journey" data-record-index="'+idx+'">'
+      +'<span class="material-symbols-outlined" aria-hidden="true">timeline</span></button>'
+      +'<button class="icon-btn" title="Editar" aria-label="Editar '+esc(p.nome||'participante')+'" data-record-action="edit" data-record-index="'+idx+'">'
+      +'<span class="material-symbols-outlined" aria-hidden="true">edit</span></button>'
+      +'<button class="icon-btn del" title="Excluir" aria-label="Excluir '+esc(p.nome||'participante')+'" data-record-action="delete" data-record-index="'+idx+'">'
+      +'<span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'
       +'</div></td></tr>';
-    function msIcon(name){ return '<span class="material-symbols-outlined">'+name+'</span>'; }
     var items=[];
-    if(p.cpf)            items.push('<span class="det-item">'+msIcon('badge')+'<span>'+esc(p.cpf)+'</span></span>');
-    if(p.telefone)       items.push('<span class="det-item">'+msIcon('phone')+'<span>'+esc(formatarTelefoneBrasileiro(p.telefone))+'</span></span>');
-    if(p.observacoes)    items.push('<span class="det-item">'+msIcon('notes')+'<span class="det-obs" title="'+esc(p.observacoes)+'">'+esc(p.observacoes)+'</span></span>');
-    var r2='<tr class="par-detail" data-pair="'+pid+'">'
-      +'<td colspan="7" style="padding:3px 20px 12px;background:#fafbff;">'
+    if(p.cpf)         items.push(participanteDetalheItemHtml_('badge','CPF',esc(p.cpf)));
+    if(p.telefone)    items.push(participanteDetalheItemHtml_('phone','Telefone',esc(formatarTelefoneBrasileiro(p.telefone))));
+    if(p.observacoes) items.push(participanteDetalheItemHtml_('notes','Observações',esc(p.observacoes),'par-det-obs'));
+    var r2='<tr class="part-detail" id="'+pid+'">'
+      +'<td colspan="5">'
       +(items.length
         ?'<div class="par-detail-items">'+items.join('')+'</div>'
-        :'<div style="padding-left:65px;font-size:12px;color:#c0c8d8;font-style:italic;">Sem informações adicionais</div>')
+        :'<div class="par-detail-empty">Sem CPF, telefone ou observações cadastrados.</div>')
       +'</td></tr>';
     return r1+r2;
   }).join('');
-  document.querySelectorAll('.par-main,.par-detail').forEach(function(tr){
-    var pair=tr.dataset.pair;
-    tr.addEventListener('mouseenter',function(){
-      document.querySelectorAll('[data-pair="'+pair+'"]').forEach(function(el){el.classList.add('par-hover');});
-    });
-    tr.addEventListener('mouseleave',function(){
-      document.querySelectorAll('[data-pair="'+pair+'"]').forEach(function(el){el.classList.remove('par-hover');});
+  // A linha inteira abre o detalhe; os botões de ação mantêm o próprio comportamento.
+  Array.prototype.forEach.call(tb.querySelectorAll('.part-row'), function(tr){
+    tr.addEventListener('click', function(ev){
+      var botao = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+      if (botao && !botao.hasAttribute('data-par-detail-target')) return;
+      if (!botao && String(window.getSelection ? window.getSelection() : '')) return;
+      var alvo = tr.querySelector('[data-par-detail-target]');
+      if (alvo) toggleParticipanteDetalhe(alvo.getAttribute('data-par-detail-target'));
     });
   });
   bindTableRecordActions(tb, lista, {
@@ -3842,7 +3949,7 @@ function participanteValidarCpfsDoFormulario_() {
     campos.push({ input: input, label: input.dataset.campo === 'cpfTitular' ? 'CPF do titular da conta' : 'CPF do acompanhante' });
   });
   var invalido = campos.filter(function(item) { return !participanteValidarCpfCampo_(item.input, item.label); })[0];
-  if (invalido && invalido.input) invalido.input.focus();
+  if (invalido && invalido.input) { participanteRevelarCampoAcompanhante_(invalido.input); invalido.input.focus(); }
   return !invalido;
 }
 
@@ -4064,7 +4171,7 @@ function participanteNavegarMunicipios_(event, inputId) {
 function participanteValidarLocalidadesFormulario_() {
   var inputs = [document.getElementById('ptCidade')].concat(Array.prototype.slice.call(document.querySelectorAll('#ptAcompanhantes [data-municipio-input]'))).filter(Boolean);
   var invalido = inputs.filter(function(input) { return !participanteFixarMunicipio_(input.id); })[0];
-  if (invalido) { invalido.reportValidity(); invalido.focus(); }
+  if (invalido) { participanteRevelarCampoAcompanhante_(invalido); invalido.reportValidity(); invalido.focus(); }
   return !invalido;
 }
 
@@ -4078,7 +4185,32 @@ function lerAcompanhantesPart_() {
   });
 }
 
-function renderAcompanhantesPart_(items) {
+function participanteAcompanhantesAbertos_() {
+  return Array.prototype.map.call(document.querySelectorAll('#ptAcompanhantes [data-acompanhante]'), function(card) {
+    var body = card.querySelector('.participant-companion-body');
+    return !!body && !body.hidden;
+  });
+}
+
+function participanteDefinirAcompanhanteAberto_(card, aberto) {
+  if (!card) return;
+  var body = card.querySelector('.participant-companion-body');
+  var toggle = card.querySelector('.participant-companion-toggle');
+  if (body) body.hidden = !aberto;
+  card.classList.toggle('open', !!aberto);
+  if (!toggle) return;
+  toggle.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+  var icon = toggle.querySelector('.material-symbols-outlined');
+  if (icon) icon.textContent = aberto ? 'expand_less' : 'expand_more';
+}
+
+// Campo recolhido não exibe a mensagem de validação nem recebe foco: abre o cartão antes.
+function participanteRevelarCampoAcompanhante_(input) {
+  var card = input && input.closest ? input.closest('[data-acompanhante]') : null;
+  if (card) participanteDefinirAcompanhanteAberto_(card, true);
+}
+
+function renderAcompanhantesPart_(items, abertos) {
   var list = document.getElementById('ptAcompanhantes');
   if (!list) return;
   list.replaceChildren();
@@ -4095,9 +4227,25 @@ function renderAcompanhantesPart_(items) {
     card.dataset.acompanhante = item.id || '';
     var header = document.createElement('div');
     header.className = 'participant-companion-header';
+    var body = document.createElement('div');
+    body.className = 'participant-companion-body';
+    body.id = 'ptAco' + index + '_corpo';
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'participant-companion-toggle';
+    toggle.setAttribute('aria-controls', body.id);
+    var toggleIcon = document.createElement('span');
+    toggleIcon.className = 'material-symbols-outlined';
+    toggleIcon.setAttribute('aria-hidden', 'true');
+    toggle.appendChild(toggleIcon);
     var title = document.createElement('strong');
     title.textContent = 'Acompanhante ' + (index + 1);
-    header.appendChild(title);
+    toggle.appendChild(title);
+    var summary = document.createElement('span');
+    summary.className = 'participant-companion-summary';
+    toggle.appendChild(summary);
+    toggle.onclick = function() { participanteDefinirAcompanhanteAberto_(card, body.hidden); };
+    header.appendChild(toggle);
     var remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'ag-tb-btn';
@@ -4105,8 +4253,10 @@ function renderAcompanhantesPart_(items) {
     remove.setAttribute('aria-label', 'Remover acompanhante ' + (index + 1));
     remove.onclick = function() {
       var values = lerAcompanhantesPart_();
+      var estados = participanteAcompanhantesAbertos_();
       values.splice(index, 1);
-      renderAcompanhantesPart_(values);
+      estados.splice(index, 1);
+      renderAcompanhantesPart_(values, estados);
       appMarkUnsavedChanges('modalParticipante');
     };
     header.appendChild(remove);
@@ -4119,7 +4269,7 @@ function renderAcompanhantesPart_(items) {
       var subtitle = document.createElement('div');
       subtitle.className = 'section-label';
       subtitle.textContent = group.title;
-      card.appendChild(subtitle);
+      body.appendChild(subtitle);
       var grid = document.createElement('div');
       grid.className = 'field-row participant-companion-grid';
       group.fields.forEach(function(field) {
@@ -4171,20 +4321,75 @@ function renderAcompanhantesPart_(items) {
         input.value = item[field[0]] || '';
         wrapper.appendChild(label); wrapper.appendChild(input); grid.appendChild(wrapper);
       });
-      card.appendChild(grid);
+      body.appendChild(grid);
     });
+    card.appendChild(body);
     list.appendChild(card);
     fillSelectOptions('ptAco' + index + '_banco', BANCOS_PART, item.banco || '', '— Selecione —');
     fillSelectOptions('ptAco' + index + '_tipoConta', ['Conta corrente', 'Conta poupança'], item.tipoConta || '', '— Selecione —');
+    var nomeInput = document.getElementById('ptAco' + index + '_nome');
+    var telefoneInput = document.getElementById('ptAco' + index + '_telefone');
+    var atualizarResumo = function() {
+      var nome = String((nomeInput && nomeInput.value) || '').trim();
+      var telefone = String((telefoneInput && telefoneInput.value) || '').trim();
+      summary.textContent = nome ? nome + (telefone ? ' · ' + telefone : '') : 'Sem nome informado';
+    };
+    if (nomeInput) nomeInput.addEventListener('input', atualizarResumo);
+    if (telefoneInput) telefoneInput.addEventListener('input', atualizarResumo);
+    atualizarResumo();
+    // Cadastro já identificado abre recolhido; um novo abre pronto para digitar.
+    participanteDefinirAcompanhanteAberto_(card, abertos ? !!abertos[index] : !String(item.nome || '').trim());
   });
 }
 
 function adicionarAcompanhantePart() {
   var items = lerAcompanhantesPart_();
+  var estados = participanteAcompanhantesAbertos_();
   items.push({});
-  renderAcompanhantesPart_(items);
+  estados.push(true);
+  renderAcompanhantesPart_(items, estados);
   appMarkUnsavedChanges('modalParticipante');
   document.getElementById('ptAco' + (items.length - 1) + '_nome').focus();
+}
+
+// Mesmos dados que a Agenda exige antes de imprimir o recibo; titular e CPF do
+// titular assumem os do próprio participante quando ficam em branco.
+function participanteAtualizarReciboPendencias_() {
+  var box = document.getElementById('ptReciboPendencias');
+  var texto = document.getElementById('ptReciboPendenciasTexto');
+  if (!box || !texto) return;
+  if (_participanteDetalhesPendente) { box.hidden = true; return; }
+  function valor(id) { return String((document.getElementById(id) || {}).value || '').trim(); }
+  var faltam = [];
+  if (!valor('ptCpf').replace(/\D/g, '')) faltam.push('CPF');
+  if (valor('ptTelefone').replace(/\D/g, '').length < 10) faltam.push('telefone com DDD');
+  if (!valor('ptBanco')) faltam.push('banco');
+  if (!valor('ptTipoConta')) faltam.push('tipo de conta');
+  if (!valor('ptAgencia')) faltam.push('agência');
+  if (!valor('ptContaCorrente')) faltam.push('número da conta');
+  box.hidden = false;
+  box.classList.toggle('is-complete', !faltam.length);
+  var icon = box.querySelector('.material-symbols-outlined');
+  if (icon) icon.textContent = faltam.length ? 'info' : 'check_circle';
+  texto.textContent = faltam.length
+    ? 'Para gerar recibo ainda faltam: ' + faltam.join(', ') + '.'
+    : 'Dados completos para gerar recibo.';
+}
+
+function participanteMonitorarReciboPendencias_() {
+  var modal = document.getElementById('modalParticipante');
+  if (!modal || modal.dataset.reciboPendenciasMonitor === '1') return;
+  modal.dataset.reciboPendenciasMonitor = '1';
+  ['input', 'change'].forEach(function(tipo) {
+    modal.addEventListener(tipo, participanteAtualizarReciboPendencias_);
+  });
+}
+
+function participanteResumoCabecalho_(p) {
+  if (!p || !p.id) return '';
+  return [p.nome, p.projeto, p.idParticipante ? 'ID ' + p.idParticipante : '', p.status].map(function(parte) {
+    return String(parte || '').trim();
+  }).filter(Boolean).join(' · ');
 }
 
 var _participanteDetalhesConsulta = null;
@@ -4201,7 +4406,7 @@ function participanteBloquearDetalhes_(blocked) {
     modal.setAttribute('aria-busy', 'false');
     return;
   }
-  _participanteDetalhesDisabled = Array.prototype.map.call(modal.querySelectorAll('.modal-body input, .modal-body select, .modal-body textarea, .modal-body button'), function(el) {
+  _participanteDetalhesDisabled = Array.prototype.map.call(modal.querySelectorAll('.modal-body input, .modal-body select, .modal-body textarea, .modal-body button:not([data-keep-enabled])'), function(el) {
     var state = { el: el, disabled: el.disabled };
     el.disabled = true;
     return state;
@@ -4260,6 +4465,7 @@ function abrirFormPart(p) {
     _participanteEdicaoAtual = dados;
     _participanteDetalhesConsulta = null;
     _participanteDetalhesPendente = false;
+    participanteAtualizarReciboPendencias_();
     function historicoRecebido(historico) {
       if (_participanteEdicaoAtual !== dados) return;
       dados.historicoPendente = false;
@@ -4384,10 +4590,12 @@ function abrirFormPartPreenchido_(p) {
   participanteRenderHistorico_(p);
   renderAcompanhantesPart_((p && p.acompanhantes) || []);
   preencherMarcosParticipacao_(p);
-  document.getElementById('modalPartSub').textContent='Dados da pessoa e de sua participação no protocolo';
+  document.getElementById('modalPartSub').textContent=participanteResumoCabecalho_(p) || 'Dados da pessoa e de sua participação no protocolo';
   document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">save</span> SALVAR CADASTRO';
   renderParticipacoesPessoa_(p || null, false);
   participanteMonitorarIdentidadeDoModal_();
+  participanteMonitorarReciboPendencias_();
+  participanteAtualizarReciboPendencias_();
   atualizarParticipanteIdObrigatorio();
   abrirOverlay('modalParticipante');
 }
@@ -4548,6 +4756,7 @@ function prepararNovaParticipacaoPessoa_(participante) {
   document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">add_circle</span> CRIAR PARTICIPAÇÃO';
   participanteDefinirPessoaSomenteLeitura_(true);
   renderParticipacoesPessoa_(participante, true);
+  participanteAtualizarReciboPendencias_();
 }
 
 function abrirNovaParticipacaoPessoa() {
@@ -4641,7 +4850,10 @@ function salvarPartApp(opts) {
   opts = opts || {};
   var companionInputs = document.querySelectorAll('#ptAcompanhantes input');
   for (var ci = 0; ci < companionInputs.length; ci++) {
-    if (!companionInputs[ci].reportValidity()) return;
+    if (companionInputs[ci].checkValidity()) continue;
+    participanteRevelarCampoAcompanhante_(companionInputs[ci]);
+    companionInputs[ci].reportValidity();
+    return;
   }
   var nome=document.getElementById('ptNome').value.trim();
   var idPart=document.getElementById('ptId').value.trim();

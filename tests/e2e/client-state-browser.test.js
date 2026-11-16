@@ -114,7 +114,7 @@ for (const width of [1280, 390]) {
         function appServerRun(r){requests.push(r);} function appClearUnsavedChanges(){}
         function abrirFormPart(){document.getElementById('modalParticipante').inert=false;document.getElementById('modalParticipante').classList.add('open');}
         function dateToInputValue(){return '';} function formatarTelefoneBrasileiro(v){return v||'';}
-        function renderParticipacoesPessoa_(){} function participanteRenderMunicipios_(){}
+        function renderParticipacoesPessoa_(){} function participanteRenderMunicipios_(){} function participanteAtualizarReciboPendencias_(){} function participanteRevelarCampoAcompanhante_(){}
         function fillSelectOptions(id,values,value){document.getElementById(id).innerHTML='<option value=""></option>';document.getElementById(id).value=value||'';}
         function normSelectValue(v){return String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toLowerCase();}
         ${localities}
