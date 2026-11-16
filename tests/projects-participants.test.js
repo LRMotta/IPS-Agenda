@@ -76,8 +76,22 @@ test('ID e obrigatorio salvo nos status de pre-triagem', () => {
   assert.equal(cadastro.participantIdOptional('Falha de pré-triagem'), true);
   assert.equal(cadastro.participantIdOptional('Ativo'), false);
   assert.deepEqual(
-    Array.from(cadastro.requiredParticipantFields({ nome: 'Pessoa', projeto: 'Estudo Aurora', status: 'Ativo' })),
+    Array.from(cadastro.requiredParticipantFields({ nome: 'Pessoa', projeto: 'Estudo Aurora', status: 'Ativo', cpf: '529.982.247-25', telefone: '(51) 99999 0000' })),
     ['ID do participante']
+  );
+});
+
+test('CPF e telefone sao obrigatorios no cadastro de participante', () => {
+  const cadastro = rules();
+  const base = { nome: 'Pessoa', projeto: 'Estudo Aurora', status: 'Pré-triagem' };
+  assert.deepEqual(Array.from(cadastro.requiredParticipantFields(base)), ['CPF', 'Telefone']);
+  assert.deepEqual(
+    Array.from(cadastro.requiredParticipantFields(Object.assign({}, base, { cpf: ' .-', telefone: '()' }))),
+    ['CPF', 'Telefone']
+  );
+  assert.deepEqual(
+    Array.from(cadastro.requiredParticipantFields(Object.assign({}, base, { cpf: '529.982.247-25', telefone: '(51) 99999 0000' }))),
+    []
   );
 });
 

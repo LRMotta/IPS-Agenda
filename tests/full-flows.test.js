@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { readProjectFile } = require('./helpers/load-app-script');
 const { FakeSheet, FakeSpreadsheet } = require('./helpers/fake-spreadsheet');
+const { withParticipantContactDefaults } = require('./helpers/participant-contact-defaults');
 
 function between(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -45,6 +46,7 @@ function cadastroContext(spreadsheet, projectOptions, courierRows) {
     Date
   });
   vm.runInContext(source, context);
+  withParticipantContactDefaults(context, () => spreadsheet.getSheetByName('Participantes'));
   return { context, counters };
 }
 
@@ -357,6 +359,29 @@ test('participante e acompanhante exigem município IBGE correspondente à UF', 
   assert.throws(() => context.salvarDadosParticipante({ ...base, acompanhantes: [{ nome: 'Maria', estado: 'RS', cidade: 'Florianópolis', municipioCodigo: '4205407' }] }), /não corresponde à UF/);
   assert.equal(sheet.writes, 0);
   assert.equal(context.getMunicipiosBrasil('RS').some((item) => item.codigo === '4305108' && item.nome === 'Caxias do Sul'), true);
+});
+
+test('CPF e telefone ausentes bloqueiam cadastro e edição antes de qualquer escrita', () => {
+  const sheet = new FakeSheet('Participantes', [
+    ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs'],
+    [1, 'Pessoa Legada', '', '', 'P-001', 'Novo Estudo', '', '', 'Ativo', '', '', '']
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: sheet }), [{ nome: 'Novo Estudo' }]);
+  const base = { sexoNascimento: 'Não informado', nome: 'Pessoa Nova', idParticipante: 'P-002', projeto: 'Novo Estudo', status: 'Ativo' };
+  const before = JSON.stringify(sheet.rows);
+  for (const [data, message] of [
+    [{ ...base, cpf: '', telefone: '' }, /obrigatórios: CPF, Telefone\./],
+    [{ ...base, cpf: '529.982.247-25', telefone: '(  ) ' }, /obrigatórios: Telefone\./],
+    [{ ...base, cpf: '...-', telefone: '(54) 99999-0000' }, /obrigatórios: CPF\./],
+    [{ ...base, id: 1, nome: 'Pessoa Legada', idParticipante: 'P-001', cpf: '', telefone: '(54) 99999-0000' }, /obrigatórios: CPF\./]
+  ]) {
+    assert.throws(() => context.salvarDadosParticipante(data), message);
+  }
+  assert.equal(sheet.writes, 0);
+  assert.equal(JSON.stringify(sheet.rows), before);
+  assert.equal(context.salvarDadosParticipante({ ...base, cpf: '529.982.247-25', telefone: '(54) 99999-0000' }), 'Participante cadastrado com sucesso');
+  assert.equal(sheet.rows[2][9], '(54) 99999-0000');
+  assert.equal(sheet.rows[2][10], '529.982.247-25');
 });
 
 test('tipo de conta invalido do participante bloqueia escrita', () => {

@@ -25,7 +25,7 @@ function fixture(status = FOLLOWUP) {
   s.getProjetosParticipantesOptions_ = () => ['DUET', 'SPY', 'Outro'];
   s.participantePossuiEventoAgenda_ = () => true;
   s.getSheetByPossibleNames_ = () => sheet;
-  const payload = { sexoNascimento: 'Não informado', nome: 'Pessoa teste', cpf: '52998224725', projeto: 'SPY', idParticipante: 'S-1', status: 'Triagem', novaParticipacaoDireta: true, vincularPessoaCadastroId: '1' };
+  const payload = { sexoNascimento: 'Não informado', nome: 'Pessoa teste', cpf: '52998224725', telefone: '(54) 99999-0000', projeto: 'SPY', idParticipante: 'S-1', status: 'Triagem', novaParticipacaoDireta: true, vincularPessoaCadastroId: '1' };
   return { s, sheet, book, payload };
 }
 

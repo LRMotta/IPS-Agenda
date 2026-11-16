@@ -583,12 +583,14 @@
             <div class="field-error" id="errPtSexoNascimento">Selecione o sexo no nascimento.</div>
           </div>
           <div>
-            <label class="field-label" for="ptCpf">CPF</label>
-            <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="participanteFormatarEValidarCpf_(this, 'CPF do participante')" onblur="participanteValidarCpfCampo_(this, 'CPF do participante')">
+            <label class="field-label" for="ptCpf">CPF <span class="required-star">*</span></label>
+            <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="limparErro('ptCpf','errPtCpf'); participanteFormatarEValidarCpf_(this, 'CPF do participante')" onblur="participanteValidarCpfCampo_(this, 'CPF do participante')" aria-describedby="errPtCpf" aria-invalid="false" aria-required="true">
+            <div class="field-error" id="errPtCpf">Campo obrigatório.</div>
           </div>
           <div>
-            <label class="field-label" for="ptTelefone">Telefone de Contato</label>
-            <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
+            <label class="field-label" for="ptTelefone">Telefone de Contato <span class="required-star">*</span></label>
+            <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="limparErro('ptTelefone','errPtTelefone'); this.value=formatarTelefoneBrasileiro(this.value)" aria-describedby="errPtTelefone" aria-invalid="false" aria-required="true">
+            <div class="field-error" id="errPtTelefone">Campo obrigatório.</div>
           </div>
         </div>
       </div>
