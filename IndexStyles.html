@@ -826,6 +826,8 @@
     .proj-stat-link.active { background: #f3f7ff; }
     .proj-stat-link.active::before { height: 4px; }
     .proj-stat-sub { font-size: 10.5px; color: var(--text-faint); margin-top: 3px; overflow-wrap: anywhere; }
+    /* Reserva a largura do ícone (36px + margem) para o texto não passar por baixo dele. */
+    #page-projetos .stat-label, #page-projetos .proj-stat-sub { padding-right: 44px; }
     .proj-detail-section-label { display: flex; align-items: center; gap: 5px; margin-bottom: 7px; color: #7a8799; font-size: 10px; font-weight: 700; letter-spacing: .45px; text-transform: uppercase; }
     .proj-detail-section-label .material-symbols-outlined { font-size: 15px; color: #8fa1b8; }
     .proj-detail-items { display: flex; flex-wrap: wrap; gap: 7px 22px; }
@@ -847,8 +849,39 @@
     .ce-status.no { color: #b3261e; }
     .ce-status.checking { color: #5f6b7c; }
     textarea.f-input { height: auto; min-height: 72px; padding: 8px 12px; resize: vertical; line-height: 1.5; }
+    /* PARTICIPANTES: lista */
+    .par-toolbar { flex-wrap: wrap; }
+    .par-toolbar .search-wrap { flex: 1 1 240px; min-width: 0; }
+    .par-toolbar .search-wrap input { min-width: 0; }
+    .par-filter-select { height: 36px; max-width: 220px; font-size: 12px; color: var(--text-muted); border: 1.5px solid #e0e6f0; border-radius: var(--r-sm); background-color: #f6f8ff; padding: 0 30px 0 10px; }
+    .par-stat-link { cursor: pointer; }
+    .par-stat-link.active { background: #f3f7ff; }
+    .par-stat-link.active::before { height: 4px; }
+    .par-stat-link:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+    #page-participantes .stat-label { padding-right: 44px; }
+    .par-result-bar { display: flex; align-items: center; gap: 12px; min-height: 30px; padding: 6px 20px; background: var(--surface); border: 1px solid #e8edf8; border-top: none; color: var(--text-muted); font-size: 12px; }
+    .par-table-scroll { max-width: 100%; overflow-x: auto; }
+    .part-row { cursor: pointer; }
+    .part-row.open td { border-bottom: none; background: #fafbff; }
+    .part-row .part-avatar { border-radius: 8px; }
+    .part-id { min-width: 0; }
+    .part-detail { display: none; }
+    .part-detail.open { display: table-row; }
+    .part-detail td { padding: 0 20px 12px 97px !important; background: #fafbff; }
+    .data-table tr.part-detail:hover td { background: #fafbff; }
+    .par-detail-empty { font-size: 12px; color: var(--text-faint); }
+    .par-det-label { color: var(--text-faint); }
+    .par-det-obs { white-space: pre-wrap; overflow-wrap: anywhere; }
+    @media (max-width: 700px) {
+      .par-filter-select { flex: 1 1 140px; max-width: none; }
+      .part-detail td { padding-left: 20px !important; }
+      .part-id { min-width: 150px; }
+      /* A tabela rola na horizontal; o detalhe acompanha a área visível. */
+      .part-detail .par-detail-items, .part-detail .par-detail-empty { position: sticky; left: 20px; width: calc(100vw - 66px); }
+    }
+    .part-detail .det-item { align-items: flex-start; }
     /* DETALHE MD3 */
-    .par-detail-items { display: flex; flex-wrap: wrap; gap: 6px 24px; padding-left: 65px; }
+    .par-detail-items { display: flex; flex-wrap: wrap; gap: 6px 24px; }
     .det-item { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
     .det-item .material-symbols-outlined { font-size: 15px; color: #b0b8c8; flex-shrink: 0; }
     .det-obs { max-width: 420px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1193,7 +1226,8 @@
 #modalSoAImport .soa-import-row > span:first-child { flex:1; }
 #modalSoAImport .soa-import-row > span:last-child { flex:1; }
 #modalSoAImport .soa-import-preview { max-height:none; margin-bottom:0; overflow:visible; border:0; }
-.participant-milestones-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.participant-milestones-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; align-items:end; }
+@media(max-width:900px) { .participant-milestones-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .participant-milestones-section .participant-form-guidance { margin-bottom:14px; }
 @media(max-width:600px) { .participant-milestones-grid { grid-template-columns:1fr; } }
 @media(max-width:600px) {

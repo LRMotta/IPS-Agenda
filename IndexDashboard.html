@@ -341,8 +341,10 @@
   function dashClearParticipanteInputs() {
     var search = document.getElementById('searchParticipantes');
     var status = document.getElementById('filterStatusPar');
+    var projeto = document.getElementById('filterProjetoPar');
     if (search) search.value = '';
     if (status) status.value = '';
+    if (projeto) projeto.value = '';
   }
 
   function dashListIsLoading(bodyId) {
@@ -379,9 +381,9 @@
       if (dashOpenMainWithFilter('participantes', target)) return;
       dashWaitAndApply('participantes', function() {
         if (dashListIsLoading('bodyParticipantes')) return false;
-        if (typeof filtrarParticipantes !== 'function' || typeof _participantes === 'undefined' || !Array.isArray(_participantes)) return false;
+        if (typeof parSetGrupo !== 'function' || typeof _participantes === 'undefined' || !Array.isArray(_participantes)) return false;
         dashClearParticipanteInputs();
-        filtrarParticipantes();
+        parSetGrupo('todos');
         return true;
       });
       return;
@@ -390,12 +392,9 @@
       if (dashOpenMainWithFilter('participantes', target)) return;
       dashWaitAndApply('participantes', function() {
         if (dashListIsLoading('bodyParticipantes')) return false;
-        if (typeof renderTabelaPart !== 'function' || typeof _participantes === 'undefined' || !Array.isArray(_participantes)) return false;
+        if (typeof parSetGrupo !== 'function' || typeof _participantes === 'undefined' || !Array.isArray(_participantes)) return false;
         dashClearParticipanteInputs();
-        renderTabelaPart(_participantes.filter(function(p) {
-          var st = _normDash(p.status);
-          return st === 'ativo' || st === 'em seguimento';
-        }));
+        parSetGrupo('ativos');
         return true;
       });
       return;

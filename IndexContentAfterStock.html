@@ -540,7 +540,7 @@
   <div class="modal-box participant-modal-box" role="dialog" aria-labelledby="modalPartTitle" tabindex="-1">
     <div class="modal-header">
       <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">person</span></div>
-      <div>
+      <div class="participant-modal-heading">
         <div class="modal-header-title" id="modalPartTitle">CADASTRO DE PARTICIPANTE</div>
         <div class="modal-header-sub" id="modalPartSub">Dados da pessoa e de sua participação no protocolo</div>
       </div>
@@ -557,7 +557,7 @@
         <span class="app-inline-notice-copy"><strong>Carregando cadastro completo…</strong><small>Aguarde, estamos carregando os dados do participante.</small></span>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">badge</span> Identificação</div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">badge</span> Pessoa</div>
         <div class="field" style="margin-bottom:14px;">
           <div>
             <label class="field-label" for="ptNome">Nome Completo <span class="required-star">*</span></label>
@@ -566,7 +566,7 @@
             <div class="field-error" id="errPtNome">Campo obrigatório.</div>
           </div>
         </div>
-        <div class="field-row cols-3">
+        <div class="field-row participant-person-grid">
           <div>
             <label class="field-label" for="ptNasc">Data de Nascimento</label>
             <input type="date" id="ptNasc" class="f-input">
@@ -584,6 +584,10 @@
           <div>
             <label class="field-label" for="ptCpf">CPF</label>
             <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="participanteFormatarEValidarCpf_(this, 'CPF do participante')" onblur="participanteValidarCpfCampo_(this, 'CPF do participante')">
+          </div>
+          <div>
+            <label class="field-label" for="ptTelefone">Telefone de Contato</label>
+            <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
           </div>
         </div>
       </div>
@@ -628,7 +632,7 @@
             <input type="text" id="ptBraco" class="f-input" placeholder="Ex: Braço A, Placebo…">
           </div>
         </div>
-        <div class="participant-form-guidance">Para iniciar outro protocolo, encerre a participação atual ou, quando corresponder à situação confirmada pela equipe, use “Em acompanhamento de segurança”. Depois, crie uma nova participação. O acompanhamento continua disponível na Agenda. Não altere o protocolo de um cadastro que já possui agendamentos.</div>
+        <div class="participant-form-guidance">Não altere o protocolo de um cadastro que já possui agendamentos. Para outro protocolo, encerre esta participação (ou use “Em acompanhamento de segurança”, quando confirmado pela equipe) e crie uma nova participação.</div>
       </div>
       <div class="form-section participant-participations-section" id="ptParticipacoesSection" style="display:none;">
         <div class="participant-participations-heading">
@@ -644,14 +648,14 @@
       </div>
       <div class="form-section participant-milestones-section">
         <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">event</span> Marcos desta participação no estudo</div>
-        <p class="participant-form-guidance">Datas opcionais, próprias desta participação. Informe apenas datas documentadas. Sem a referência necessária, a previsão fica pendente; os agendamentos existentes são preservados.</p>
+        <p class="participant-form-guidance">Datas opcionais. Informe apenas datas documentadas; sem a referência necessária, a previsão fica pendente e os agendamentos existentes são preservados.</p>
         <div class="field-row participant-milestones-grid">
-          <div><label class="field-label" for="ptMarcoRANDOMIZACAO">Data da randomização</label><input type="date" id="ptMarcoRANDOMIZACAO" class="f-input" data-participacao-marco="RANDOMIZACAO" data-marco-inicial=""></div>
-          <div><label class="field-label" for="ptMarcoINCLUSAO">Data da inclusão</label><input type="date" id="ptMarcoINCLUSAO" class="f-input" data-participacao-marco="INCLUSAO" data-marco-inicial=""></div>
-          <div><label class="field-label" for="ptMarcoULTIMA_DOSE">Data da última dose</label><input type="date" id="ptMarcoULTIMA_DOSE" class="f-input" data-participacao-marco="ULTIMA_DOSE" data-marco-inicial=""></div>
-          <div><label class="field-label" for="ptMarcoFIM_TRATAMENTO">Data do fim do tratamento</label><input type="date" id="ptMarcoFIM_TRATAMENTO" class="f-input" data-participacao-marco="FIM_TRATAMENTO" data-marco-inicial=""></div>
-          <div><label class="field-label" for="ptMarcoDECISAO_INTERRUPCAO_TRATAMENTO">Data da decisão de interrupção definitiva</label><input type="date" id="ptMarcoDECISAO_INTERRUPCAO_TRATAMENTO" class="f-input" data-participacao-marco="DECISAO_INTERRUPCAO_TRATAMENTO" data-marco-inicial=""></div>
-          <div><label class="field-label" for="ptMarcoPROGRESSAO_DOENCA">Data da progressão da doença</label><input type="date" id="ptMarcoPROGRESSAO_DOENCA" class="f-input" data-participacao-marco="PROGRESSAO_DOENCA" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoRANDOMIZACAO">Randomização</label><input type="date" id="ptMarcoRANDOMIZACAO" class="f-input" data-participacao-marco="RANDOMIZACAO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoINCLUSAO">Inclusão</label><input type="date" id="ptMarcoINCLUSAO" class="f-input" data-participacao-marco="INCLUSAO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoULTIMA_DOSE">Última dose</label><input type="date" id="ptMarcoULTIMA_DOSE" class="f-input" data-participacao-marco="ULTIMA_DOSE" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoFIM_TRATAMENTO">Fim do tratamento</label><input type="date" id="ptMarcoFIM_TRATAMENTO" class="f-input" data-participacao-marco="FIM_TRATAMENTO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoDECISAO_INTERRUPCAO_TRATAMENTO">Decisão de interrupção definitiva</label><input type="date" id="ptMarcoDECISAO_INTERRUPCAO_TRATAMENTO" class="f-input" data-participacao-marco="DECISAO_INTERRUPCAO_TRATAMENTO" data-marco-inicial=""></div>
+          <div><label class="field-label" for="ptMarcoPROGRESSAO_DOENCA">Progressão da doença</label><input type="date" id="ptMarcoPROGRESSAO_DOENCA" class="f-input" data-participacao-marco="PROGRESSAO_DOENCA" data-marco-inicial=""></div>
           <div><label class="field-label" for="ptMarcoOUTRA">Outra data de referência</label><input type="date" id="ptMarcoOUTRA" class="f-input" data-participacao-marco="OUTRA" data-marco-inicial=""></div>
         </div>
       </div>
@@ -694,6 +698,10 @@
       </div>
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">account_balance</span> Dados Bancários</div>
+        <div class="participant-receipt-status" id="ptReciboPendencias" role="status" aria-live="polite" hidden>
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          <span id="ptReciboPendenciasTexto"></span>
+        </div>
         <div class="field-row participant-bank-grid">
           <div>
             <label class="field-label" for="ptBanco">Nome do Banco</label>
@@ -727,16 +735,12 @@
       </div>
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">groups</span> Acompanhantes</div>
-        <p class="participant-companion-help">Cadastre os acompanhantes desta participação, com endereço e dados bancários próprios. O nome é obrigatório; os demais dados podem ser completados depois.</p>
+        <p class="participant-companion-help">Só o nome é obrigatório; endereço e dados bancários próprios podem ser completados depois.</p>
         <div id="ptAcompanhantes"></div>
         <button type="button" class="ag-tb-btn" onclick="adicionarAcompanhantePart()"><span class="material-symbols-outlined" aria-hidden="true">person_add</span> Adicionar acompanhante</button>
       </div>
       <div class="form-section">
-        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">contact_phone</span> Contato e Notas</div>
-        <div class="field" style="margin-bottom:14px;">
-          <label class="field-label" for="ptTelefone">Telefone de Contato</label>
-          <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
-        </div>
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">notes</span> Observações</div>
         <div class="field">
           <label class="field-label" for="ptObs">Observações</label>
           <textarea id="ptObs" class="f-input" placeholder="Informações adicionais relevantes…"></textarea>
@@ -751,9 +755,10 @@
         </dl>
         <p id="ptHistoricoNota" class="participant-audit-note"></p>
       </details>
-      <div class="status-msg" id="statusPart" role="status" aria-live="polite" aria-atomic="true"></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <button class="btn-save" id="btnSalvarPart" onclick="salvarPartApp()" style="flex:1 1 220px;">
+      <div class="courier-modal-actions participant-modal-actions">
+        <div class="status-msg" id="statusPart" role="status" aria-live="polite" aria-atomic="true"></div>
+        <button class="btn-txt" type="button" data-keep-enabled onclick="fecharOverlay('modalParticipante')">Cancelar</button>
+        <button class="btn-save" id="btnSalvarPart" onclick="salvarPartApp()">
           <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR CADASTRO
         </button>
       </div>
