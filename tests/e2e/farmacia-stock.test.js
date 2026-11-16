@@ -585,6 +585,40 @@ test('edição de unidade permite Caixa sem histórico e bloqueia histórico e k
   } finally { await browser.close(); }
 });
 
+test('exclusão de produto separa orientação, motivo, confirmação e erro no desktop e celular', async () => {
+  const browser = await loadPlaywright().chromium.launch({headless:true});
+  const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(),'ips-agenda-playwright');
+  fs.mkdirSync(artifacts,{recursive:true});
+  try {
+    for (const width of [1280,390]) {
+      const {page,errors} = await fixture(browser,width), data = stockData({positions:[]});
+      await openStock(page,data);
+      await chooseView(page,'products');
+      await page.evaluate(result => window.pending.at(-1).success(result),{...data,productsOnly:true});
+      await page.locator('#farmaciaProductsResults button[data-action="delete"]').click();
+      const modal = page.locator('#farmaciaModal-recordAction');
+      assert.match(await modal.locator('.farmacia-action-copy').innerText(),/Exclua antes os inventários iniciais/);
+      await modal.getByLabel('Motivo da exclusão').fill('Cadastro de teste com unidade incorreta');
+      await modal.getByLabel(/Confirmo a exclusão/).check();
+      await modal.getByRole('button',{name:'Excluir',exact:true}).click();
+      await page.evaluate(() => window.pending.at(-1).failure({message:'Este produto possui histórico de estoque e não pode ser excluído.'}));
+      const status = modal.locator('.farmacia-dialog-status');
+      assert.match(await status.innerText(),/possui histórico de estoque/);
+      const gaps = await modal.evaluate(node => {
+        const box = selector => node.querySelector(selector).getBoundingClientRect();
+        const copy = box('.farmacia-action-copy'), label = box('label[for="farmaciaAction-reason"]'), reason = box('#farmaciaAction-reason'), confirm = box('.farmacia-confirm');
+        return {copyToLabel:label.top - copy.bottom, reasonToConfirm:confirm.top - reason.bottom};
+      });
+      assert.ok(gaps.copyToLabel >= 12,'orientação colada ao rótulo: ' + gaps.copyToLabel);
+      assert.ok(gaps.reasonToConfirm >= 12,'confirmação colada ao motivo: ' + gaps.reasonToConfirm);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),true);
+      await modal.locator('.modal-box').screenshot({path:path.join(artifacts,'farmacia-excluir-produto-' + width + '.png')});
+      assert.deepEqual(errors,[]);
+      await page.close();
+    }
+  } finally { await browser.close(); }
+});
+
 test('equipe consulta produtos por projeto sem estoque, edição ou respostas de outra área', async () => {
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try {

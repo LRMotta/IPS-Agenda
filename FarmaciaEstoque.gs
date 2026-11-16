@@ -133,6 +133,17 @@ function farmaciaPositionKey_(data) {
   return JSON.stringify([data.productId, data.lot, data.locationRef ? [data.locationRef.unitId, data.locationRef.position] : data.location, data.kit]);
 }
 
+// Produtos com estoque lançado: recebimentos sempre contam; inventário inicial deixa de contar
+// depois de excluído (a exclusão só é aceita sem movimentações, então nenhum saldo depende dele).
+function farmaciaProductsWithStock_(records) {
+  var deleted = {}, result = {};
+  records.forEach(function(item) { if (item.type === 'INITIAL_DELETE') deleted[item.data.entityId] = true; });
+  records.forEach(function(item) {
+    if (item.type === 'RECEIPT' || (item.type === 'INITIAL' && !deleted[item.id])) result[item.data.productId] = true;
+  });
+  return result;
+}
+
 function farmaciaSamePosition_(a, b) {
   return farmaciaPositionKey_(a) === farmaciaPositionKey_(b) ||
     (a.productId === b.productId && a.lot === b.lot && a.kit === b.kit && a.location === b.location);
@@ -319,17 +330,19 @@ function getFarmaciaProdutos(studyId, restricted) {
   var stockHistoryUnknown = false;
   if (sheet && sheet.getLastRow()) {
     var rows = sheet.getDataRange().getValues();
+    var stockRecords = [];
     rows.slice(1).forEach(function(row) {
-      if (access.farmaciaAccess !== 'manage' || row[2] !== JSON.stringify(studyId) || row[3] !== restricted || ['INITIAL', 'RECEIPT'].indexOf(row[1]) === -1) return;
+      if (access.farmaciaAccess !== 'manage' || row[2] !== JSON.stringify(studyId) || row[3] !== restricted || ['INITIAL', 'RECEIPT', 'INITIAL_DELETE'].indexOf(row[1]) === -1) return;
       try {
         var stockData = JSON.parse(row[7]);
-        if (!stockData || !stockData.productId) stockHistoryUnknown = true;
-        else productsWithStockHistory[stockData.productId] = true;
+        if (!stockData || !(row[1] === 'INITIAL_DELETE' ? stockData.entityId : stockData.productId)) stockHistoryUnknown = true;
+        else stockRecords.push({ id: row[0], type: row[1], data: stockData });
       } catch (error) {
         // O catálogo continua consultável; histórico ilegível nunca libera mudança de unidade.
         stockHistoryUnknown = true;
       }
     });
+    productsWithStockHistory = farmaciaProductsWithStock_(stockRecords);
     var selected = rows.slice(1).filter(function(row) {
       return row[2] === JSON.stringify(studyId) && row[3] === restricted && ['PRODUCT', 'PRODUCT_EDIT', 'PRODUCT_DELETE'].indexOf(row[1]) !== -1;
     });
@@ -351,10 +364,7 @@ function getFarmaciaEstoque(studyId, restricted) {
   var data = context.ss ? farmaciaReadLedger_(context) : { products: [], positions: [], movements: [] };
   var today = farmaciaToday_();
   var locations = farmaciaReadLocations_();
-  var productsWithStockHistory = {};
-  (data.records || []).forEach(function(record) {
-    if (['INITIAL', 'RECEIPT'].indexOf(record.type) !== -1) productsWithStockHistory[record.data.productId] = true;
-  });
+  var productsWithStockHistory = farmaciaProductsWithStock_(data.records || []);
   return { study: context.access.farmaciaStudy, restricted: restricted, configured: !!context.ss,
     locationsConfigured: locations.configured, storageUnits: locations.units,
     locationsCanManage: context.access.role === 'admin' || context.access.role === 'user',
