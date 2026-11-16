@@ -362,3 +362,10 @@ test('cache vencido ou limite alterado inicia consulta nova na primeira página'
   assert.equal(requests[1].offset, 0);
   assert.equal(requests[1].query.snapshotId, '');
 });
+
+test('erro de saldo bloqueado não é traduzido como operação concorrente', () => {
+  const c = loadFunctions({}, ['appErrorRawText', 'appErrorMessage']);
+  assert.equal(c.appErrorMessage(new Error('Material vencido deve entrar integralmente bloqueado.')), 'Material vencido deve entrar integralmente bloqueado.');
+  assert.match(c.appErrorMessage(new Error('Lock timeout: another process was holding the lock for too long.')), /Outra operacao parece estar em andamento/);
+  assert.match(c.appErrorMessage(new Error('There are too many LockService operations against the same script.')), /Outra operacao parece estar em andamento/);
+});

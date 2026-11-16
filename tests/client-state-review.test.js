@@ -170,7 +170,7 @@ test('servidor preserva localidade legada inalterada; novo/alterado ou código i
   s.clearCodexRuntimeCaches_ = () => {}; s.getProjetosParticipantesOptions_ = () => [{ nome: 'Estudo A' }, { nome: 'Estudo B' }];
   s.codexWriteAuditChanges_ = () => {}; s.codexWriteAuditLog_ = () => {};
   s.codexLogPerformance_ = () => {}; s.participantePossuiEventoAgenda_ = () => false;
-  const base = { sexoNascimento: 'Não informado', nome: 'Pessoa', idParticipante: 'PT-1', projeto: 'Estudo A', status: 'Falha de Triagem', estado: 'RS', cidade: 'Grafia histórica', municipioCodigo: '' };
+  const base = { sexoNascimento: 'Não informado', nome: 'Pessoa', cpf: '529.982.247-25', telefone: '(54) 99999-0000', idParticipante: 'PT-1', projeto: 'Estudo A', status: 'Falha de Triagem', estado: 'RS', cidade: 'Grafia histórica', municipioCodigo: '' };
   s.salvarDadosParticipante({ ...base, id: 'P-1', telefone: '54999999999' });
   assert.equal(sh.rows[1][14], 'Grafia histórica');
   s.salvarDadosParticipante({ ...base, idParticipante: 'PT-2', projeto: 'Estudo B', status: 'Ativo', novaParticipacaoDireta: true, vincularPessoaCadastroId: 'P-1' });

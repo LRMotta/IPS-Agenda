@@ -4541,10 +4541,10 @@ function abrirFormPartPreenchido_(p) {
     fillSelectOptions('ptStatus', STATUS_PART, '', '-- Selecione --');
   }
   preencherProjetosParticipante('');
-  ['errPtNome','errPtSexoNascimento','errPtId','errPtProjeto','errPtStatus'].forEach(function(id){
+  ['errPtNome','errPtSexoNascimento','errPtCpf','errPtTelefone','errPtId','errPtProjeto','errPtStatus'].forEach(function(id){
     document.getElementById(id).classList.remove('visible');
   });
-  ['ptNome','ptSexoNascimento','ptId','ptProjeto','ptStatus'].forEach(function(id){
+  ['ptNome','ptSexoNascimento','ptCpf','ptTelefone','ptId','ptProjeto','ptStatus'].forEach(function(id){
     document.getElementById(id).classList.remove('invalid');
   });
   document.getElementById('statusPart').innerHTML='';
@@ -4871,6 +4871,8 @@ function salvarPartApp(opts) {
   if (!appRequiredFeedback([
     { input: 'ptNome', error: 'errPtNome', label: 'Nome', value: nome },
     { input: 'ptSexoNascimento', error: 'errPtSexoNascimento', label: 'Sexo no nascimento', value: ['Masculino','Feminino','Não informado'].indexOf(document.getElementById('ptSexoNascimento').value) >= 0 ? 'ok' : '' },
+    { input: 'ptCpf', error: 'errPtCpf', label: 'CPF', value: document.getElementById('ptCpf').value.replace(/\D/g, '') },
+    { input: 'ptTelefone', error: 'errPtTelefone', label: 'Telefone', value: document.getElementById('ptTelefone').value.replace(/\D/g, '') },
     { input: 'ptId', error: 'errPtId', label: 'ID do participante', value: idObrigatorio ? idPart : 'ok' },
     { input: 'ptProjeto', error: 'errPtProjeto', label: 'Projeto', value: participanteProjetoCadastrado(projeto) ? 'ok' : '' },
     { input: 'ptStatus', error: 'errPtStatus', label: 'Status', value: status }
@@ -5453,7 +5455,8 @@ function appErrorMessage(error, fallback, opts) {
     friendly = 'Nao foi possivel criar o rascunho de e-mail. Verifique a autorizacao do Gmail e tente novamente.';
   } else if (normText.indexOf('drive') >= 0 || normText.indexOf('pdf') >= 0 || normText.indexOf('http 500') >= 0 || normText.indexOf('internal error') >= 0 || normText.indexOf('erro interno') >= 0) {
     friendly = 'Nao foi possivel gerar ou acessar o arquivo agora. Tente novamente em instantes.';
-  } else if (normText.indexOf('lock') >= 0 || normText.indexOf('bloque') >= 0 || normText.indexOf('simultan') >= 0 || normText.indexOf('tempo limite') >= 0) {
+  } else if (/\block/.test(normText) || normText.indexOf('simultan') >= 0 || normText.indexOf('tempo limite') >= 0) {
+    // "bloqueado"/"blocked" sao regras de negocio (ex.: saldo bloqueado), nao concorrencia.
     friendly = 'Outra operacao parece estar em andamento. Aguarde alguns instantes, atualize os dados e tente novamente.';
   } else if (normText.indexOf('nao encontrado') >= 0 || normText.indexOf('não encontrado') >= 0 || normText.indexOf('not found') >= 0) {
     friendly = 'Nao encontrei o registro ou recurso esperado. Atualize a lista e confirme se ele ainda existe.';

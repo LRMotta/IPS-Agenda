@@ -43,7 +43,7 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
         function preencherProjetosParticipante(v){document.getElementById('ptProjeto').value=v;}
         function atualizarParticipanteIdObrigatorio(){return true;}
         function participanteValidarCpfsDoFormulario_(){return true;} function participanteFormatarEValidarCpf_(){} function participanteValidarCpfCampo_(){return true;}function participanteValidarLocalidadesFormulario_(){return true;}
-        function participanteProjetoCadastrado(){return true;} function appRequiredFeedback(entries){return entries.every(e=>!!e.value);}
+        function participanteProjetoCadastrado(){return true;} function appRequiredFeedback(entries){window.requiredMissing=entries.filter(e=>!e.value).map(e=>e.label);return !window.requiredMissing.length;}
         function appSetButtonBusy(btn,busy){btn.disabled=busy;} function appSetStatus(id,s){document.getElementById(id).textContent=s;}
         function participanteStatusEncerrado_(){return true;}
         function participacoesDaPessoa_(p){return [p];}
@@ -123,9 +123,19 @@ test('Participantes carrega detalhe antes de salvar e preserva campos no desktop
       await page.locator('#btnSalvarPart').click();
       assert.equal(await page.evaluate(() => window.requests.length), 2);
       await page.locator('#ptSexoNascimento').selectOption('Feminino');
+      // CPF e telefone vazios bloqueiam o salvamento e destacam os campos.
+      await page.locator('#btnSalvarPart').click();
+      assert.equal(await page.evaluate(() => window.requests.length), 2);
+      assert.deepEqual(await page.evaluate(() => window.requiredMissing), ['CPF', 'Telefone']);
+      assert.equal(await page.locator('#ptCpf').getAttribute('aria-required'), 'true');
+      assert.equal(await page.locator('#ptTelefone').getAttribute('aria-required'), 'true');
+      await page.locator('#ptCpf').fill('123.456.789-09');
+      await page.locator('#ptTelefone').fill('(54) 99999 0000');
       await page.locator('#btnSalvarPart').click();
       const payload = await page.evaluate(() => window.requests[2].args[0]);
       assert.equal(payload.sexoNascimento, 'Feminino');
+      assert.equal(payload.cpf, '123.456.789-09');
+      assert.equal(payload.telefone, '(54) 99999 0000');
       assert.equal(payload.id, '1');
       assert.equal(payload.projeto, 'Aurora');
       assert.equal(payload.rua, detail.rua);

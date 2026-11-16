@@ -59,13 +59,14 @@
               <div class="form-section"><div class="section-label">Contagem física</div><fieldset id="farmaciaInitialFields" class="form-grid" disabled>
                 <div class="field"><label class="field-label" for="farmaciaInitialProduct">Produto</label><select id="farmaciaInitialProduct" class="f-input f-select" required onchange="farmaciaInitialProductChanged()"><option value="">Selecione</option></select></div>
                 <div class="field"><label class="field-label" for="farmaciaInitialLot">Lote</label><input id="farmaciaInitialLot" class="f-input" maxlength="100" required></div>
-                <div class="field"><label class="field-label" for="farmaciaInitialExpiry">Validade</label><input id="farmaciaInitialExpiry" class="f-input" type="date" required></div>
+                <div class="field"><label class="field-label" for="farmaciaInitialExpiry">Validade</label><input id="farmaciaInitialExpiry" class="f-input" type="date" required oninput="farmaciaInitialExpiryChanged()" onchange="farmaciaInitialExpiryChanged()"></div>
                 <div class="field"><label class="field-label" for="farmaciaInitialUnit">Equipamento</label><select id="farmaciaInitialUnit" class="f-input f-select" required onchange="farmaciaInitialUnitChanged()"><option value="">Selecione</option></select></div>
                 <div class="field"><label class="field-label" for="farmaciaInitialLocation">Posição</label><select id="farmaciaInitialLocation" class="f-input f-select" required onchange="farmaciaInitialStorageCheck()"><option value="">Selecione o equipamento</option></select></div>
                 <p id="farmaciaInitialStorageStatus" class="profile-helper" role="status" aria-live="polite"></p>
                 <div id="farmaciaKitField" hidden><div class="field"><label class="field-label" for="farmaciaInitialKit">Número do kit</label><input id="farmaciaInitialKit" class="f-input" maxlength="100"></div></div>
-                <div class="field"><label class="field-label" for="farmaciaInitialPhysical">Quantidade física</label><input id="farmaciaInitialPhysical" class="f-input" type="number" min="0.001" max="1000000000" step="0.001" required></div>
+                <div class="field"><label class="field-label" for="farmaciaInitialPhysical">Quantidade física</label><input id="farmaciaInitialPhysical" class="f-input" type="number" min="0.001" max="1000000000" step="0.001" required oninput="farmaciaInitialExpiryChanged()"></div>
                 <div class="field"><label class="field-label" for="farmaciaInitialBlocked">Quantidade bloqueada</label><input id="farmaciaInitialBlocked" class="f-input" type="number" min="0" max="1000000000" step="0.001" value="0" required></div>
+                <p id="farmaciaInitialExpiredStatus" class="profile-helper" role="status" aria-live="polite" hidden>Validade já vencida: o saldo físico inteiro entra bloqueado e não fica disponível para uso.</p>
                 <div class="field"><label class="field-label" for="farmaciaInitialCountedOn">Data da conferência física</label><input id="farmaciaInitialCountedOn" class="f-input" type="date" required></div>
                 <div class="field"><label class="field-label" for="farmaciaInitialNote">Observação (opcional)</label><textarea id="farmaciaInitialNote" class="f-input" maxlength="500"></textarea></div>
                 <p id="farmaciaInitialLifecycleStatus" class="profile-helper" hidden>O saldo do patrocinador que não estiver bloqueado ficará aguardando avaliação. A contagem física não registra recebimento nem liberação para uso.</p>
@@ -582,12 +583,14 @@
             <div class="field-error" id="errPtSexoNascimento">Selecione o sexo no nascimento.</div>
           </div>
           <div>
-            <label class="field-label" for="ptCpf">CPF</label>
-            <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="participanteFormatarEValidarCpf_(this, 'CPF do participante')" onblur="participanteValidarCpfCampo_(this, 'CPF do participante')">
+            <label class="field-label" for="ptCpf">CPF <span class="required-star">*</span></label>
+            <input type="text" id="ptCpf" class="f-input" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" oninput="limparErro('ptCpf','errPtCpf'); participanteFormatarEValidarCpf_(this, 'CPF do participante')" onblur="participanteValidarCpfCampo_(this, 'CPF do participante')" aria-describedby="errPtCpf" aria-invalid="false" aria-required="true">
+            <div class="field-error" id="errPtCpf">Campo obrigatório.</div>
           </div>
           <div>
-            <label class="field-label" for="ptTelefone">Telefone de Contato</label>
-            <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
+            <label class="field-label" for="ptTelefone">Telefone de Contato <span class="required-star">*</span></label>
+            <input type="text" id="ptTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="limparErro('ptTelefone','errPtTelefone'); this.value=formatarTelefoneBrasileiro(this.value)" aria-describedby="errPtTelefone" aria-invalid="false" aria-required="true">
+            <div class="field-error" id="errPtTelefone">Campo obrigatório.</div>
           </div>
         </div>
       </div>

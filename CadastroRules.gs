@@ -103,6 +103,8 @@ var CadastroRules_ = (function() {
     if (!participantIdOptional(data.status) && !String(data.idParticipante || '').trim()) {
       missing.push('ID do participante');
     }
+    if (!digits(data.cpf)) missing.push('CPF');
+    if (!digits(data.telefone)) missing.push('Telefone');
     return missing;
   }
 
