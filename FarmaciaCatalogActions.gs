@@ -22,8 +22,8 @@ function farmaciaApplyCatalogAction_(ledger, record) {
   if (!current || data.revision !== (current.revision || current.id)) throw new Error('O registro mudou ou foi excluído. Atualize a tabela antes de continuar.');
   var deleting = record.type.slice(-7) === '_DELETE';
   if (productAction) {
-    var used = ledger.records.some(function(item) { return ['INITIAL', 'RECEIPT'].indexOf(item.type) !== -1 && item.data.productId === current.id; });
-    if (deleting && used) throw new Error('Este produto possui histórico de estoque e não pode ser excluído.');
+    var used = farmaciaProductsWithStock_(ledger.records)[current.id] === true;
+    if (deleting && used) throw new Error('Este produto possui histórico de estoque e não pode ser excluído. Exclua antes os inventários iniciais sem movimentações.');
     if (!deleting) {
       var next = Object.assign({}, data.data);
       ['category', 'storage', 'supplySource', 'productCode', 'barcode', 'dosageForm', 'strength', 'route', 'brand'].forEach(function(key) {

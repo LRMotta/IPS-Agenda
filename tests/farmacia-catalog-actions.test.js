@@ -99,7 +99,7 @@ test('troca para material revalida campos herdados antes de gravar e aceita limp
   assert.deepEqual(current.storage,medicine.storage);
 });
 
-test('unidade pode ser corrigida antes do estoque e catalogo sinaliza historico mesmo apos excluir inventario', () => {
+test('unidade pode ser corrigida antes do estoque e volta a ser liberada apos excluir o inventario', () => {
   const f = fixture();
   f.server.codexAssertFarmaciaProductsAccess_ = () => ({ farmaciaAccess:'manage', farmaciaStudy:{id:'P1'} });
   f.server.getCodexSpreadsheet_ = () => f.ss;
@@ -111,9 +111,33 @@ test('unidade pode ser corrigida antes do estoque e catalogo sinaliza historico 
   assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].hasStockHistory,true);
   f.server.alterarRegistroFarmacia(f.action('INITIAL_DELETE',initial.id,initial.id,null,'delete-initial-00001'));
   assert.equal(f.server.getFarmaciaEstoque('P1',false).positions.length,0);
+  // Regra liberada em 16/11/2026: inventário inicial excluído (sempre sem movimentações) não trava mais o produto.
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].hasStockHistory,false);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].hasStockHistory,false);
+  const rows = f.ledger().sheet.rows.length;
+  const again = f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,edited.id,{...f.ledger().products[0].data,unit:'comprimido'},'edit-used-unit-00001'));
+  assert.equal(f.ledger().products[0].data.unit,'comprimido');
+  // As linhas originais permanecem no ledger e o replay continua válido.
+  assert.equal(f.ledger().sheet.rows.length,rows + 1);
+  assert.equal(f.ledger().records.filter(item => item.type === 'INITIAL').length,1);
+  f.server.alterarRegistroFarmacia(f.action('PRODUCT_DELETE',f.product.id,again.id,null,'delete-freed-00001'));
+  assert.equal(f.ledger().products.length,0);
+  assert.equal(f.server.getFarmaciaProdutos('P1',false).products.length,0);
+});
+
+test('inventario ativo continua travando unidade e exclusao mesmo com outro inventario excluido', () => {
+  const f = fixture();
+  f.server.codexAssertFarmaciaProductsAccess_ = () => ({ farmaciaAccess:'manage', farmaciaStudy:{id:'P1'} });
+  f.server.getCodexSpreadsheet_ = () => f.ss;
+  const first = f.initial();
+  const second = f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'initial-request-0002',data:{productId:f.product.id,lot:'L2',expiry:'2027-01-31',location:'Catálogo',locationRef:{unitId:'U1',position:'A'},kit:'',physical:5,blocked:0,countedOn:'2026-10-22',confirmed:true,note:''}});
+  f.server.alterarRegistroFarmacia(f.action('INITIAL_DELETE',first.id,first.id,null,'delete-initial-00001'));
+  assert.ok(second.id);
   assert.equal(f.server.getFarmaciaProdutos('P1',false).products[0].hasStockHistory,true);
+  assert.equal(f.server.getFarmaciaEstoque('P1',false).products[0].hasStockHistory,true);
   const before = JSON.stringify(f.ledger().sheet.rows);
-  assert.throws(() => f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,edited.id,{...f.ledger().products[0].data,unit:'comprimido'},'edit-used-unit-00001')),/preservar/);
+  assert.throws(() => f.server.alterarRegistroFarmacia(f.action('PRODUCT_DELETE',f.product.id,f.product.id,null,'delete-used-000001')),/histórico/);
+  assert.throws(() => f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,f.product.id,{...f.ledger().products[0].data,unit:'mL'},'edit-used-unit-00001')),/preservar/);
   assert.equal(JSON.stringify(f.ledger().sheet.rows),before);
 });
 
