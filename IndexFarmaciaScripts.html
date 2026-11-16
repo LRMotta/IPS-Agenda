@@ -261,6 +261,19 @@ function farmaciaInitialProductChanged() {
   else document.getElementById('farmaciaInitialKit').value = '';
   document.getElementById('farmaciaInitialLifecycleStatus').hidden = !product || product.supplySource !== 'sponsor';
   farmaciaInitialStorageCheck();
+  farmaciaInitialExpiryChanged();
+}
+
+// Espelha a regra do servidor: material vencido entra com todo o saldo físico bloqueado.
+function farmaciaInitialExpiryChanged() {
+  var expiry = document.getElementById('farmaciaInitialExpiry').value;
+  var today = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  var expired = !!expiry && expiry < today;
+  var blocked = document.getElementById('farmaciaInitialBlocked');
+  if (blocked.readOnly && !expired) blocked.value = '0';
+  blocked.readOnly = expired;
+  if (expired) blocked.value = document.getElementById('farmaciaInitialPhysical').value;
+  document.getElementById('farmaciaInitialExpiredStatus').hidden = !expired;
 }
 
 function farmaciaOperationId() {

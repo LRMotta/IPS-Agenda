@@ -5453,7 +5453,8 @@ function appErrorMessage(error, fallback, opts) {
     friendly = 'Nao foi possivel criar o rascunho de e-mail. Verifique a autorizacao do Gmail e tente novamente.';
   } else if (normText.indexOf('drive') >= 0 || normText.indexOf('pdf') >= 0 || normText.indexOf('http 500') >= 0 || normText.indexOf('internal error') >= 0 || normText.indexOf('erro interno') >= 0) {
     friendly = 'Nao foi possivel gerar ou acessar o arquivo agora. Tente novamente em instantes.';
-  } else if (normText.indexOf('lock') >= 0 || normText.indexOf('bloque') >= 0 || normText.indexOf('simultan') >= 0 || normText.indexOf('tempo limite') >= 0) {
+  } else if (/\block/.test(normText) || normText.indexOf('simultan') >= 0 || normText.indexOf('tempo limite') >= 0) {
+    // "bloqueado"/"blocked" sao regras de negocio (ex.: saldo bloqueado), nao concorrencia.
     friendly = 'Outra operacao parece estar em andamento. Aguarde alguns instantes, atualize os dados e tente novamente.';
   } else if (normText.indexOf('nao encontrado') >= 0 || normText.indexOf('não encontrado') >= 0 || normText.indexOf('not found') >= 0) {
     friendly = 'Nao encontrei o registro ou recurso esperado. Atualize a lista e confirme se ele ainda existe.';

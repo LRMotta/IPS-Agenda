@@ -1029,6 +1029,37 @@ test('inventário de kit exige contagem confirmada e envia uma unidade com lote,
   }finally{await browser.close();}
 });
 
+test('inventário com validade vencida entra integralmente bloqueado e avisa antes de enviar', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,390);
+    await openStock(page,stockData({positions:[]}));
+    await openForm(page,'stock');
+    await page.locator('#farmaciaInitialProduct').selectOption('PR1');
+    assert.equal(await page.locator('#farmaciaInitialExpiredStatus').isVisible(),false);
+    await page.locator('#farmaciaInitialPhysical').fill('3');
+    await page.locator('#farmaciaInitialExpiry').fill('2020-09-30');
+    assert.equal(await page.locator('#farmaciaInitialExpiredStatus').isVisible(),true);
+    assert.equal(await page.locator('#farmaciaInitialBlocked').inputValue(),'3');
+    assert.equal(await page.locator('#farmaciaInitialBlocked').getAttribute('readonly'),'');
+    await page.locator('#farmaciaInitialPhysical').fill('4');
+    assert.equal(await page.locator('#farmaciaInitialBlocked').inputValue(),'4');
+    await page.locator('#farmaciaInitialLot').fill('L-VENCIDO');
+    await page.locator('#farmaciaInitialUnit').selectOption('UNIT-1');
+    await page.locator('#farmaciaInitialLocation').selectOption('Prateleira 1');
+    await page.locator('#farmaciaInitialConfirmed').check();
+    await page.locator('#farmaciaInitialForm').getByRole('button',{name:'Registrar inventário inicial'}).click();
+    const payload=await page.evaluate(()=>window.pending.at(-1).args[0]);
+    assert.equal(payload.data.physical,4); assert.equal(payload.data.blocked,4);
+    await page.evaluate(()=>window.pending.at(-1).failure({message:'Resposta não recebida'}));
+    await page.locator('#farmaciaInitialExpiry').fill('2099-12-31');
+    assert.equal(await page.locator('#farmaciaInitialExpiredStatus').isVisible(),false);
+    assert.equal(await page.locator('#farmaciaInitialBlocked').inputValue(),'0');
+    assert.equal(await page.locator('#farmaciaInitialBlocked').getAttribute('readonly'),null);
+    assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
+});
+
 test('troca de estudo/classe elimina dados anteriores, ignora resposta antiga e não libera formulário sem manage/config', async()=>{
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try{
