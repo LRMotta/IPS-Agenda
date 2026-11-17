@@ -34,7 +34,7 @@ test('acompanhamento permite Agenda e outra participação; óbito e status desc
   const client = vm.createContext({ normSelectValue: s.normText_ });
   const fn = readProjectFile('IndexCoreScripts.html').match(/function participantePodeNovaParticipacao_\([^]*?\n\}/)[0];
   vm.runInContext(fn, client);
-  for (const [status, allowed] of [[FOLLOWUP,true], [' EM ACOMPANHAMENTO DE SEGURANCA ',true], ['Descontinuado',true], ['Falha de Pré-Triagem',true], ['Falha de Triagem',true], ['Óbito',false], ['Ativo',false], ['Triagem',false], ['Em tratamento',false], ['',false], ['Desconhecido',false]]) {
+  for (const [status, allowed] of [[FOLLOWUP,true], [' EM ACOMPANHAMENTO DE SEGURANCA ',true], ['Descontinuado',true], ['Concluído',true], [' CONCLUIDO ',true], ['Falha de Pré-Triagem',true], ['Falha de Triagem',true], ['Óbito',false], ['Ativo',false], ['Triagem',false], ['Em tratamento',false], ['',false], ['Desconhecido',false]]) {
     assert.equal(s.CadastroRules_.participantAllowsNewParticipation(status), allowed, status);
     assert.equal(client.participantePodeNovaParticipacao_(status), allowed, status);
   }

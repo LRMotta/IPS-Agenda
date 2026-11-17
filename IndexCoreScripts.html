@@ -4646,7 +4646,7 @@ function participanteStatusEncerrado_(status) {
 }
 
 function participantePodeNovaParticipacao_(status) {
-  return ['falha de pre-triagem','falha de triagem','descontinuado','em acompanhamento de seguranca'].indexOf(normSelectValue(status || '')) >= 0;
+  return ['falha de pre-triagem','falha de triagem','descontinuado','concluido','em acompanhamento de seguranca'].indexOf(normSelectValue(status || '')) >= 0;
 }
 
 function participacoesDaPessoa_(participante) {
