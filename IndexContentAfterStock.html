@@ -1070,6 +1070,98 @@
   </div>
 </div>
 
+<!-- ══ MODAL NF: MOVIMENTO RM ══ -->
+<div class="modal-overlay" id="modalMedNfMovimento" data-accessible-dialog inert onclick="fecharModalSeClicouFora(event,'modalMedNfMovimento')">
+  <div class="modal-box" style="max-width:520px" role="dialog" aria-labelledby="medNfMovTitle" tabindex="-1">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">fact_check</span></div>
+      <div>
+        <div class="modal-header-title" id="medNfMovTitle">MOVIMENTO RM</div>
+        <div class="modal-header-sub" id="medNfMovSub">Nota fiscal</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalMedNfMovimento')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span> Itens desta nota</div>
+        <ul class="med-nf-itens" id="medNfMovItens"></ul>
+        <div class="med-nf-alerta" id="medNfMovAviso"></div>
+      </div>
+      <div class="form-section">
+        <label class="field-label" for="medNfMovInput">N° do Movimento RM <span class="required-star">*</span></label>
+        <input type="text" id="medNfMovInput" class="f-input" maxlength="40" autocomplete="off" aria-required="true" onkeydown="if(event.key==='Enter'){event.preventDefault();medNfSalvarMovimento();}">
+        <div class="med-nf-hint">Vale para todos os itens da nota e marca o Registro no RM como “Sim”.</div>
+      </div>
+      <div class="status-msg" id="statusMedNfMov" role="status" aria-live="polite" aria-atomic="true"></div>
+      <button class="btn-save" id="btnMedNfSalvarMov" type="button" onclick="medNfSalvarMovimento()">
+        <span class="material-symbols-outlined" aria-hidden="true">save</span> SALVAR MOVIMENTO
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL NF: ANEXAR PDFs ══ -->
+<div class="modal-overlay" id="modalMedNfPdfs" data-accessible-dialog inert onclick="fecharModalSeClicouFora(event,'modalMedNfPdfs')">
+  <div class="modal-box" style="max-width:720px" role="dialog" aria-labelledby="medNfPdfsTitle" tabindex="-1">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span></div>
+      <div>
+        <div class="modal-header-title" id="medNfPdfsTitle">ANEXAR PDFs DAS NOTAS</div>
+        <div class="modal-header-sub">Notas fiscais digitalizadas</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalMedNfPdfs')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">
+        <label class="field-label" for="medNfPdfsInput">Arquivos PDF (até 10 MB cada)</label>
+        <input type="file" id="medNfPdfsInput" class="f-input" accept="application/pdf,.pdf" multiple onchange="medNfArquivosSelecionados(this.files)">
+        <div class="med-nf-hint">Quando o nome do arquivo tem o número da NF, a nota é escolhida automaticamente. Confira antes de anexar.</div>
+        <table class="med-nf-arquivos" aria-label="Arquivos selecionados"><tbody id="medNfPdfsLista"></tbody></table>
+      </div>
+      <div class="status-msg" id="statusMedNfPdfs" role="status" aria-live="polite" aria-atomic="true"></div>
+      <button class="btn-save" id="btnMedNfAnexar" type="button" onclick="medNfAnexarArquivos()" disabled>
+        <span class="material-symbols-outlined" aria-hidden="true">attach_file</span> ANEXAR
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL NF: PREPARAR E-MAIL ══ -->
+<div class="modal-overlay" id="modalMedNfEmail" data-accessible-dialog inert onclick="fecharModalSeClicouFora(event,'modalMedNfEmail')">
+  <div class="modal-box" style="max-width:600px" role="dialog" aria-labelledby="medNfEmailTitle" tabindex="-1">
+    <div class="modal-header">
+      <div class="modal-header-icon"><span class="material-symbols-outlined" aria-hidden="true">forward_to_inbox</span></div>
+      <div>
+        <div class="modal-header-title" id="medNfEmailTitle">PREPARAR E-MAIL</div>
+        <div class="modal-header-sub" id="medNfEmailSub">Notas fiscais e movimentos RM</div>
+      </div>
+      <button class="modal-close" onclick="fecharOverlay('modalMedNfEmail')" type="button" aria-label="Fechar janela">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">
+        <label class="field-label" for="medNfEmailPara">Para <span class="required-star">*</span></label>
+        <input type="text" id="medNfEmailPara" class="f-input" autocomplete="off" placeholder="email@ucs.br, outro@ucs.br" aria-required="true" aria-describedby="medNfEmailCc">
+        <div class="med-nf-hint" id="medNfEmailCc">Cópia: ips@ucs.br</div>
+      </div>
+      <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">list</span> Conteúdo</div>
+        <div class="med-nf-preview" id="medNfEmailPreview"></div>
+        <div class="med-nf-hint">O rascunho é criado no seu Gmail com os PDFs anexados e a sua assinatura. Revise e envie por lá.</div>
+      </div>
+      <div class="status-msg" id="statusMedNfEmail" role="status" aria-live="polite" aria-atomic="true"></div>
+      <button class="btn-save" id="btnMedNfCriarRascunho" type="button" onclick="medNfPrepararEmail()">
+        <span class="material-symbols-outlined" aria-hidden="true">drafts</span> PREPARAR E-MAIL
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ MODAL CONFIGURAÇÃO ══ -->
 <div class="modal-overlay" id="modalConfig" data-accessible-dialog data-stock-dialog inert onclick="fecharModalSeClicouFora(event,'modalConfig')">
   <div class="modal-box" style="max-width:680px" role="dialog" aria-labelledby="modalCfgTitle" tabindex="-1">

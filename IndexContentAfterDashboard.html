@@ -549,6 +549,13 @@
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></div>
         </div>
       </div>
+      <div class="med-view-bar">
+        <div class="proj-seg" role="group" aria-label="Visualização de medicamentos">
+          <button type="button" class="proj-seg-btn active" id="medViewItens" aria-pressed="true" onclick="medSetView('itens')">Itens recebidos</button>
+          <button type="button" class="proj-seg-btn" id="medViewNotas" aria-pressed="false" onclick="medSetView('notas')">Notas fiscais<span class="proj-seg-count" id="medNfPendentesCount"></span></button>
+        </div>
+      </div>
+      <div id="medItensView">
       <div class="toolbar-card">
         <div class="search-wrap">
           <span class="material-symbols-outlined" aria-hidden="true">search</span>
@@ -575,6 +582,52 @@
             <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
+      </div>
+      </div>
+      <div id="medNotasView" hidden>
+        <div class="toolbar-card med-nf-toolbar">
+          <div class="search-wrap">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+            <input type="text" id="searchMedNotas" placeholder="Buscar por NF, remetente, projeto ou movimento..." oninput="medNfRender()" aria-label="Buscar notas fiscais">
+          </div>
+          <div class="proj-seg" role="group" aria-label="Filtrar notas fiscais por situação">
+            <button type="button" class="proj-seg-btn active" data-med-nf-filtro="rm_pendente" aria-pressed="true" onclick="medNfSetFiltro('rm_pendente')">RM pendente<span class="proj-seg-count" id="medNfCount_rm_pendente"></span></button>
+            <button type="button" class="proj-seg-btn" data-med-nf-filtro="falta_pdf" aria-pressed="false" onclick="medNfSetFiltro('falta_pdf')">Falta PDF<span class="proj-seg-count" id="medNfCount_falta_pdf"></span></button>
+            <button type="button" class="proj-seg-btn" data-med-nf-filtro="pronta" aria-pressed="false" onclick="medNfSetFiltro('pronta')">Prontas<span class="proj-seg-count" id="medNfCount_pronta"></span></button>
+            <button type="button" class="proj-seg-btn" data-med-nf-filtro="concluida" aria-pressed="false" onclick="medNfSetFiltro('concluida')">Enviadas<span class="proj-seg-count" id="medNfCount_concluida"></span></button>
+            <button type="button" class="proj-seg-btn" data-med-nf-filtro="todas" aria-pressed="false" onclick="medNfSetFiltro('todas')">Todas<span class="proj-seg-count" id="medNfCount_todas"></span></button>
+          </div>
+        </div>
+        <div class="toolbar-card med-nf-actions">
+          <span class="med-nf-selecao" id="medNfSelecaoInfo" role="status" aria-live="polite">Nenhuma nota selecionada.</span>
+          <button type="button" class="btn-txt" onclick="medNfAbrirAnexos()">
+            <span class="material-symbols-outlined" aria-hidden="true">upload_file</span> Anexar PDFs
+          </button>
+          <button type="button" class="btn-txt" id="btnMedNfMarcarEnviadas" onclick="medNfConfirmarMarcarEnviadas()" disabled>
+            <span class="material-symbols-outlined" aria-hidden="true">mark_email_read</span> Marcar como enviadas
+          </button>
+          <button type="button" class="btn-new" id="btnMedNfPrepararEmail" onclick="medNfAbrirEmail()" disabled>
+            <span class="material-symbols-outlined" aria-hidden="true">forward_to_inbox</span> Preparar e-mail
+          </button>
+        </div>
+        <div class="table-card">
+          <table class="data-table">
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="medNfSelecionarTodas" onchange="medNfSelecionarTodas(this.checked)" aria-label="Selecionar todas as notas listadas"></th>
+              <th>Nota fiscal</th>
+              <th>Projeto</th>
+              <th>Itens</th>
+              <th>Recebimento</th>
+              <th>Movimento RM</th>
+              <th>PDF</th>
+              <th>Situação</th>
+              <th style="text-align:right;padding-right:20px">Ações</th>
+            </tr></thead>
+            <tbody id="bodyMedNotas">
+              <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
