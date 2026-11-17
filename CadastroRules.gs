@@ -90,6 +90,7 @@ var CadastroRules_ = (function() {
       'falha de pre-triagem',
       'falha de triagem',
       'descontinuado',
+      'concluido',
       'em acompanhamento de seguranca'
     ].indexOf(normalizeText(status)) >= 0;
   }
