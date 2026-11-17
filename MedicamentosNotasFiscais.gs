@@ -11,6 +11,7 @@ var MED_NF_HEADERS_ = [
 var MED_NF_CC_FIXO_ = 'ips@ucs.br';
 var MED_NF_ASSUNTO_ = 'IPS - NOTAS FISCAIS - REMESSA MEDICAMENTOS';
 var MED_NF_PASTA_PADRAO_ = 'IPS - Notas fiscais de medicamentos';
+var MED_NF_PASTA_PROP_ = 'MED_NF_PASTA_ID';
 var MED_NF_PDF_MAX_BYTES_ = 10 * 1024 * 1024;
 // O Gmail limita a mensagem a 25 MB já codificada em base64 (+33%); 18 MB de anexos cabem com folga.
 var MED_NF_EMAIL_MAX_BYTES_ = 18 * 1024 * 1024;
@@ -236,10 +237,11 @@ function medNfPastaId_(valor) {
   return /^[A-Za-z0-9_-]{10,}$/.test(valor) ? valor : '';
 }
 
-// Pasta compartilhada configurável em Config_App (grupo Medicamentos, chave "Pasta das notas fiscais").
-// Sem configuração, usa uma pasta no Meu Drive de quem anexa.
+// Pasta compartilhada: Config_App (grupo Medicamentos, chave "Pasta das notas fiscais") ou, na falta dela,
+// a propriedade do script MED_NF_PASTA_ID (ID ou link da pasta). Sem nenhuma, usa uma pasta no Meu Drive de quem anexa.
 function medNfPastaDestino_() {
-  var configurada = getConfigAppValuesByKeys_(['Medicamentos'], ['Pasta das notas fiscais'], [])[0] || '';
+  var configurada = getConfigAppValuesByKeys_(['Medicamentos'], ['Pasta das notas fiscais'], [])[0] ||
+    PropertiesService.getScriptProperties().getProperty(MED_NF_PASTA_PROP_) || '';
   var id = medNfPastaId_(configurada);
   if (configurada && !id) throw new Error('A pasta das notas fiscais configurada é inválida. Revise a Configuração.');
   if (id) return DriveApp.getFolderById(id);

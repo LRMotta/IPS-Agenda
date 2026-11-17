@@ -12,7 +12,7 @@ function item(id, data, projeto, nf, remetente, movimento, descricao) {
 }
 
 function setup(rows, metaRows, extra) {
-  const effects = { drafts: [], files: [], props: {}, audit: [] };
+  const effects = { drafts: [], files: [], props: {}, scriptProps: {}, audit: [] };
   const server = runFiles(['WebApp.gs', 'MedicamentosNotasFiscais.gs'], Object.assign({
     Date,
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
@@ -24,7 +24,7 @@ function setup(rows, metaRows, extra) {
     PropertiesService: { getUserProperties: () => ({
       getProperty: (k) => effects.props[k] || null,
       setProperty: (k, v) => { effects.props[k] = v; }
-    }) }
+    }), getScriptProperties: () => ({ getProperty: (k) => effects.scriptProps[k] || null }) }
   }, extra || {}));
   const medSheet = new FakeSheet(MED, [Array.from(server.MEDICAMENTOS_HEADERS_), ...rows]);
   const sheets = { [MED]: medSheet };
@@ -128,6 +128,23 @@ test('anexar PDF valida o conteúdo e registra o arquivo da nota', () => {
   assert.equal(meta[1][3], 'file-1');
   const nota = Array.from(server.getMedicamentosNotasFiscais().notas).find((n) => n.chave === '192726|THERMO');
   assert.equal(nota.situacao, 'pronta');
+});
+
+test('pasta dos PDFs: Config_App prevalece, depois a propriedade do script, depois o Meu Drive', () => {
+  const abertas = [];
+  const drive = {
+    getFolderById: (id) => { abertas.push(id); return { id }; },
+    getRootFolder: () => ({ getFoldersByName: () => ({ hasNext: () => true, next: () => ({ id: 'raiz' }) }) })
+  };
+  const { server, effects } = setup(BASE, null, { DriveApp: drive });
+  assert.equal(server.medNfPastaDestino_().id, 'raiz');
+  effects.scriptProps.MED_NF_PASTA_ID = 'https://drive.google.com/drive/folders/13RQvz2lP7BcIHER5U0FW2Bp-pcmnSMIJ?usp=drive_link';
+  assert.equal(server.medNfPastaDestino_().id, '13RQvz2lP7BcIHER5U0FW2Bp-pcmnSMIJ');
+  server.getConfigAppValuesByKeys_ = () => ['1AbCdEfGhIjKlMnOpQr'];
+  assert.equal(server.medNfPastaDestino_().id, '1AbCdEfGhIjKlMnOpQr');
+  effects.scriptProps.MED_NF_PASTA_ID = 'pasta';
+  server.getConfigAppValuesByKeys_ = () => [];
+  assert.throws(() => server.medNfPastaDestino_(), /inválida/);
 });
 
 test('preparar e-mail cria só rascunho, com cópia fixa, movimentos e PDFs, e marca as notas', () => {
