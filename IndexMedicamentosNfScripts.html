@@ -1,0 +1,387 @@
+<script>
+// Medicamentos > Notas fiscais: movimento RM por nota, PDF digitalizado e rascunho do e-mail com NFs e movimentos.
+var _medNfNotas = [];
+var _medNfFiltro = 'rm_pendente';
+var _medNfSelecionadas = {};
+var _medNfCarregamento = 0;
+var _medNfMovAtual = null;
+var _medNfArquivos = [];
+var _medNfArquivoNotaFixa = '';
+var MED_NF_SITUACOES = {
+  rm_pendente: { rotulo: 'RM pendente', chip: 'chip-red' },
+  falta_pdf: { rotulo: 'Falta PDF', chip: 'chip-yellow' },
+  pronta: { rotulo: 'Pronta', chip: 'chip-blue' },
+  concluida: { rotulo: 'Enviada', chip: 'chip-green' }
+};
+
+function medSetView(view) {
+  var notas = view === 'notas';
+  document.getElementById('medItensView').hidden = notas;
+  document.getElementById('medNotasView').hidden = !notas;
+  [['medViewItens', !notas], ['medViewNotas', notas]].forEach(function(par) {
+    var btn = document.getElementById(par[0]);
+    btn.classList.toggle('active', par[1]);
+    btn.setAttribute('aria-pressed', par[1] ? 'true' : 'false');
+  });
+  // Itens editados na outra aba mudam as notas: sempre relê ao abrir.
+  if (notas) medNfCarregar();
+}
+
+function medNfCarregar() {
+  var geracao = ++_medNfCarregamento;
+  var tb = document.getElementById('bodyMedNotas');
+  if (tb && !_medNfNotas.length) tb.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>';
+  appServerRun({
+    method: 'getMedicamentosNotasFiscais',
+    args: [],
+    onSuccess: function(res) {
+      if (geracao !== _medNfCarregamento) return;
+      res = res || {};
+      _medNfNotas = res.notas || [];
+      var existentes = {};
+      _medNfNotas.forEach(function(n) { existentes[n.chave] = true; });
+      Object.keys(_medNfSelecionadas).forEach(function(chave) { if (!existentes[chave]) delete _medNfSelecionadas[chave]; });
+      var para = document.getElementById('medNfEmailPara');
+      if (para && !para.value && res.ultimosDestinatarios) para.value = res.ultimosDestinatarios;
+      medNfRender();
+    },
+    onFailure: function(e) {
+      if (geracao !== _medNfCarregamento) return;
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="9">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
+    }
+  });
+}
+
+function medNfSetFiltro(filtro) {
+  _medNfFiltro = filtro;
+  document.querySelectorAll('[data-med-nf-filtro]').forEach(function(btn) {
+    var ativo = btn.getAttribute('data-med-nf-filtro') === filtro;
+    btn.classList.toggle('active', ativo);
+    btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+  });
+  medNfRender();
+}
+
+function medNfNumero(texto) {
+  return String(texto == null ? '' : texto).replace(/\D/g, '').replace(/^0+/, '');
+}
+
+function medNfBusca(nota) {
+  return [nota.notaFiscal, nota.remetente, (nota.projetos || []).join(' '), (nota.movimentos || []).join(' '),
+    (nota.itens || []).map(function(i) { return i.descricao + ' ' + i.lote; }).join(' ')].join(' ').toLowerCase();
+}
+
+function medNfVisiveis() {
+  var q = ((document.getElementById('searchMedNotas') || {}).value || '').toLowerCase().trim();
+  return _medNfNotas.filter(function(n) {
+    if (_medNfFiltro !== 'todas' && n.situacao !== _medNfFiltro) return false;
+    return !q || medNfBusca(n).indexOf(q) >= 0;
+  });
+}
+
+function medNfRender() {
+  var contagem = { rm_pendente: 0, falta_pdf: 0, pronta: 0, concluida: 0, todas: _medNfNotas.length };
+  _medNfNotas.forEach(function(n) { contagem[n.situacao] = (contagem[n.situacao] || 0) + 1; });
+  Object.keys(contagem).forEach(function(k) {
+    var el = document.getElementById('medNfCount_' + k);
+    if (el) el.textContent = contagem[k] ? String(contagem[k]) : '';
+  });
+  var pend = document.getElementById('medNfPendentesCount');
+  if (pend) pend.textContent = contagem.rm_pendente ? String(contagem.rm_pendente) : '';
+  var tb = document.getElementById('bodyMedNotas');
+  if (!tb) return;
+  var lista = medNfVisiveis();
+  if (!lista.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhuma nota fiscal nesta situação.</td></tr>';
+  } else {
+    tb.innerHTML = lista.map(function(n, index) {
+      var sit = MED_NF_SITUACOES[n.situacao] || { rotulo: n.situacao, chip: 'chip-gray' };
+      var detalheSit = n.emailPreparadoEm ? 'E-mail preparado ' + n.emailPreparadoEm : (n.enviadaManualEm ? 'Marcada ' + n.enviadaManualEm : '');
+      var movimento = n.movimentos && n.movimentos.length ? n.movimentos.join(' / ') : '—';
+      var aviso = n.movimentosDivergentes ? 'Movimentos diferentes entre os itens' : (n.rmPendente && n.movimentos.length ? 'Há itens sem movimento' : '');
+      return '<tr>'
+        + '<td><input type="checkbox" data-med-nf-check="' + index + '"' + (_medNfSelecionadas[n.chave] ? ' checked' : '') + ' aria-label="Selecionar NF ' + esc(n.notaFiscal) + '"></td>'
+        + '<td><div class="row-name">NF ' + esc(n.notaFiscal) + '</div><div class="med-nf-sub">' + esc(n.remetente || '—') + '</div></td>'
+        + '<td>' + (n.projetos || []).map(function(p) { return projetoChip(p); }).join(' ') + '</td>'
+        + '<td title="' + esc((n.itens || []).map(function(i) { return i.descricao + (i.quantidade !== '' ? ' (' + i.quantidade + ')' : ''); }).join('\n')) + '">' + (n.itens || []).length + '</td>'
+        + '<td>' + esc(n.dataRecebimento || '—') + '</td>'
+        + '<td><div style="font-weight:600">' + esc(movimento) + '</div>' + (aviso ? '<div class="med-nf-alerta">' + esc(aviso) + '</div>' : '') + '</td>'
+        + '<td>' + (n.pdfId ? '<a href="https://drive.google.com/file/d/' + encodeURIComponent(n.pdfId) + '/view" target="_blank" rel="noopener" title="' + esc(n.pdfNome || 'PDF') + '">Abrir</a>' : '<span style="color:#9aa3b0">—</span>') + '</td>'
+        + '<td><span class="chip ' + sit.chip + '">' + esc(sit.rotulo) + '</span>' + (detalheSit ? '<div class="med-nf-sub">' + esc(detalheSit) + '</div>' : '') + '</td>'
+        + '<td><div class="action-btns">'
+        + '<button type="button" class="icon-btn" title="Informar movimento RM" aria-label="Informar movimento RM da NF ' + esc(n.notaFiscal) + '" data-record-action="movimento" data-record-index="' + index + '"><span class="material-symbols-outlined">fact_check</span></button>'
+        + '<button type="button" class="icon-btn" title="' + (n.pdfId ? 'Substituir PDF' : 'Anexar PDF') + '" aria-label="' + (n.pdfId ? 'Substituir PDF' : 'Anexar PDF') + ' da NF ' + esc(n.notaFiscal) + '" data-record-action="pdf" data-record-index="' + index + '"><span class="material-symbols-outlined">upload_file</span></button>'
+        + '</div></td>'
+        + '</tr>';
+    }).join('');
+    bindTableRecordActions(tb, lista, {
+      movimento: function(nota) { medNfAbrirMovimento(nota); },
+      pdf: function(nota) { medNfAbrirAnexos(nota); }
+    });
+    tb.querySelectorAll('[data-med-nf-check]').forEach(function(box) {
+      box.addEventListener('change', function() {
+        var nota = lista[Number(box.getAttribute('data-med-nf-check'))];
+        if (!nota) return;
+        if (box.checked) _medNfSelecionadas[nota.chave] = true;
+        else delete _medNfSelecionadas[nota.chave];
+        medNfAtualizarSelecao();
+      });
+    });
+  }
+  medNfAtualizarSelecao();
+}
+
+function medNfSelecionadasLista() {
+  return _medNfNotas.filter(function(n) { return _medNfSelecionadas[n.chave]; });
+}
+
+function medNfProntaParaEmail(nota) {
+  return !nota.rmPendente && !nota.movimentosDivergentes && !!nota.pdfId;
+}
+
+function medNfAtualizarSelecao() {
+  var selecionadas = medNfSelecionadasLista();
+  var info = document.getElementById('medNfSelecaoInfo');
+  if (info) info.textContent = selecionadas.length ? (selecionadas.length === 1 ? '1 nota selecionada.' : selecionadas.length + ' notas selecionadas.') : 'Nenhuma nota selecionada.';
+  var email = document.getElementById('btnMedNfPrepararEmail');
+  if (email) email.disabled = !selecionadas.length || !selecionadas.every(medNfProntaParaEmail);
+  var marcar = document.getElementById('btnMedNfMarcarEnviadas');
+  if (marcar) marcar.disabled = !selecionadas.length || selecionadas.some(function(n) { return n.rmPendente; });
+  var todas = document.getElementById('medNfSelecionarTodas');
+  if (todas) {
+    var visiveis = medNfVisiveis();
+    todas.checked = !!visiveis.length && visiveis.every(function(n) { return _medNfSelecionadas[n.chave]; });
+  }
+}
+
+function medNfSelecionarTodas(marcar) {
+  medNfVisiveis().forEach(function(n) {
+    if (marcar) _medNfSelecionadas[n.chave] = true;
+    else delete _medNfSelecionadas[n.chave];
+  });
+  medNfRender();
+}
+
+function medNfAbrirMovimento(nota) {
+  _medNfMovAtual = nota;
+  document.getElementById('medNfMovSub').textContent = 'NF ' + nota.notaFiscal + ' · ' + (nota.remetente || 'sem remetente');
+  document.getElementById('medNfMovItens').innerHTML = (nota.itens || []).map(function(i) {
+    return '<li>' + esc(i.descricao || '—') + (i.quantidade !== '' ? ' · ' + esc(i.quantidade) : '') + (i.lote ? ' · lote ' + esc(i.lote) : '') + '</li>';
+  }).join('');
+  document.getElementById('medNfMovAviso').textContent = nota.movimentosDivergentes
+    ? 'Os itens têm movimentos diferentes (' + nota.movimentos.join(' / ') + '). O valor salvo substituirá todos.' : '';
+  document.getElementById('medNfMovInput').value = nota.movimentoRm || (nota.movimentos.length === 1 ? nota.movimentos[0] : '');
+  appSetStatus('statusMedNfMov', '');
+  document.getElementById('btnMedNfSalvarMov').disabled = false;
+  abrirOverlay('modalMedNfMovimento');
+  setTimeout(function() { document.getElementById('medNfMovInput').focus(); }, 50);
+}
+
+function medNfSalvarMovimento() {
+  var nota = _medNfMovAtual;
+  var input = document.getElementById('medNfMovInput');
+  var movimento = input.value.trim();
+  if (!nota) return;
+  if (!movimento) {
+    appSetStatus('statusMedNfMov', 'Informe o número do movimento no RM.', '#e53935');
+    input.focus();
+    return;
+  }
+  var btn = document.getElementById('btnMedNfSalvarMov');
+  appSetButtonBusy(btn, true);
+  appSetStatus('statusMedNfMov', 'Salvando...');
+  appServerRun({
+    method: 'salvarMovimentoRmNotaFiscal',
+    args: [{ chave: nota.chave, movimentoRm: movimento, movimentosAtuais: (nota.movimentos || []).join(' / ') }],
+    onSuccess: function(r) {
+      appSetButtonBusy(btn, false);
+      appSetStatus('statusMedNfMov', '');
+      fecharOverlay('modalMedNfMovimento');
+      snack((r && r.message) || 'Movimento registrado.');
+      medNfCarregar();
+      if (typeof carregarMedicamentos === 'function') carregarMedicamentos(true);
+    },
+    onFailure: function(e) {
+      appSetButtonBusy(btn, false);
+      appSetStatus('statusMedNfMov', appErrorMessage(e), '#e53935');
+    }
+  });
+}
+
+// Escolhe a nota pelo número no nome do arquivo; prefere notas sem PDF entre as que não foram enviadas.
+function medNfSugerirNota(nomeArquivo) {
+  var numeros = (String(nomeArquivo || '').match(/\d{3,}/g) || []).map(medNfNumero);
+  var candidatas = _medNfNotas.filter(function(n) { return numeros.indexOf(n.chave.split('|')[0]) >= 0; });
+  if (candidatas.length > 1) {
+    var abertas = candidatas.filter(function(n) { return n.situacao !== 'concluida' && !n.pdfId; });
+    if (abertas.length === 1) return abertas[0].chave;
+  }
+  return candidatas.length === 1 ? candidatas[0].chave : '';
+}
+
+function medNfOpcoesNota(selecionada) {
+  var opcoes = _medNfNotas.filter(function(n) { return n.situacao !== 'concluida' || n.chave === selecionada; });
+  return '<option value="">— Escolha a nota —</option>' + opcoes.map(function(n) {
+    return '<option value="' + esc(n.chave) + '"' + (n.chave === selecionada ? ' selected' : '') + '>NF ' + esc(n.notaFiscal) + ' · ' + esc(n.remetente || '—') + (n.pdfId ? ' (substitui PDF)' : '') + '</option>';
+  }).join('');
+}
+
+function medNfAbrirAnexos(nota) {
+  _medNfArquivos = [];
+  _medNfArquivoNotaFixa = nota && nota.chave ? nota.chave : '';
+  var input = document.getElementById('medNfPdfsInput');
+  input.value = '';
+  input.multiple = !_medNfArquivoNotaFixa;
+  document.getElementById('medNfPdfsLista').innerHTML = '';
+  document.getElementById('btnMedNfAnexar').disabled = true;
+  appSetStatus('statusMedNfPdfs', _medNfArquivoNotaFixa ? 'PDF da NF ' + nota.notaFiscal + '.' : '');
+  abrirOverlay('modalMedNfPdfs');
+}
+
+function medNfArquivosSelecionados(files) {
+  _medNfArquivos = Array.prototype.slice.call(files || []).map(function(file) {
+    return { file: file, chave: _medNfArquivoNotaFixa || medNfSugerirNota(file.name), status: '' };
+  });
+  medNfRenderArquivos();
+}
+
+function medNfRenderArquivos() {
+  var tb = document.getElementById('medNfPdfsLista');
+  tb.innerHTML = _medNfArquivos.map(function(item, index) {
+    var grande = item.file.size > 10 * 1024 * 1024;
+    return '<tr><td>' + esc(item.file.name) + (grande ? '<div class="med-nf-alerta">Maior que 10 MB</div>' : '') + '</td>'
+      + '<td style="width:55%"><select class="f-input f-select" data-med-nf-arquivo="' + index + '" aria-label="Nota fiscal do arquivo ' + esc(item.file.name) + '"' + (_medNfArquivoNotaFixa ? ' disabled' : '') + '>' + medNfOpcoesNota(item.chave) + '</select>'
+      + (item.status ? '<div class="med-nf-sub">' + esc(item.status) + '</div>' : '') + '</td></tr>';
+  }).join('');
+  tb.querySelectorAll('[data-med-nf-arquivo]').forEach(function(sel) {
+    sel.addEventListener('change', function() {
+      var item = _medNfArquivos[Number(sel.getAttribute('data-med-nf-arquivo'))];
+      if (item) item.chave = sel.value;
+    });
+  });
+  document.getElementById('btnMedNfAnexar').disabled = !_medNfArquivos.some(function(item) { return !item.enviado; });
+}
+
+function medNfLerBase64(file, onOk, onErro) {
+  var reader = new FileReader();
+  reader.onload = function() { onOk(String(reader.result || '').replace(/^data:[^,]*,/, '')); };
+  reader.onerror = function() { onErro(new Error('Não foi possível ler o arquivo ' + file.name + '.')); };
+  reader.readAsDataURL(file);
+}
+
+function medNfAnexarArquivos() {
+  var pendentes = _medNfArquivos.filter(function(item) { return !item.enviado; });
+  var semNota = pendentes.filter(function(item) { return !item.chave; });
+  if (semNota.length) {
+    appSetStatus('statusMedNfPdfs', 'Escolha a nota fiscal de cada arquivo.', '#e53935');
+    return;
+  }
+  var chaves = {};
+  var repetida = pendentes.some(function(item) { if (chaves[item.chave]) return true; chaves[item.chave] = true; return false; });
+  if (repetida) {
+    appSetStatus('statusMedNfPdfs', 'Há dois arquivos para a mesma nota fiscal.', '#e53935');
+    return;
+  }
+  if (pendentes.some(function(item) { return item.file.size > 10 * 1024 * 1024; })) {
+    appSetStatus('statusMedNfPdfs', 'Há arquivos maiores que 10 MB.', '#e53935');
+    return;
+  }
+  var btn = document.getElementById('btnMedNfAnexar');
+  appSetButtonBusy(btn, true);
+  var feitos = 0;
+  var falhas = 0;
+  // Um arquivo por vez: cada envio grava a nota dentro do lock do documento.
+  function proximo(i) {
+    if (i >= pendentes.length) {
+      appSetButtonBusy(btn, false);
+      medNfRenderArquivos();
+      appSetStatus('statusMedNfPdfs', feitos + ' de ' + pendentes.length + ' PDF(s) anexado(s).' + (falhas ? ' Confira os erros na lista.' : ''), falhas ? '#e53935' : '');
+      medNfCarregar();
+      if (!falhas) {
+        fecharOverlay('modalMedNfPdfs');
+        snack(feitos === 1 ? 'PDF anexado.' : feitos + ' PDFs anexados.');
+      }
+      return;
+    }
+    var item = pendentes[i];
+    appSetStatus('statusMedNfPdfs', 'Enviando ' + (i + 1) + ' de ' + pendentes.length + '...');
+    medNfLerBase64(item.file, function(base64) {
+      appServerRun({
+        method: 'anexarPdfNotaFiscal',
+        args: [{ chave: item.chave, conteudoBase64: base64 }],
+        onSuccess: function() { item.enviado = true; item.status = 'Anexado.'; feitos++; proximo(i + 1); },
+        onFailure: function(e) { item.status = 'Erro: ' + appErrorMessage(e); falhas++; proximo(i + 1); }
+      });
+    }, function(e) { item.status = 'Erro: ' + appErrorMessage(e); falhas++; proximo(i + 1); });
+  }
+  proximo(0);
+}
+
+function medNfAbrirEmail() {
+  var selecionadas = medNfSelecionadasLista();
+  if (!selecionadas.length || !selecionadas.every(medNfProntaParaEmail)) return;
+  var jaPreparadas = selecionadas.filter(function(n) { return n.situacao === 'concluida'; }).length;
+  document.getElementById('medNfEmailSub').textContent = selecionadas.length + (selecionadas.length === 1 ? ' nota fiscal' : ' notas fiscais') +
+    (jaPreparadas ? ' · ' + jaPreparadas + ' já enviada(s) antes' : '');
+  document.getElementById('medNfEmailPreview').textContent = selecionadas.map(function(n) {
+    return 'NF ' + n.notaFiscal + ' - Movimento ' + n.movimentoRm;
+  }).join('\n');
+  appSetStatus('statusMedNfEmail', '');
+  document.getElementById('btnMedNfCriarRascunho').disabled = false;
+  abrirOverlay('modalMedNfEmail');
+}
+
+function medNfPrepararEmail() {
+  var selecionadas = medNfSelecionadasLista();
+  var para = document.getElementById('medNfEmailPara').value.trim();
+  if (!para) {
+    appSetStatus('statusMedNfEmail', 'Informe ao menos um destinatário.', '#e53935');
+    document.getElementById('medNfEmailPara').focus();
+    return;
+  }
+  var btn = document.getElementById('btnMedNfCriarRascunho');
+  appSetButtonBusy(btn, true);
+  appSetStatus('statusMedNfEmail', 'Criando rascunho no Gmail...');
+  appServerRun({
+    method: 'prepararEmailNotasFiscais',
+    args: [{ chaves: selecionadas.map(function(n) { return n.chave; }), destinatarios: para }],
+    onSuccess: function(r) {
+      appSetButtonBusy(btn, false);
+      appSetStatus('statusMedNfEmail', '');
+      fecharOverlay('modalMedNfEmail');
+      _medNfSelecionadas = {};
+      medNfRender();
+      snack((r && r.message) || 'Rascunho criado no Gmail.');
+      medNfCarregar();
+    },
+    onFailure: function(e) {
+      appSetButtonBusy(btn, false);
+      appSetStatus('statusMedNfEmail', appErrorMessage(e), '#e53935');
+    }
+  });
+}
+
+function medNfConfirmarMarcarEnviadas() {
+  var selecionadas = medNfSelecionadasLista();
+  if (!selecionadas.length) return;
+  abrirConfirmacaoDestrutiva({
+    titulo: 'Marcar como enviadas',
+    mensagem: (selecionadas.length === 1 ? 'A NF ' + selecionadas[0].notaFiscal + ' será marcada' : selecionadas.length + ' notas serão marcadas') +
+      ' como já enviadas, sem preparar e-mail. Use para notas enviadas antes deste recurso.',
+    acao: 'Marcar',
+    onConfirm: function() {
+      appServerRun({
+        method: 'marcarNotasFiscaisEnviadas',
+        args: [{ chaves: selecionadas.map(function(n) { return n.chave; }) }],
+        onSuccess: function(r) {
+          _medNfSelecionadas = {};
+          medNfRender();
+          snack((r && r.message) || 'Notas marcadas como enviadas.');
+          medNfCarregar();
+        },
+        onFailure: function(e) { snackErro(e); }
+      });
+    }
+  });
+}
+</script>

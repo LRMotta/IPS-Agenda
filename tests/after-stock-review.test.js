@@ -109,7 +109,7 @@ test('todos os diálogos e relações acessíveis do fragmento têm destinos vá
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
   assert.equal(ids.length, new Set(ids).size);
   const dialogs = [...html.matchAll(/<div class="modal-overlay"[^>]*>\s*(<div[^>]*>)/g)];
-  assert.equal(dialogs.length, 22);
+  assert.equal(dialogs.length, 25);
   for (const [overlay, box] of dialogs) {
     assert.match(overlay, /data-accessible-dialog/);
     assert.match(box, /role="dialog"/);
