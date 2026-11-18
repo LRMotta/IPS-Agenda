@@ -35,7 +35,7 @@ function transportePeticionamentoAutorizados_() {
 // Piloto: so administrador E presente na lista (nenhum outro perfil usa estas acoes ainda); devolve { email }.
 function transportePeticionamentoAssertAutorizado_() {
   var acesso = codexAssertAdmin_();
-  var email = transportePeticionamentoEmailNorm_(acesso && acesso.email);
+  var email = transportePeticionamentoEmailNorm_(acesso && (acesso.userEmail || acesso.email));
   if (!email || transportePeticionamentoAutorizados_().indexOf(email) < 0) {
     throw new Error('Você não está autorizado a peticionar. Peça a inclusão em Configurações (Transporte: Autorizado a peticionar).');
   }

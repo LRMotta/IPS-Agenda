@@ -342,12 +342,13 @@ function getTransporteTarefas(request) {
       return transporteTarefasConstruir_({ hoje: agora, agora: agora, feriados: feriados, linhas: linhas, operacoes: operacoes,
         preparos: preparos, nomes: transporteTarefasNomes_() });
     });
+    var usuario = String(access.userEmail || access.email || '').trim().toLowerCase();
     return {
-      ok: true, usuario: String(access.email || '').toLowerCase(), geradoEm: agora.toISOString(),
+      ok: true, usuario: usuario, geradoEm: agora.toISOString(),
       janelaDiasUteis: TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_, tarefas: resultado.tarefas, maisAdiante: resultado.maisAdiante,
       acompanhar: resultado.acompanhar, backups: resultado.backups,
       // So quem esta na lista de peticionamento ve e usa "GRU e extrato prontos" (a autorizacao real e do servidor, na acao).
-      podePeticionar: transportePeticionamentoAutorizados_().indexOf(String(access.email || '').trim().toLowerCase()) >= 0
+      podePeticionar: transportePeticionamentoAutorizados_().indexOf(usuario) >= 0
     };
   });
 }

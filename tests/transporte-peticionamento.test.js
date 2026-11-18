@@ -32,7 +32,7 @@ function servidor(opcoes) {
   s.usuario = ADMIN;
   // Piloto: todas as acoes exigem admin; a lista de peticionamento restringe ainda mais.
   s.papel = 'admin';
-  s.codexAssertAdmin_ = () => { if (s.papel !== 'admin') throw new Error('Acesso permitido apenas para administradores.'); return { ok: true, role: s.papel, email: s.usuario }; };
+  s.codexAssertAdmin_ = () => { if (s.papel !== 'admin') throw new Error('Acesso permitido apenas para administradores.'); return { ok: true, role: s.papel, userEmail: s.usuario }; };
   s.getConfigAppValuesByKeys_ = () => (s.autorizados || [ALINE, LUIZ]);
   const idx = s.AGENDA_CFG.idx;
   s.getAgendaSheet_ = () => ({ getRange: (linha, coluna, n, w) => (n ? { getValues: () => [Array.from({ length: w }, (_v, c) => celulas[linha + ':' + (coluna + c)] || '')] }

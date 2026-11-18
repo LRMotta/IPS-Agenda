@@ -19,7 +19,7 @@ function servidor(book) {
   });
   s.getCodexSpreadsheet_ = () => book;
   s.getTransporteSpreadsheetCodex_ = () => { throw new Error('planilha de Transporte aberta'); };
-  s.codexAssertAdmin_ = () => ({ ok: true, role: 'admin', email: A });
+  s.codexAssertAdmin_ = () => ({ ok: true, role: 'admin', userEmail: A });
   s.codexGetAllowedUsers_ = () => ({ [A]: { firstName: 'Ana' }, [B]: { firstName: 'Bia' } });
   s.lockAtivo = () => ativo;
   // Regra real vem do cadastro de couriers; aqui toda courier exige AWB, exceto o agendamento da PINEX.
@@ -89,7 +89,7 @@ test('abrir o envio: assume o preparo, grava o registro montado e outra pessoa r
   assert.equal(s.getTransporteEnvio('ab12cd34', '1').versao, 1);
   assert.equal(montagens, 2);
   // Outra pessoa não abre o mesmo envio.
-  s.codexAssertAdmin_ = () => ({ ok: true, role: 'admin', email: B });
+  s.codexAssertAdmin_ = () => ({ ok: true, role: 'admin', userEmail: B });
   const ocupado = plano(s.getTransporteEnvio('ab12cd34', '1'));
   assert.deepEqual([ocupado.ok, ocupado.motivo, ocupado.comPessoa], [false, 'EM_PREPARO', 'Ana']);
   // ...mas abre outro envio ao mesmo tempo.

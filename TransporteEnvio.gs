@@ -199,8 +199,9 @@ function transporteEnvioAvisos_(registro) {
   return avisos;
 }
 
+// codexAuthorizeWebAppRequest_ entrega o e-mail em userEmail; email fica como fallback legado.
 function transporteEnvioUsuario_(access) {
-  var email = String(access && access.email || '').trim().toLowerCase();
+  var email = String(access && (access.userEmail || access.email) || '').trim().toLowerCase();
   if (!email) throw new Error('Usuário não identificado.');
   return email;
 }
