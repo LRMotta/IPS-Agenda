@@ -663,12 +663,20 @@
       args: [p.agendaId, p.slot, p.awb],
       onSuccess: function(res) {
         var atual = _pendenciaEntregaPendente === p;
+        // A tela Transporte (piloto) reutiliza este modal e a mesma RPC. Ela se atualiza primeiro, para que nenhuma
+        // falha na atualização das Pendências deixe o item na lista; com conflito, a lista dela também estava velha.
+        function atualizarTransporte(confirmada) {
+          if (typeof transpCentralAposEntrega !== 'function') return;
+          try { transpCentralAposEntrega(p, confirmada); } catch (transporteErro) { /* A Agenda já foi gravada. */ }
+        }
         if (res && (res.erro || res.conflito)) {
           if (atual) fecharConfirmacaoEntregaPendencia();
           snackErro(res.erro || 'A pendência mudou. Atualize a lista antes de confirmar.');
+          atualizarTransporte(false);
           carregarPendencias(true);
           return;
         }
+        atualizarTransporte(true);
         if (typeof invalidarAgendaEventosCliente_ === 'function') invalidarAgendaEventosCliente_();
         if (_pendenciasCache && Array.isArray(_pendenciasCache.awbEnviadaNaoEntregue)) {
           _pendenciasCache.awbEnviadaNaoEntregue = _pendenciasCache.awbEnviadaNaoEntregue.filter(function(item) {
@@ -682,8 +690,6 @@
         setPendenciasStatus('Entrega confirmada para ' + [p.slot, p.awb ? 'AWB ' + p.awb : 'AWB'].filter(Boolean).join(' · ') + '.', 'ok');
         snack('Entrega confirmada no Agendamento.');
         carregarPendencias(true, { silent: true });
-        // A tela Transporte (piloto) reutiliza este modal e a mesma RPC; ela se atualiza por este gancho.
-        if (typeof transpCentralAposEntrega === 'function') transpCentralAposEntrega(p);
       },
       onFailure: function(e) {
         if (_pendenciaEntregaPendente === p && btn) {
