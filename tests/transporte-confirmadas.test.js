@@ -57,7 +57,7 @@ function cenario(ajustar) {
   mensagens.push(mensagem('m1', { corpo: 'Pedido ' + ref, thread }));
   mensagens.push(mensagem('m2', { from: 'Marken <coleta@marken.example>', to: 'eu@ucs.example', cc: 'equipe@ucs.example', corpo: 'Confirmado AWB 123456', data: new Date(2026, 9, 1, 15), assunto: 'RE: Pedido de coleta', thread }));
   Object.assign(s, {
-    codexAssertAdmin_: () => ({ ok: true, role: 'admin', email: 'eu@ucs.example' }),
+    codexAssertAdmin_: () => ({ ok: true, role: 'admin', userEmail: 'eu@ucs.example' }),
     codexAssertCanWrite_: () => ({ ok: true, role: 'admin' }),
     getAgendaSheetForRead_: () => sheet,
     getAgendaSheet_: () => sheet,

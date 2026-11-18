@@ -138,7 +138,7 @@ test('RPC: só administrador, sem lock, sem escrita, e uma leitura de cada fonte
   assert.throws(() => s.getTransporteTarefas({}), /apenas para administradores/);
   assert.deepEqual(chamadas, ['admin']);
   chamadas.length = 0;
-  s.codexAssertAdmin_ = () => { chamadas.push('admin'); return { ok: true, role: 'admin', email: 'Admin@Example.Invalid' }; };
+  s.codexAssertAdmin_ = () => { chamadas.push('admin'); return { ok: true, role: 'admin', userEmail: 'Admin@Example.Invalid' }; };
   const resposta = plano(s.getTransporteTarefas({}));
   assert.deepEqual(chamadas, ['admin', 'agenda', 'linhas', 'feriados', 'operacoes', 'registros']);
   assert.equal(resposta.ok, true);
@@ -237,7 +237,7 @@ test('RPC devolve acompanhar, mais adiante e backups da mesma leitura da Agenda'
   let leituras = 0;
   s.codexBootstrapTraceId_ = () => 't';
   s.codexMeasureReadPerformance_ = (_a, _b, _c, fn) => fn();
-  s.codexAssertAdmin_ = () => ({ ok: true, email: 'a@example.invalid' });
+  s.codexAssertAdmin_ = () => ({ ok: true, userEmail: 'a@example.invalid' });
   s.getDashboardAgendaSheetForRead_ = () => ({});
   s.getDashboardAgendaDisplayRows_ = () => { leituras++; return [linha(s, 'r1', '30/11/2026', [{ nome: 'OCASA' }])]; };
   s.getAgendaFeriadosPendenciasMap_ = () => ({});
