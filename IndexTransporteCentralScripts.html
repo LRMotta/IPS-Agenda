@@ -536,8 +536,16 @@
     transpCentralContagem('backups', (dados.backups || []).length);
   }
 
-  // Depois de confirmar uma entrega pelo modal das Pendências, relê a lista.
-  function transpCentralAposEntrega() {
+  // Depois de confirmar uma entrega pelo modal das Pendências: tira o item de "Em trânsito" na hora (a releitura leva
+  // segundos) e relê a lista. Com conflito (confirmada === false), só relê: a lista na tela estava desatualizada.
+  function transpCentralAposEntrega(p, confirmada) {
+    var dados = TRANSP_CENTRAL_STATE.dados;
+    if (confirmada !== false && p && dados && dados.acompanhar && Array.isArray(dados.acompanhar.transito)) {
+      dados.acompanhar.transito = dados.acompanhar.transito.filter(function(t) {
+        return !(String(t.agendaId) === String(p.agendaId) && String(t.slotRotulo) === String(p.slot));
+      });
+      transpCentralRender(dados);
+    }
     if (getCurrentPage() === 'transporte-central') transpCentralCarregar(true);
   }
 

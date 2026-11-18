@@ -368,3 +368,55 @@ test('Confirmadas: ordem da aba, Marcar como enviada e Cancelar com caixas de co
     }
   } finally { await browser.close(); }
 });
+
+test('Em trânsito: Confirmar entrega tira o item na hora e relê a lista, mesmo se as Pendências falharem; conflito relê', async () => {
+  // Modal e RPC reais das Pendências, como no app: o Transporte só fornece o gancho transpCentralAposEntrega.
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  const modais = readProjectFile('IndexExtraModals.html');
+  const inicio = modais.indexOf('<!-- CONFIRMAR ENTREGA DE TRANSPORTE -->');
+  const modal = modais.slice(inicio, modais.indexOf('<!-- CONFIRM EXCLUIR COURIER -->', inicio));
+  try {
+    const { page, erros } = await abrir(browser, 1280);
+    await page.evaluate((html) => {
+      document.body.insertAdjacentHTML('beforeend', html);
+      window.STATE = window.STATE || {};
+      window.abrirOverlay = (id) => { const el = document.getElementById(id); el.classList.add('open'); el.removeAttribute('inert'); };
+      window.fecharOverlay = (id) => { const el = document.getElementById(id); el.classList.remove('open'); el.setAttribute('inert', ''); };
+      window.__rpc = [];
+      window.appServerRun = (o) => { window.__rpc.push({ rpc: o.method, args: o.args, ok: o.onSuccess, falha: o.onFailure }); };
+      const runner = (ok, falha) => {
+        const r = { withSuccessHandler: (fn) => runner(fn, falha), withFailureHandler: (fn) => runner(ok, fn) };
+        ['getTransporteTarefas', 'getPendenciasOperacionais'].forEach((n) => { r[n] = (...args) => window.__rpc.push({ rpc: n, args, ok, falha }); });
+        return r;
+      };
+      window.google = { script: { run: runner() } };
+    }, modal);
+    await page.addScriptTag({ content: script('IndexPendenciasScripts.html') });
+    await page.evaluate(() => transpCentralCarregar(false));
+    const transito = [ITEM({ agendaId: 't1', slotRotulo: 'Transporte I', awb: 'A1', diasDesdeEnvio: 2 }), ITEM({ agendaId: 't2', slotRotulo: 'Transporte II', slot: '2', awb: 'A2', diasDesdeEnvio: 1 })];
+    const resposta = Object.assign({}, COMPLETA, { acompanhar: Object.assign({}, COMPLETA.acompanhar, { transito }) });
+    await page.evaluate((r) => window.__rpc[0].ok(r), resposta);
+    await page.evaluate(() => transpCentralAba('transito'));
+    assert.equal(await page.locator('#tcTabTransito').innerText(), 'Em trânsito (2)');
+    // Uma falha na atualização das Pendências não pode deixar o item no Transporte.
+    await page.evaluate(() => { window.carregarPendencias = () => { throw new Error('falha nas Pendências'); }; });
+    await page.locator('[data-tc-entrega="t1|Transporte I"]').click();
+    await page.locator('#btnConfirmarEntregaPendencia').click();
+    const confirmar = await page.evaluate(() => window.__rpc.findIndex((r) => r.rpc === 'confirmarEntregaTransportePendencia'));
+    assert.deepEqual(await page.evaluate((i) => window.__rpc[i].args, confirmar), ['t1', 'Transporte I', 'A1']);
+    await page.evaluate((i) => { try { window.__rpc[i].ok({ ok: true, status: 'Entregue' }); } catch (e) { window.__falhaPendencias = e.message; } }, confirmar);
+    assert.equal(await page.evaluate(() => window.__falhaPendencias), 'falha nas Pendências', 'a falha simulada ocorreu depois do Transporte');
+    assert.equal(await page.locator('[data-tc-entrega="t1|Transporte I"]').count(), 0, 'sai na hora, antes da releitura');
+    assert.equal(await page.locator('#tcTabTransito').innerText(), 'Em trânsito (1)');
+    assert.equal(await page.locator('#modalConfirmarEntregaPendencia').evaluate((el) => el.classList.contains('open')), false);
+    assert.equal(await page.evaluate((i) => window.__rpc.slice(i + 1).filter((r) => r.rpc === 'getTransporteTarefas').length, confirmar), 1, 'relê a lista');
+    // Conflito (outra pessoa confirmou antes): o item fica até a releitura, que é pedida.
+    const antes = await page.evaluate(() => window.__rpc.length);
+    await page.locator('[data-tc-entrega="t2|Transporte II"]').click();
+    await page.locator('#btnConfirmarEntregaPendencia').click();
+    await page.evaluate((n) => { try { window.__rpc[n].ok({ conflito: true, erro: 'O status deste transporte nao e mais "Enviado".' }); } catch { /* Pendências simuladas com falha */ } }, antes);
+    assert.equal(await page.locator('[data-tc-entrega="t2|Transporte II"]').count(), 1);
+    assert.equal(await page.evaluate((n) => window.__rpc.slice(n + 1).filter((r) => r.rpc === 'getTransporteTarefas').length, antes), 1, 'conflito relê a lista');
+    assert.deepEqual(erros, []);
+  } finally { await browser.close(); }
+});
