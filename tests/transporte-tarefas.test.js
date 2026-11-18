@@ -246,7 +246,7 @@ test('RPC devolve acompanhar, mais adiante e backups da mesma leitura da Agenda'
   s.codexGetAllowedUsers_ = () => ({});
   const r = plano(s.getTransporteTarefas({}));
   assert.equal(leituras, 1);
-  assert.deepEqual(Object.keys(r.acompanhar), ['peticionamento', 'confirmacao', 'pinex', 'transito']);
+  assert.deepEqual(Object.keys(r.acompanhar), ['peticionamento', 'confirmacao', 'pinex', 'transito', 'confirmadas']);
   assert.deepEqual([r.backups, r.maisAdiante.semanas.length], [[], 1]);
 });
 

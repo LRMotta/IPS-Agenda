@@ -11,6 +11,10 @@ var CodexExternalEffects_ = (function() {
     sendEmail: sendEmail,
     replyCourierReminder: function(message, body, options) {
       return message.replyAll(body, options || {});
+    },
+    // Resposta a todos numa conversa do Gmail (cancelamento de transporte confirmado).
+    replyAll: function(message, body, options) {
+      return message.replyAll(body, options || {});
     }
   });
 })();
