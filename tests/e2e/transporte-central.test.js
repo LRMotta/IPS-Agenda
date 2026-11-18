@@ -1,5 +1,5 @@
 'use strict';
-/* global document, window, getComputedStyle, transpCentralCarregar, transpCentralAba, transpCentralFecharCancelamento */
+/* global document, window, getComputedStyle, transpCentralCarregar, transpCentralAba, transpCentralFecharCancelamento, transpCentralFecharEnviada */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -268,10 +268,10 @@ test('Aguardando peticionamento: botão só para quem peticiona, em dois cliques
   } finally { await browser.close(); }
 });
 
-test('Confirmadas: botão Cancelar em vermelho, caixa de confirmação com o texto do e-mail e envio', async () => {
+test('Confirmadas: ordem da aba, Marcar como enviada e Cancelar com caixas de confirmação', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   const modais = readProjectFile('IndexExtraModals.html');
-  const inicio = modais.indexOf('<!-- CANCELAR TRANSPORTE CONFIRMADO');
+  const inicio = modais.indexOf('<!-- MARCAR TRANSPORTE CONFIRMADO COMO ENVIADO');
   const modal = modais.slice(inicio, modais.indexOf('<!-- CONFIRM EXCLUIR COURIER -->', inicio));
   try {
     for (const width of [1280, 390]) {
@@ -283,16 +283,23 @@ test('Confirmadas: botão Cancelar em vermelho, caixa de confirmação com o tex
         window.__rpc = [];
         window.google = { script: { run: { withSuccessHandler(ok) { return { withFailureHandler(falha) {
           const registrar = (rpc) => (...args) => { window.__rpc.push({ rpc, args, ok, falha }); };
-          return { getTransporteTarefas: registrar('getTransporteTarefas'), getTransporteCancelamento: registrar('getTransporteCancelamento'), cancelarTransporteConfirmado: registrar('cancelarTransporteConfirmado') };
+          return { getTransporteTarefas: registrar('getTransporteTarefas'), getTransporteCancelamento: registrar('getTransporteCancelamento'), cancelarTransporteConfirmado: registrar('cancelarTransporteConfirmado'), marcarTransporteConfirmadoEnviado: registrar('marcarTransporteConfirmadoEnviado') };
         } }; } } } };
       }, modal);
       await page.evaluate(() => transpCentralCarregar(false));
-      const confirmadas = [ITEM({ agendaId: 'k1', courier: 'MARKEN', awb: '555', trackingUrl: 'https://rastreio.example.invalid/555' }),
-        ITEM({ agendaId: 'k2', slot: '2', slotRotulo: 'Transporte II', courier: 'OCASA', awb: '' })];
+      // k1 é hoje (enviar e cancelar), k2 é futura (só cancelar), k3 já passou (só enviar). Prazo vindo do servidor não pinta de vermelho.
+      const confirmadas = [ITEM({ agendaId: 'k1', courier: 'MARKEN', awb: '555', trackingUrl: 'https://rastreio.example.invalid/555', podeEnviar: true, podeCancelar: true, prazoLabel: 'Em 3h' }),
+        ITEM({ agendaId: 'k2', slot: '2', slotRotulo: 'Transporte II', courier: 'OCASA', awb: '', podeEnviar: false, podeCancelar: true }),
+        ITEM({ agendaId: 'k3', courier: 'DHL', awb: '777', podeEnviar: true, podeCancelar: false })];
       await page.evaluate((resposta) => window.__rpc[0].ok(resposta), Object.assign({}, COMPLETA, { acompanhar: Object.assign({}, COMPLETA.acompanhar, { confirmadas }) }));
-      assert.equal(await page.locator('#tcTabConfirmadas').innerText(), 'Confirmadas (2)');
+      assert.equal(await page.locator('#tcTabConfirmadas').innerText(), 'Confirmadas (3)');
+      assert.deepEqual(await page.locator('.tc-tab').evaluateAll((els) => els.map((el) => el.getAttribute('data-tc-tab'))),
+        ['fazer', 'acompanhar', 'confirmadas', 'transito', 'adiante', 'backups']);
       await page.evaluate(() => transpCentralAba('confirmadas'));
       assert.equal(await page.locator('#tcPanelConfirmadas').isVisible(), true);
+      assert.equal(await page.locator('#tcConfirmadas .urgent, #tcConfirmadas .chip-red').count(), 0, 'sem destaque vermelho de prazo');
+      assert.deepEqual(await page.locator('#tcConfirmadas [data-tc-enviada]').evaluateAll((els) => els.map((el) => el.getAttribute('data-tc-enviada'))).then((v) => v.sort()), ['k1|1', 'k3|1']);
+      assert.deepEqual(await page.locator('#tcConfirmadas [data-tc-cancelar]').evaluateAll((els) => els.map((el) => el.getAttribute('data-tc-cancelar'))).then((v) => v.sort()), ['k1|1', 'k2|2']);
       const botao = page.locator('#tcConfirmadas [data-tc-cancelar="k1|1"]');
       assert.match(await botao.innerText(), /Cancelar$/);
       assert.equal(await botao.evaluate((el) => getComputedStyle(el).color), 'rgb(179, 38, 30)');
@@ -329,6 +336,27 @@ test('Confirmadas: botão Cancelar em vermelho, caixa de confirmação com o tex
       assert.equal(await page.locator('#modalCancelarTransporteCentral').evaluate((el) => el.classList.contains('open')), false);
       assert.match(await page.evaluate(() => (window.__erros || []).join('|')), /Cancelamento enviado à courier/);
       assert.equal(await page.evaluate(() => window.__rpc[5].rpc), 'getTransporteTarefas');
+      await page.evaluate((resposta) => window.__rpc[5].ok(resposta), Object.assign({}, COMPLETA, { acompanhar: Object.assign({}, COMPLETA.acompanhar, { confirmadas }) }));
+      // Marcar como enviada: caixa com os dados, confirma e relê a lista.
+      await page.locator('#tcConfirmadas [data-tc-enviada="k3|1"]').click();
+      assert.equal(await page.locator('#modalEnviadaTransporteCentral').evaluate((el) => el.classList.contains('open')), true);
+      assert.equal(await page.locator('#tcEnvTitulo').innerText(), 'Marcar como enviada?');
+      assert.equal(await page.locator('#tcEnvAwb').innerText(), 'AWB 777');
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(capturas, 'transporte-enviada-caixa-' + width + '.png') });
+      await page.locator('#tcEnvConfirmar').click();
+      assert.deepEqual(await page.evaluate(() => [window.__rpc[6].rpc, window.__rpc[6].args]), ['marcarTransporteConfirmadoEnviado', ['k3', '1', '777']]);
+      await page.evaluate(() => window.__rpc[6].ok({ conflito: true, erro: 'O status deste transporte não é mais "Confirmado".' }));
+      assert.match(await page.locator('#tcEnvStatus').innerText(), /não é mais "Confirmado"/);
+      assert.equal(await page.locator('#tcEnvConfirmar').isDisabled(), true);
+      await page.evaluate(() => transpCentralFecharEnviada());
+      await page.locator('#tcConfirmadas [data-tc-enviada="k3|1"]').click();
+      assert.equal(await page.locator('#tcEnvStatus').innerText(), '', 'aviso anterior limpo ao reabrir');
+      await page.locator('#tcEnvConfirmar').click();
+      await page.evaluate(() => window.__rpc[7].ok({ ok: true, status: 'Enviado' }));
+      assert.equal(await page.locator('#modalEnviadaTransporteCentral').evaluate((el) => el.classList.contains('open')), false);
+      assert.match(await page.evaluate(() => (window.__erros || []).join('|')), /marcado como enviado/);
+      assert.equal(await page.evaluate(() => window.__rpc[8].rpc), 'getTransporteTarefas');
       if (width === 390) {
         await page.locator('#tcTabConfirmadas').scrollIntoViewIfNeeded();
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'sem rolagem horizontal');

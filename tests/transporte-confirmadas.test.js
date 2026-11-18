@@ -11,7 +11,7 @@ class FakeDate extends Date {
 }
 
 const ARQUIVOS = ['AgendaServerRules.gs', 'WebApp.gs', 'TransporteCodexConfig.gs', 'TransporteRegistros.gs', 'TransporteTarefas.gs',
-  'TransporteEmails.gs', 'TransporteEnvio.gs', 'TransportePeticionamento.gs', 'CourierLembretes.gs', 'TransporteCancelamento.gs'];
+  'TransporteEmails.gs', 'TransporteEnvio.gs', 'TransportePeticionamento.gs', 'CourierLembretes.gs', 'TransporteConfirmadas.gs'];
 
 function mensagem(id, opcoes) {
   const o = Object.assign({ from: 'eu@ucs.example', to: 'coleta@marken.example', cc: '', corpo: '', data: new Date(2026, 9, 1, 10), assunto: 'Pedido de coleta' }, opcoes);
@@ -74,7 +74,7 @@ function cenario(ajustar) {
   return { s, row, i, enviados, auditorias, mensagens, thread };
 }
 
-test('aba Confirmadas: só Confirmado de hoje em diante; Coletado, Agendado e datas passadas ficam fora', () => {
+test('aba Confirmadas: Confirmado de qualquer data, sem prazo vermelho; ações conforme a data; Coletado e Agendado ficam fora', () => {
   const s = runFiles(ARQUIVOS, { Date: FakeDate, Logger: { log() {} }, Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } });
   const i = s.AGENDA_CFG.idx;
   const linha = (id, data, status) => {
@@ -93,7 +93,9 @@ test('aba Confirmadas: só Confirmado de hoje em diante; Coletado, Agendado e da
     linha('e', '06/10/2026', 'Agendado'),
     linha('f', '06/10/2026', 'Cancelado')
   ] }));
-  assert.deepEqual(r.acompanhar.confirmadas.map((x) => [x.agendaId, x.slot, x.slotRotulo]).sort(), [['a', '1', 'Transporte I'], ['b', '1', 'Transporte I']]);
+  // Futura: só cancelar. Hoje: enviar e cancelar. Passada (coleta feita, falta marcar): só enviar.
+  assert.deepEqual(r.acompanhar.confirmadas.map((x) => [x.agendaId, x.slotRotulo, x.podeEnviar, x.podeCancelar, x.prazoLabel]).sort(),
+    [['a', 'Transporte I', false, true, ''], ['b', 'Transporte I', true, true, ''], ['c', 'Transporte I', true, false, '']]);
   assert.deepEqual(r.acompanhar.confirmacao.map((x) => x.agendaId), ['e']);
   assert.deepEqual(r.tarefas, []);
 });
@@ -167,7 +169,7 @@ test('sem conversa com a courier no Gmail de quem cancela: orienta cancelar pelo
 });
 
 test('contratos: RPCs públicas com admin no servidor, chamadas pela tela, botão vermelho e caixa de confirmação', () => {
-  const fonte = readProjectFile('TransporteCancelamento.gs');
+  const fonte = readProjectFile('TransporteConfirmadas.gs');
   assert.match(fonte, /^function getTransporteCancelamento\(agendaId, slot\) \{\n  codexAssertAdmin_\(\);/m);
   assert.match(fonte, /^function cancelarTransporteConfirmado\(agendaId, slot, mensagemId\) \{\n  codexAssertAdmin_\(\);\n  codexAssertCanWrite_\(/m);
   assert.doesNotMatch(fonte, /(?<!CodexExternalEffects_)\.replyAll\(/,'o envio passa pelo adaptador simulável');
@@ -181,4 +183,24 @@ test('contratos: RPCs públicas com admin no servidor, chamadas pela tela, botã
   assert.match(modais, /Deseja mesmo cancelar este transporte\?/);
   assert.match(modais, /class="btn-danger tc-canc-confirmar"/);
   assert.ok(readProjectFile('IndexTransporteCentralContent.html').includes('data-tc-tab="confirmadas"'));
+});
+
+test('marcar como enviada: grava Enviado e audita; recusa antes da data, com status ou AWB diferentes', () => {
+  const { s, row, i, auditorias, enviados } = cenario(({ row: r, i: idx }) => { r[idx.data] = '02/10/2026'; });
+  s.agendaDateIsAfterToday_ = (d) => d.getTime() > new Date(2026, 9, 2, 23, 59).getTime();
+  assert.equal(plano(s.marcarTransporteConfirmadoEnviado('ag1', '1', '999')).conflito, true, 'AWB diferente');
+  assert.equal(row[i.c1.status], 'Confirmado');
+  const r = plano(s.marcarTransporteConfirmadoEnviado('ag1', '1', '123456'));
+  assert.equal(r.ok, true);
+  assert.equal(row[i.c1.status], 'Enviado');
+  assert.equal(enviados.length, 0, 'não envia e-mail');
+  assert.deepEqual(plano(auditorias[0][3]), [{ field: 'Transporte I - Status', oldValue: 'Confirmado', newValue: 'Enviado' }]);
+  assert.equal(plano(s.marcarTransporteConfirmadoEnviado('ag1', '1', '123456')).conflito, true, 'já não está Confirmado');
+  const futuro = cenario();
+  futuro.s.agendaDateIsAfterToday_ = (d) => d.getTime() > new Date(2026, 9, 2, 23, 59).getTime();
+  assert.match(plano(futuro.s.marcarTransporteConfirmadoEnviado('ag1', '1', '123456')).erro, /a partir da data da visita/);
+  assert.equal(futuro.row[i.c1.status], 'Confirmado');
+  const fonte = readProjectFile('TransporteConfirmadas.gs');
+  assert.match(fonte, /^function marcarTransporteConfirmadoEnviado\(agendaId, slot, awb\) \{\n  codexAssertAdmin_\(\);\n  codexAssertCanWrite_\(/m);
+  assert.ok(readProjectFile('IndexTransporteCentralScripts.html').includes('.marcarTransporteConfirmadoEnviado('));
 });

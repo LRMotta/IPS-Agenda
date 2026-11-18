@@ -11,7 +11,7 @@
       button.setAttribute('aria-selected', ativa ? 'true' : 'false');
       button.tabIndex = ativa ? 0 : -1;
     });
-    ['fazer', 'acompanhar', 'transito', 'confirmadas', 'adiante', 'backups'].forEach(function(nome) {
+    ['fazer', 'acompanhar', 'confirmadas', 'transito', 'adiante', 'backups'].forEach(function(nome) {
       var painel = document.getElementById('tcPanel' + nome.charAt(0).toUpperCase() + nome.slice(1));
       if (painel) painel.hidden = nome !== aba;
     });
@@ -266,17 +266,87 @@
   // o cancelamento abre a caixa de confirmação com o texto do e-mail.
   function transpCentralHtmlConfirmadas(dados) {
     var itens = ((dados.acompanhar || {}).confirmadas) || [];
-    if (!itens.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhum transporte confirmado para os próximos dias.</div>';
+    if (!itens.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhuma retirada confirmada aguardando a coleta.</div>';
     return transpCentralHtmlSecaoAcompanhar({
-      titulo: 'Confirmadas', icone: 'event_available', itens: itens,
-      dica: 'A courier confirmou a coleta. Para cancelar, o app responde ao último e-mail da conversa e marca o transporte como Cancelado.',
+      // A coleta está combinada: sem prazo nem vermelho (mesmo se o servidor ainda mandar o rótulo).
+      titulo: 'Confirmadas', icone: 'event_available', itens: itens.map(function(it) { return Object.assign({}, it, { prazoLabel: '' }); }),
+      dica: 'A courier confirmou a retirada, que ainda não foi feita. Depois da coleta, marque como enviada. Para cancelar, o app responde ao último e-mail da conversa.',
       acaoTransporte: function(it) {
+        var chave = esc(it.agendaId) + '|' + esc(it.slot);
         var rastreio = it.trackingUrl
           ? '<button type="button" class="icon-btn tc-rastreio" data-tc-rastreio="' + esc(it.trackingUrl) + '" title="Abrir rastreio" aria-label="Abrir rastreio de ' + esc(it.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">travel_explore</span></button>'
           : '';
-        return rastreio + transpCentralBotao('vermelho', 'cancel', 'Cancelar', 'data-tc-cancelar="' + esc(it.agendaId) + '|' + esc(it.slot) + '"', 'Cancelar o ' + (it.slotRotulo || 'transporte') + ' de ' + it.participante);
+        // Enviada só a partir da data da visita; cancelar só de hoje em diante (as duas regras são revalidadas no servidor).
+        var enviada = it.podeEnviar ? transpCentralBotao('verde', 'local_shipping', 'Marcar como enviada', 'data-tc-enviada="' + chave + '"', 'Marcar como enviada: ' + (it.slotRotulo || 'transporte') + ' de ' + it.participante) : '';
+        var cancelar = it.podeCancelar ? transpCentralBotao('vermelho', 'cancel', 'Cancelar', 'data-tc-cancelar="' + chave + '"', 'Cancelar o ' + (it.slotRotulo || 'transporte') + ' de ' + it.participante) : '';
+        return rastreio + enviada + cancelar;
       }
     });
+  }
+
+  // Marcar como enviada: caixa de confirmação com os dados do transporte; o servidor revalida status, AWB e data.
+  var TC_ENVIADA = { item: null, enviando: false };
+
+  function transpCentralItemConfirmada(agendaId, slot) {
+    return (((TRANSP_CENTRAL_STATE.dados || {}).acompanhar || {}).confirmadas || []).filter(function(t) { return t.agendaId === agendaId && t.slot === slot; })[0];
+  }
+
+  function transpCentralEnvBotao(texto) {
+    var botao = document.getElementById('tcEnvConfirmar');
+    if (!botao) return;
+    botao.disabled = !!texto;
+    botao.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">' + (texto ? 'hourglass_empty' : 'local_shipping') + '</span>' + esc(texto || 'Sim, marcar como enviada');
+  }
+
+  function transpCentralAbrirEnviada(agendaId, slot) {
+    var item = transpCentralItemConfirmada(agendaId, slot);
+    if (!item) { snackErro('Transporte não encontrado. Atualize a lista.'); return; }
+    TC_ENVIADA.item = item;
+    TC_ENVIADA.enviando = false;
+    transpCentralCancTexto('tcEnvParticipante', [item.participante, item.projeto, item.visita].filter(Boolean).join(' · ') || 'Não informado');
+    transpCentralCancTexto('tcEnvTransporte', item.slotRotulo || 'Não informado');
+    transpCentralCancTexto('tcEnvCourier', [item.courier, item.temperatura].filter(Boolean).join(' · ') || 'Não informado');
+    transpCentralCancTexto('tcEnvAwb', item.awb ? 'AWB ' + item.awb : 'Não informada');
+    transpCentralCancTexto('tcEnvDataHora', [item.data, item.hora].filter(Boolean).join(' · ') || 'Não informado');
+    transpCentralCancTexto('tcEnvStatus', '');
+    var aviso = document.getElementById('tcEnvStatus');
+    if (aviso) aviso.classList.remove('tc-canc-erro');
+    transpCentralEnvBotao('');
+    abrirOverlay('modalEnviadaTransporteCentral');
+  }
+
+  function transpCentralFecharEnviada() {
+    if (TC_ENVIADA.enviando) return;
+    TC_ENVIADA.item = null;
+    fecharOverlay('modalEnviadaTransporteCentral');
+  }
+
+  function transpCentralExecutarEnviada() {
+    var item = TC_ENVIADA.item;
+    if (!item || TC_ENVIADA.enviando) return;
+    TC_ENVIADA.enviando = true;
+    transpCentralEnvBotao('Marcando…');
+    var status = document.getElementById('tcEnvStatus');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        TC_ENVIADA.enviando = false;
+        if (!res || res.erro || !res.ok) {
+          if (status) { status.textContent = (res && res.erro) || 'Não foi possível marcar como enviada.'; status.classList.add('tc-canc-erro'); }
+          transpCentralEnvBotao('');
+          if (res && res.conflito) document.getElementById('tcEnvConfirmar').disabled = true;
+          return;
+        }
+        transpCentralFecharEnviada();
+        snack('Transporte marcado como enviado. Ele está agora em Em trânsito.');
+        if (typeof invalidarAgendaEventosCliente_ === 'function') invalidarAgendaEventosCliente_();
+        if (getCurrentPage() === 'transporte-central') transpCentralCarregar(true);
+      })
+      .withFailureHandler(function(erro) {
+        TC_ENVIADA.enviando = false;
+        if (status) { status.textContent = appErrorMessage(erro); status.classList.add('tc-canc-erro'); }
+        transpCentralEnvBotao('');
+      })
+      .marcarTransporteConfirmadoEnviado(item.agendaId, item.slot, item.awb || '');
   }
 
   var TC_CANCELAMENTO = { item: null, previa: null, requestId: 0, enviando: false };
@@ -517,9 +587,14 @@
   }
 
   document.addEventListener('click', function(event) {
-    var alvo = event.target && event.target.closest ? event.target.closest('#page-transporte-central [data-tc-abrir], #page-transporte-central [data-tc-ir], #page-transporte-central [data-tc-comecar], #page-transporte-central [data-tc-semana], #page-transporte-central [data-tc-rastreio], #page-transporte-central [data-tc-entrega], #page-transporte-central [data-tc-gru], #page-transporte-central [data-tc-cancelar]') : null;
+    var alvo = event.target && event.target.closest ? event.target.closest('#page-transporte-central [data-tc-abrir], #page-transporte-central [data-tc-ir], #page-transporte-central [data-tc-comecar], #page-transporte-central [data-tc-semana], #page-transporte-central [data-tc-rastreio], #page-transporte-central [data-tc-entrega], #page-transporte-central [data-tc-gru], #page-transporte-central [data-tc-cancelar], #page-transporte-central [data-tc-enviada]') : null;
     if (!alvo) return;
     if (alvo.hasAttribute('data-tc-gru')) { transpCentralMarcarGru(alvo); return; }
+    if (alvo.hasAttribute('data-tc-enviada')) {
+      var alvoEnv = alvo.getAttribute('data-tc-enviada').split('|');
+      transpCentralAbrirEnviada(alvoEnv[0], alvoEnv[1]);
+      return;
+    }
     if (alvo.hasAttribute('data-tc-cancelar')) {
       var alvoCanc = alvo.getAttribute('data-tc-cancelar').split('|');
       transpCentralAbrirCancelamento(alvoCanc[0], alvoCanc[1]);

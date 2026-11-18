@@ -1,7 +1,9 @@
 /**
- * Cancelamento de transporte confirmado (tela nova de Transporte, aba "Confirmadas").
+ * Acoes da aba "Confirmadas" da tela nova de Transporte: a courier confirmou a retirada, que ainda nao foi feita.
  *
- * Fluxo: a tela pede a previa (conversa, destinatarios e texto sugerido); a pessoa confirma na caixa; o servidor
+ * Marcar como enviada: status "Enviado", so a partir da data da visita (mesma regra da edicao da Agenda).
+ *
+ * Cancelamento: a tela pede a previa (conversa, destinatarios e texto sugerido); a pessoa confirma na caixa; o servidor
  * responde a todos na ultima mensagem da conversa sobre o transporte e grava "Cancelado" no status do transporte.
  * So status Confirmado, de hoje em diante; "Coletado" fica fora (a amostra ja saiu).
  * O e-mail sai da caixa do Gmail de quem confirma: a conversa precisa estar nela.
@@ -228,5 +230,45 @@ function cancelarTransporteConfirmado(agendaId, slot, mensagemId) {
     SpreadsheetApp.flush();
     agendaInvalidateWindowCache_();
     return { ok: true, agendaId: agendaId, slot: slotInfo.slot, status: 'Cancelado', emailEnviado: !!corpo, jaEnviado: !corpo };
+  });
+}
+
+/**
+ * Marca como "Enviado" um transporte confirmado, depois da coleta. Somente da data da visita em diante.
+ * awb: a AWB mostrada na caixa de confirmacao; se mudou desde a leitura da lista, pede para atualizar.
+ */
+function marcarTransporteConfirmadoEnviado(agendaId, slot, awb) {
+  codexAssertAdmin_();
+  codexAssertCanWrite_('marcarTransporteConfirmadoEnviado', 'Agenda', agendaId);
+  agendaId = String(agendaId || '').trim();
+  awb = String(awb || '').trim();
+  var slotInfo = transporteCancelamentoSlot_(slot);
+  if (!agendaId || !slotInfo) return { erro: 'Transporte não informado.' };
+  return codexWithDocumentLock_('marcarTransporteConfirmadoEnviado', function() {
+    var agenda = getAgendaSheet_();
+    var atual = transporteCancelamentoLerLinha_(agendaId, agenda);
+    if (!atual) return { erro: 'Agendamento não encontrado.' };
+    var i = AGENDA_CFG.idx;
+    var c = slotInfo.cfg;
+    var status = String(atual.row[c.status] || '').trim();
+    var awbAtual = String(atual.row[c.awb] || '').trim();
+    if (AgendaServerRules_.isCancelled(normText_(atual.row[i.status]))) return { erro: 'O agendamento foi cancelado. Atualize a lista.' };
+    if (!transporteCancelamentoStatusPermitido_(status)) {
+      return { conflito: true, erro: 'O status deste transporte não é mais "Confirmado" (agora: ' + (status || 'vazio') + '). Atualize a lista.' };
+    }
+    if (normalizarAwbCourier_(awbAtual) !== normalizarAwbCourier_(awb)) {
+      return { conflito: true, erro: 'A AWB deste transporte mudou desde o carregamento da lista. Atualize a lista.' };
+    }
+    var data = parseAgendaDateAny_(atual.row[i.data]);
+    if (!data) return { erro: 'A data deste envio não é válida na Agenda.' };
+    if (agendaDateIsAfterToday_(data)) return { erro: 'O transporte só pode ser marcado como enviado a partir da data da visita.' };
+    agenda.getRange(atual.linha, c.status + 1).setValue('Enviado');
+    codexWriteAuditChanges_('Agenda', 'marcarTransporteConfirmadoEnviado', agendaId, [{
+      field: slotInfo.rotulo + ' - Status', oldValue: status, newValue: 'Enviado'
+    }], 'Envio marcado manualmente no Transporte' + (awbAtual ? ' | AWB ' + awbAtual : ''));
+    // Persistir sob lock antes de invalidar o cache da janela da Agenda (mesmo padrao de confirmarEntregaTransportePendencia).
+    SpreadsheetApp.flush();
+    agendaInvalidateWindowCache_();
+    return { ok: true, agendaId: agendaId, slot: slotInfo.slot, status: 'Enviado' };
   });
 }
