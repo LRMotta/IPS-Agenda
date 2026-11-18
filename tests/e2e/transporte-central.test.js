@@ -1,5 +1,5 @@
 'use strict';
-/* global document, window, transpCentralCarregar, transpCentralAba */
+/* global document, window, getComputedStyle, transpCentralCarregar, transpCentralAba, transpCentralFecharCancelamento */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -265,5 +265,78 @@ test('Aguardando peticionamento: botão só para quem peticiona, em dois cliques
     assert.match(await page.evaluate(() => (window.__erros || []).join('|')), /tarefa de anexar e enviar voltou/);
     assert.equal(await page.evaluate(() => window.__pedidos.length), 3, 'a lista é relida');
     assert.deepEqual(erros, []);
+  } finally { await browser.close(); }
+});
+
+test('Confirmadas: botão Cancelar em vermelho, caixa de confirmação com o texto do e-mail e envio', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  const modais = readProjectFile('IndexExtraModals.html');
+  const inicio = modais.indexOf('<!-- CANCELAR TRANSPORTE CONFIRMADO');
+  const modal = modais.slice(inicio, modais.indexOf('<!-- CONFIRM EXCLUIR COURIER -->', inicio));
+  try {
+    for (const width of [1280, 390]) {
+      const { page, erros } = await abrir(browser, width);
+      await page.evaluate((html) => {
+        document.body.insertAdjacentHTML('beforeend', html);
+        window.abrirOverlay = (id) => { const el = document.getElementById(id); el.classList.add('open'); el.removeAttribute('inert'); };
+        window.fecharOverlay = (id) => { const el = document.getElementById(id); el.classList.remove('open'); el.setAttribute('inert', ''); };
+        window.__rpc = [];
+        window.google = { script: { run: { withSuccessHandler(ok) { return { withFailureHandler(falha) {
+          const registrar = (rpc) => (...args) => { window.__rpc.push({ rpc, args, ok, falha }); };
+          return { getTransporteTarefas: registrar('getTransporteTarefas'), getTransporteCancelamento: registrar('getTransporteCancelamento'), cancelarTransporteConfirmado: registrar('cancelarTransporteConfirmado') };
+        } }; } } } };
+      }, modal);
+      await page.evaluate(() => transpCentralCarregar(false));
+      const confirmadas = [ITEM({ agendaId: 'k1', courier: 'MARKEN', awb: '555', trackingUrl: 'https://rastreio.example.invalid/555' }),
+        ITEM({ agendaId: 'k2', slot: '2', slotRotulo: 'Transporte II', courier: 'OCASA', awb: '' })];
+      await page.evaluate((resposta) => window.__rpc[0].ok(resposta), Object.assign({}, COMPLETA, { acompanhar: Object.assign({}, COMPLETA.acompanhar, { confirmadas }) }));
+      assert.equal(await page.locator('#tcTabConfirmadas').innerText(), 'Confirmadas (2)');
+      await page.evaluate(() => transpCentralAba('confirmadas'));
+      assert.equal(await page.locator('#tcPanelConfirmadas').isVisible(), true);
+      const botao = page.locator('#tcConfirmadas [data-tc-cancelar="k1|1"]');
+      assert.match(await botao.innerText(), /Cancelar$/);
+      assert.equal(await botao.evaluate((el) => getComputedStyle(el).color), 'rgb(179, 38, 30)');
+      assert.equal(await page.locator('#tcConfirmadas .tc-rastreio').count(), 1, 'rastreio só com URL');
+      await botao.click();
+      assert.equal(await page.locator('#modalCancelarTransporteCentral').evaluate((el) => el.classList.contains('open')), true);
+      assert.equal(await page.locator('#tcCancTitulo').innerText(), 'Deseja mesmo cancelar este transporte?');
+      assert.equal(await page.locator('#tcCancConfirmar').isDisabled(), true, 'só habilita com a prévia');
+      assert.deepEqual(await page.evaluate(() => window.__rpc[1].args), ['k1', '1']);
+      await page.evaluate(() => window.__rpc[1].ok({ ok: true, mensagemId: 'm9', assunto: 'RE: Coleta', de: 'coleta@marken.example', recebidaEm: '2026-10-01T15:00:00.000Z',
+        destinatarios: ['coleta@marken.example', 'equipe@ucs.example'], texto: 'Prezados,\n\nSolicitamos o cancelamento.' }));
+      assert.equal(await page.locator('#tcCancEmail').isVisible(), true);
+      assert.match(await page.locator('#tcCancPara').innerText(), /coleta@marken\.example, equipe@ucs\.example/);
+      // Texto padrão só para conferir: sem campo editável nem aviso de assinatura.
+      assert.equal(await page.locator('#tcCancTexto').innerText(), 'Prezados,\n\nSolicitamos o cancelamento.');
+      assert.equal(await page.locator('#modalCancelarTransporteCentral textarea, #modalCancelarTransporteCentral input').count(), 0);
+      assert.doesNotMatch(await page.locator('#modalCancelarTransporteCentral').innerText(), /assinatura/i);
+      const capturas = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-playwright');
+      fs.mkdirSync(capturas, { recursive: true });
+      await page.screenshot({ path: path.join(capturas, 'transporte-cancelar-caixa-' + width + '.png') });
+      await page.locator('#tcCancConfirmar').click();
+      assert.deepEqual(await page.evaluate(() => window.__rpc[2].args), ['k1', '1', 'm9']);
+      assert.match(await page.locator('#tcCancConfirmar').innerText(), /Enviando/);
+      // Conflito: mantém a caixa aberta com o aviso e sem permitir reenviar.
+      await page.evaluate(() => window.__rpc[2].ok({ conflito: true, erro: 'Chegou um e-mail novo nesta conversa.' }));
+      assert.match(await page.locator('#tcCancStatus').innerText(), /Chegou um e-mail novo/);
+      assert.equal(await page.locator('#tcCancConfirmar').isDisabled(), true);
+      // Reabrir e concluir: fecha a caixa, avisa e relê a lista.
+      await page.evaluate(() => transpCentralFecharCancelamento());
+      await botao.click();
+      await page.evaluate(() => window.__rpc[3].ok({ ok: true, mensagemId: 'm10', destinatarios: ['coleta@marken.example'], texto: 'Texto' }));
+      await page.locator('#tcCancConfirmar').click();
+      await page.evaluate(() => window.__rpc[4].ok({ ok: true, emailEnviado: true }));
+      assert.equal(await page.locator('#modalCancelarTransporteCentral').evaluate((el) => el.classList.contains('open')), false);
+      assert.match(await page.evaluate(() => (window.__erros || []).join('|')), /Cancelamento enviado à courier/);
+      assert.equal(await page.evaluate(() => window.__rpc[5].rpc), 'getTransporteTarefas');
+      if (width === 390) {
+        await page.locator('#tcTabConfirmadas').scrollIntoViewIfNeeded();
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'sem rolagem horizontal');
+      }
+      const pasta = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-playwright');
+      fs.mkdirSync(pasta, { recursive: true });
+      await page.screenshot({ path: path.join(pasta, 'transporte-confirmadas-' + width + '.png'), fullPage: true });
+      assert.deepEqual(erros, []);
+    }
   } finally { await browser.close(); }
 });

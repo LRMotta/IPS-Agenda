@@ -439,6 +439,35 @@
   </div>
 </div>
 
+<!-- CANCELAR TRANSPORTE CONFIRMADO (tela de Transporte, aba Confirmadas) -->
+<div class="modal-overlay" id="modalCancelarTransporteCentral" data-accessible-dialog data-extra-dialog inert data-dialog-close="transpCentralFecharCancelamento" onclick="if(event.target.id==='modalCancelarTransporteCentral') transpCentralFecharCancelamento()">
+  <div class="confirm-box pendencia-entrega-box" role="dialog" aria-modal="true" aria-labelledby="tcCancTitulo" aria-describedby="tcCancAviso">
+    <div class="pendencia-entrega-icon tc-canc-icone"><span class="material-symbols-outlined" aria-hidden="true">cancel</span></div>
+    <h3 id="tcCancTitulo">Deseja mesmo cancelar este transporte?</h3>
+    <p id="tcCancAviso">O pedido de cancelamento será enviado à courier, em resposta ao último e-mail da conversa, e o status do transporte passará a <strong>Cancelado</strong> na Agenda.</p>
+    <div class="pendencia-entrega-grid">
+      <div><span>Participante</span><strong id="tcCancParticipante">—</strong></div>
+      <div><span>Transporte</span><strong id="tcCancTransporte">—</strong></div>
+      <div><span>Courier / temperatura</span><strong id="tcCancCourier">—</strong></div>
+      <div><span>AWB</span><strong id="tcCancAwb">—</strong></div>
+      <div><span>Data e hora</span><strong id="tcCancDataHora">—</strong></div>
+    </div>
+    <div class="tc-canc-email" id="tcCancEmail" hidden>
+      <div class="pendencia-entrega-grid tc-canc-conversa">
+        <div><span>Responder a</span><strong id="tcCancConversa">—</strong></div>
+        <div><span>Para</span><strong id="tcCancPara">—</strong></div>
+      </div>
+      <p class="tc-canc-rotulo" id="tcCancTextoRotulo">E-mail que será enviado</p>
+      <div id="tcCancTexto" class="tc-canc-texto" aria-labelledby="tcCancTextoRotulo"></div>
+    </div>
+    <p class="tc-canc-status" id="tcCancStatus" role="status" aria-live="polite"></p>
+    <div class="confirm-actions">
+      <button type="button" class="btn-txt" onclick="transpCentralFecharCancelamento()">Voltar</button>
+      <button type="button" class="btn-danger tc-canc-confirmar" id="tcCancConfirmar" onclick="transpCentralExecutarCancelamento()" disabled><span class="material-symbols-outlined" aria-hidden="true">cancel</span>Sim, cancelar transporte</button>
+    </div>
+  </div>
+</div>
+
 <!-- CONFIRM EXCLUIR COURIER -->
 <div class="modal-overlay" id="confirmCourier" data-accessible-dialog data-extra-dialog inert>
   <div class="confirm-box">

@@ -11,7 +11,7 @@
       button.setAttribute('aria-selected', ativa ? 'true' : 'false');
       button.tabIndex = ativa ? 0 : -1;
     });
-    ['fazer', 'acompanhar', 'transito', 'adiante', 'backups'].forEach(function(nome) {
+    ['fazer', 'acompanhar', 'transito', 'confirmadas', 'adiante', 'backups'].forEach(function(nome) {
       var painel = document.getElementById('tcPanel' + nome.charAt(0).toUpperCase() + nome.slice(1));
       if (painel) painel.hidden = nome !== aba;
     });
@@ -262,6 +262,128 @@
     });
   }
 
+  // Confirmadas: coleta confirmada pela courier, de hoje em diante. Rastreio (com AWB rastreável) e "Cancelar" em vermelho;
+  // o cancelamento abre a caixa de confirmação com o texto do e-mail.
+  function transpCentralHtmlConfirmadas(dados) {
+    var itens = ((dados.acompanhar || {}).confirmadas) || [];
+    if (!itens.length) return '<div class="tc-empty"><span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Nenhum transporte confirmado para os próximos dias.</div>';
+    return transpCentralHtmlSecaoAcompanhar({
+      titulo: 'Confirmadas', icone: 'event_available', itens: itens,
+      dica: 'A courier confirmou a coleta. Para cancelar, o app responde ao último e-mail da conversa e marca o transporte como Cancelado.',
+      acaoTransporte: function(it) {
+        var rastreio = it.trackingUrl
+          ? '<button type="button" class="icon-btn tc-rastreio" data-tc-rastreio="' + esc(it.trackingUrl) + '" title="Abrir rastreio" aria-label="Abrir rastreio de ' + esc(it.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">travel_explore</span></button>'
+          : '';
+        return rastreio + transpCentralBotao('vermelho', 'cancel', 'Cancelar', 'data-tc-cancelar="' + esc(it.agendaId) + '|' + esc(it.slot) + '"', 'Cancelar o ' + (it.slotRotulo || 'transporte') + ' de ' + it.participante);
+      }
+    });
+  }
+
+  var TC_CANCELAMENTO = { item: null, previa: null, requestId: 0, enviando: false };
+
+  function transpCentralCancTexto(id, valor) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = valor;
+  }
+
+  function transpCentralCancStatus(texto, erro) {
+    var el = document.getElementById('tcCancStatus');
+    if (!el) return;
+    el.textContent = texto || '';
+    el.classList.toggle('tc-canc-erro', !!erro);
+  }
+
+  function transpCentralCancBotao(habilitado, texto) {
+    var botao = document.getElementById('tcCancConfirmar');
+    if (!botao) return;
+    botao.disabled = !habilitado;
+    botao.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">' + (texto ? 'hourglass_empty' : 'cancel') + '</span>' + esc(texto || 'Sim, cancelar transporte');
+  }
+
+  function transpCentralAbrirCancelamento(agendaId, slot) {
+    var item = (((TRANSP_CENTRAL_STATE.dados || {}).acompanhar || {}).confirmadas || []).filter(function(t) { return t.agendaId === agendaId && t.slot === slot; })[0];
+    if (!item) { snackErro('Transporte não encontrado. Atualize a lista.'); return; }
+    var requestId = ++TC_CANCELAMENTO.requestId;
+    TC_CANCELAMENTO.item = item;
+    TC_CANCELAMENTO.previa = null;
+    TC_CANCELAMENTO.enviando = false;
+    transpCentralCancTexto('tcCancParticipante', [item.participante, item.projeto, item.visita].filter(Boolean).join(' · ') || 'Não informado');
+    transpCentralCancTexto('tcCancTransporte', item.slotRotulo || 'Não informado');
+    transpCentralCancTexto('tcCancCourier', [item.courier, item.temperatura].filter(Boolean).join(' · ') || 'Não informado');
+    transpCentralCancTexto('tcCancAwb', item.awb ? 'AWB ' + item.awb : 'Não informada');
+    transpCentralCancTexto('tcCancDataHora', [item.data, item.hora].filter(Boolean).join(' · ') || 'Não informado');
+    var email = document.getElementById('tcCancEmail');
+    if (email) email.hidden = true;
+    transpCentralCancStatus('Procurando a conversa com a courier no seu Gmail…');
+    transpCentralCancBotao(false);
+    abrirOverlay('modalCancelarTransporteCentral');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        // Caixa fechada ou aberta para outro transporte: a resposta antiga não vale.
+        if (requestId !== TC_CANCELAMENTO.requestId || TC_CANCELAMENTO.item !== item) return;
+        if (!res || res.erro || !res.ok) {
+          transpCentralCancStatus((res && res.erro) || 'Não foi possível preparar o cancelamento.', true);
+          return;
+        }
+        TC_CANCELAMENTO.previa = res;
+        if (res.jaEnviado) {
+          transpCentralCancStatus('O pedido de cancelamento já foi enviado nesta conversa. Confirme para marcar o transporte como Cancelado.');
+          transpCentralCancBotao(true);
+          return;
+        }
+        var recebida = res.recebidaEm ? new Date(res.recebidaEm) : null;
+        transpCentralCancTexto('tcCancConversa', [res.assunto || '(sem assunto)', res.de, recebida && !isNaN(recebida.getTime()) ? recebida.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''].filter(Boolean).join(' · '));
+        transpCentralCancTexto('tcCancPara', (res.destinatarios || []).join(', ') || '—');
+        transpCentralCancTexto('tcCancTexto', res.texto || '');
+        if (email) email.hidden = false;
+        transpCentralCancStatus('');
+        transpCentralCancBotao(true);
+      })
+      .withFailureHandler(function(erro) {
+        if (requestId !== TC_CANCELAMENTO.requestId || TC_CANCELAMENTO.item !== item) return;
+        transpCentralCancStatus(appErrorMessage(erro), true);
+      })
+      .getTransporteCancelamento(item.agendaId, item.slot);
+  }
+
+  function transpCentralFecharCancelamento() {
+    // Durante o envio a caixa fica aberta: fechar não interrompe o servidor.
+    if (TC_CANCELAMENTO.enviando) return;
+    TC_CANCELAMENTO.requestId++;
+    TC_CANCELAMENTO.item = null;
+    TC_CANCELAMENTO.previa = null;
+    fecharOverlay('modalCancelarTransporteCentral');
+  }
+
+  function transpCentralExecutarCancelamento() {
+    var item = TC_CANCELAMENTO.item;
+    var previa = TC_CANCELAMENTO.previa;
+    if (!item || !previa || TC_CANCELAMENTO.enviando) return;
+    TC_CANCELAMENTO.enviando = true;
+    transpCentralCancBotao(false, previa.jaEnviado ? 'Gravando…' : 'Enviando…');
+    transpCentralCancStatus('');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        TC_CANCELAMENTO.enviando = false;
+        if (!res || res.erro || !res.ok) {
+          transpCentralCancStatus((res && res.erro) || 'Não foi possível cancelar.', true);
+          transpCentralCancBotao(!(res && res.conflito));
+          return;
+        }
+        transpCentralFecharCancelamento();
+        snack(res.emailEnviado ? 'Cancelamento enviado à courier. Transporte marcado como Cancelado.' : 'Transporte marcado como Cancelado.');
+        if (typeof invalidarAgendaEventosCliente_ === 'function') invalidarAgendaEventosCliente_();
+        if (getCurrentPage() === 'transporte-central') transpCentralCarregar(true);
+      })
+      .withFailureHandler(function(erro) {
+        TC_CANCELAMENTO.enviando = false;
+        // Erro depois do envio é possível (tempo esgotado): o marcador na conversa evita um segundo e-mail ao tentar de novo.
+        transpCentralCancStatus(appErrorMessage(erro) + ' Antes de tentar de novo, confira a conversa no Gmail.', true);
+        transpCentralCancBotao(true);
+      })
+      .cancelarTransporteConfirmado(item.agendaId, item.slot, previa.mensagemId || '');
+  }
+
   var TC_DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   var TC_MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -320,7 +442,7 @@
   function transpCentralContagem(aba, total) {
     var botao = document.querySelector('.tc-tab[data-tc-tab="' + aba + '"]');
     if (!botao) return;
-    var rotulo = { fazer: 'Para fazer', acompanhar: 'Acompanhar', transito: 'Em trânsito', adiante: 'Em breve', backups: 'Backups não agendados' }[aba];
+    var rotulo = { fazer: 'Para fazer', acompanhar: 'Acompanhar', transito: 'Em trânsito', confirmadas: 'Confirmadas', adiante: 'Em breve', backups: 'Backups não agendados' }[aba];
     botao.textContent = rotulo + (total ? ' (' + total + ')' : '');
   }
 
@@ -330,7 +452,7 @@
     if (!alvo) return;
     alvo.innerHTML = transpCentralHtmlFazer(dados);
     alvo.setAttribute('aria-busy', 'false');
-    var secoes = { tcAcompanhar: transpCentralHtmlAcompanhar, tcTransito: transpCentralHtmlTransito, tcAdiante: transpCentralHtmlAdiante, tcBackups: transpCentralHtmlBackups };
+    var secoes = { tcAcompanhar: transpCentralHtmlAcompanhar, tcTransito: transpCentralHtmlTransito, tcConfirmadas: transpCentralHtmlConfirmadas, tcAdiante: transpCentralHtmlAdiante, tcBackups: transpCentralHtmlBackups };
     Object.keys(secoes).forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.innerHTML = secoes[id](dados);
@@ -339,6 +461,7 @@
     transpCentralContagem('fazer', (dados.tarefas || []).length);
     transpCentralContagem('acompanhar', (a.peticionamento || []).length + (a.confirmacao || []).length + (a.pinex || []).length);
     transpCentralContagem('transito', (a.transito || []).length);
+    transpCentralContagem('confirmadas', (a.confirmadas || []).length);
     transpCentralContagem('adiante', (dados.maisAdiante && dados.maisAdiante.transportes) || 0);
     transpCentralContagem('backups', (dados.backups || []).length);
   }
@@ -394,9 +517,14 @@
   }
 
   document.addEventListener('click', function(event) {
-    var alvo = event.target && event.target.closest ? event.target.closest('#page-transporte-central [data-tc-abrir], #page-transporte-central [data-tc-ir], #page-transporte-central [data-tc-comecar], #page-transporte-central [data-tc-semana], #page-transporte-central [data-tc-rastreio], #page-transporte-central [data-tc-entrega], #page-transporte-central [data-tc-gru]') : null;
+    var alvo = event.target && event.target.closest ? event.target.closest('#page-transporte-central [data-tc-abrir], #page-transporte-central [data-tc-ir], #page-transporte-central [data-tc-comecar], #page-transporte-central [data-tc-semana], #page-transporte-central [data-tc-rastreio], #page-transporte-central [data-tc-entrega], #page-transporte-central [data-tc-gru], #page-transporte-central [data-tc-cancelar]') : null;
     if (!alvo) return;
     if (alvo.hasAttribute('data-tc-gru')) { transpCentralMarcarGru(alvo); return; }
+    if (alvo.hasAttribute('data-tc-cancelar')) {
+      var alvoCanc = alvo.getAttribute('data-tc-cancelar').split('|');
+      transpCentralAbrirCancelamento(alvoCanc[0], alvoCanc[1]);
+      return;
+    }
     if (alvo.hasAttribute('data-tc-semana')) {
       TRANSP_CENTRAL_STATE.semanaAberta = alvo.getAttribute('data-tc-semana');
       var el = document.getElementById('tcAdiante');

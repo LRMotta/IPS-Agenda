@@ -119,7 +119,7 @@ function transporteTarefaSemana_(data) {
 /**
  * Acompanhamento de uma linha da Agenda (mesmas regras das Pendencias, sem nova leitura):
  * Backups nao agendados (qualquer data), transportes enviados e nao entregues (qualquer data) e
- * transportes agendados aguardando confirmacao (so de hoje em diante).
+ * transportes agendados aguardando confirmacao e confirmados (so de hoje em diante).
  */
 function transporteAcompanharLinha_(r, ctx, saida, hoje, pinexPedidos) {
   var i = AGENDA_CFG.idx;
@@ -179,6 +179,10 @@ function transporteAcompanharLinha_(r, ctx, saida, hoje, pinexPedidos) {
       var aguardando = Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, statusCourier: statusTexto });
       saida.confirmacao.push(aguardando);
+    } else if (status === 'confirmado' && !passada && normText_(statusTexto).indexOf('colet') < 0) {
+      // Confirmado pela courier, de hoje em diante: aba "Confirmadas", com o botao de cancelar. "Coletado" fica fora.
+      saida.confirmadas.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
+        destino: String(r[cfg.destino] || '').trim(), awb: awb, trackingUrl: agendaTrackingUrl_(awb, nome), statusCourier: statusTexto }));
     }
   });
 }
@@ -196,7 +200,7 @@ function transporteTarefasConstruir_(ctx) {
   var adiante = { transportes: 0, visitas: 0, primeiraData: '' };
   var primeiraAdiante = null;
   var adianteItens = [];
-  var acompanhar = { peticionamento: [], confirmacao: [], pinex: [], transito: [], backups: [] };
+  var acompanhar = { peticionamento: [], confirmacao: [], pinex: [], transito: [], confirmadas: [], backups: [] };
   (ctx.linhas || []).forEach(function(r) {
     var agendaId = String(r[i.id] || '').trim();
     if (!agendaId) return;
@@ -296,8 +300,8 @@ function transporteTarefasConstruir_(ctx) {
   adiante.semanas.forEach(function(s) {
     s.itens.sort(function(a, b) { return a.dataOrdem - b.dataOrdem || String(a.hora).localeCompare(String(b.hora)); });
   });
-  ['peticionamento', 'confirmacao', 'pinex', 'transito', 'backups'].forEach(function(chave) { ordenarPendenciasAgendaPorUrgencia_(acompanhar[chave]); });
-  return { tarefas: tarefas, maisAdiante: adiante, acompanhar: { peticionamento: acompanhar.peticionamento, confirmacao: acompanhar.confirmacao, pinex: acompanhar.pinex, transito: acompanhar.transito }, backups: acompanhar.backups };
+  ['peticionamento', 'confirmacao', 'pinex', 'transito', 'confirmadas', 'backups'].forEach(function(chave) { ordenarPendenciasAgendaPorUrgencia_(acompanhar[chave]); });
+  return { tarefas: tarefas, maisAdiante: adiante, acompanhar: { peticionamento: acompanhar.peticionamento, confirmacao: acompanhar.confirmacao, pinex: acompanhar.pinex, transito: acompanhar.transito, confirmadas: acompanhar.confirmadas }, backups: acompanhar.backups };
 }
 
 function transporteTarefasNomes_() {

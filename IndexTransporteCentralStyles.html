@@ -79,6 +79,19 @@
     .tc-acao.primario:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
     .tc-acao:focus-visible, .tc-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     .tc-acao[disabled] { opacity: .6; cursor: not-allowed; }
+    .tc-acao.vermelho { border-color: #f2b8b5; background: #fce8e6; color: #b3261e; }
+    .tc-acao.vermelho:hover { background: #f9d6d3; border-color: #e8928c; }
+    .tc-canc-icone.pendencia-entrega-icon { background: #fce8e6; color: #b3261e; }
+    .tc-canc-email .tc-canc-conversa { margin-bottom: 12px; }
+    .tc-canc-email .tc-canc-conversa > div { grid-column: 1 / -1; }
+    .tc-canc-rotulo { display: block; color: var(--text-faint); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .45px; margin-bottom: 4px; }
+    .tc-canc-rotulo { margin: 0; }
+    .tc-canc-texto { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #e0e6f0; border-radius: var(--r-sm); padding: 9px 10px; font: 13px/1.45 'Roboto', sans-serif; color: var(--text); background: #f8fafc; }
+    .tc-canc-status { margin: 12px 0 0; font-size: 13px; color: var(--text-faint); }
+    .tc-canc-status:empty { display: none; }
+    .tc-canc-status.tc-canc-erro { color: #b3261e; }
+    .tc-canc-confirmar.btn-danger { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; }
+    .tc-canc-confirmar.btn-danger[disabled] { opacity: .6; cursor: not-allowed; }
     .tc-rastreio.icon-btn { flex: 0 0 auto; }
     .tc-rastreio .material-symbols-outlined { font-size: 17px; }
     /* Link de ação: o .btn-txt do app (sem sublinhado, realce ao passar o mouse) */
