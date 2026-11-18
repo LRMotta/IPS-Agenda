@@ -134,6 +134,34 @@ test('colar a resposta da PINEX preenche coleta, frete e protocolo e avisa se a 
   assert.equal(plano(s.registrarRespostaPinexEnvio('ab12cd34', '1', r.versao, 'texto sem dados')).ok, false);
 });
 
+test('números da PINEX: só o nº da coleta quando a AWB já existe; sem AWB pede o Frete e não grava', () => {
+  const s = servidor(new FakeSpreadsheet({}));
+  s.codexCourierAssertDocumentAwb_ = () => {};
+  s.transporteEnvioMontarRegistro_ = () => registro({ courier: 'PINEX', awb: '120447', pinexColeta: '', dataEnvio: '2026-03-12' });
+  const v = s.getTransporteEnvio('ab12cd34', '1').versao;
+  assert.match(plano(s.registrarRespostaPinexEnvio('ab12cd34', '1', v, { coleta: '1234' })).mensagem, /5 ou 6 dígitos/);
+  const r = plano(s.registrarRespostaPinexEnvio('ab12cd34', '1', v, { coleta: ' 78429 ' }));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.avisos, []);
+  const lido = s.transporteRegistroLer_('ab12cd34', '1');
+  assert.deepEqual([lido.registro.pinexColeta, lido.registro.awb, lido.passo, lido.versao], ['78429', '120447', 'conferir', r.versao]);
+
+  const sem = servidor(new FakeSpreadsheet({}));
+  sem.codexCourierAssertDocumentAwb_ = () => {};
+  sem.transporteEnvioMontarRegistro_ = () => registro({ courier: 'PINEX', awb: '', pinexColeta: '', dataEnvio: '2026-03-12' });
+  const v2 = sem.getTransporteEnvio('ab12cd34', '1').versao;
+  const recusa = plano(sem.registrarRespostaPinexEnvio('ab12cd34', '1', v2, { coleta: '78429' }));
+  assert.deepEqual([recusa.ok, recusa.pedirAwb], [false, true]);
+  assert.equal(sem.transporteRegistroLer_('ab12cd34', '1').versao, v2, 'nada gravado sem a AWB');
+  const comAwb = plano(sem.registrarRespostaPinexEnvio('ab12cd34', '1', v2, { coleta: '78429', awb: '94624' }));
+  assert.deepEqual([comAwb.ok, comAwb.registro.awb, comAwb.registro.pinexColeta], [true, '94624', '78429']);
+  // A linha inteira colada no campo da coleta ainda funciona e confere a data.
+  const linha = 'Confirmação de agendamento - Coleta: 78430 - Frete: 94625 - Protocolo: MB12C0224 - Data da coleta: 11/03/2026';
+  const colada = plano(sem.registrarRespostaPinexEnvio('ab12cd34', '1', comAwb.versao, { coleta: linha, awb: '' }));
+  assert.deepEqual([colada.registro.pinexColeta, colada.registro.awb, colada.registro.pinexProtocolo], ['78430', '94625', 'MB12C0224']);
+  assert.match(colada.avisos[0], /11\/03\/2026.*12\/03\/2026/);
+});
+
 test('última AWB do estudo e da courier, lida sem alterar a aba', () => {
   const cabecalho = ['AWB', 'Owner', 'ID', 'Slot', 'Courier', 'Temperatura', 'Participante', 'Projeto', 'Data', 'Status', 'Registrado'];
   const book = new FakeSpreadsheet({ AWB_Utilizadas: new FakeSheet('AWB_Utilizadas', [cabecalho,

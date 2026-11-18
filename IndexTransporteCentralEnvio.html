@@ -92,7 +92,7 @@
   function transpCentralAbrirEnvio(agendaId, slot) {
     var seq = ++TC_ENVIO.seq;
     TC_ENVIO.aberto = true; TC_ENVIO.agendaId = agendaId; TC_ENVIO.slot = slot; TC_ENVIO.dados = null;
-    TC_ENVIO.resultado = null; TC_ENVIO.awbUltima = null; TC_ENVIO.pinex = null; TC_ENVIO.gerando = false; TC_ENVIO.matEdit = null; TC_ENVIO.ajuste = null; TC_ENVIO.aguardaPinex = false; TC_ENVIO.anvisa = null; TC_ENVIO.aguardaPeticionamento = false; TC_ENVIO.awbAviso = null; TC_ENVIO.awbConsultando = false; TC_ENVIO.checks = {};
+    TC_ENVIO.resultado = null; TC_ENVIO.awbUltima = null; TC_ENVIO.pinex = null; TC_ENVIO.pinexSalvando = false; TC_ENVIO.gerando = false; TC_ENVIO.matEdit = null; TC_ENVIO.ajuste = null; TC_ENVIO.aguardaPinex = false; TC_ENVIO.anvisa = null; TC_ENVIO.aguardaPeticionamento = false; TC_ENVIO.awbAviso = null; TC_ENVIO.awbConsultando = false; TC_ENVIO.checks = {};
     transpCentralMostrarWizard(true);
     transpCentralRenderWizard('<div class="tc-empty">Abrindo o transporte…</div>');
     google.script.run
@@ -254,14 +254,22 @@
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="awb-ok">' + (usada ? 'Usar esta AWB e continuar' : 'Salvar AWB e continuar') + '</button></div>';
   }
 
+  // Só o número que falta: o nº da coleta da PINEX, e o Frete (AWB) apenas se o envio ainda não tem AWB.
+  // Sem data-tc-campo: estes campos gravam pelo botão, não pelo salvamento automático do Conferir.
   function transpCentralHtmlPinexNumeros(registro) {
-    var leitura = TC_ENVIO.pinex;
-    var resultado = leitura && leitura.ok ? '<ul class="tc-materiais"><li>Coleta: <strong>' + esc(leitura.leitura.coleta) + '</strong></li><li>Frete (AWB): <strong>' + esc(leitura.leitura.frete) + '</strong></li><li>Protocolo: ' + esc(leitura.leitura.protocolo) + '</li></ul>' +
-      (leitura.avisos || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('') : (leitura && leitura.mensagem ? '<p class="tc-aviso" role="alert">' + esc(leitura.mensagem) + '</p>' : '');
-    return '<section class="tc-bloco"><h3>Números da PINEX</h3><p>Cole a linha de confirmação que a PINEX respondeu, por exemplo: “Confirmação de agendamento - Coleta: 78429 - Frete: 94624 - Protocolo: MB12C0224 - Data da coleta: 11/03/2026”.</p>' +
-      '<div class="field"><label class="field-label" for="tcPinexTexto">Resposta da PINEX</label><textarea id="tcPinexTexto" class="f-input" rows="3"></textarea></div>' + resultado + '</section>' +
-      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="pinex-ler">Ler a resposta</button>' +
-      (leitura && leitura.ok ? '<button type="button" class="btn-new" data-tc-act="pinex-ok">Continuar</button>' : '') + '</div>';
+    var leitura = TC_ENVIO.pinex || {};
+    var pedirAwb = !String(registro.awb || '').trim() || leitura.pedirAwb;
+    function campo(id, rotulo, valor) {
+      return '<div class="field"><label class="field-label" for="' + id + '">' + esc(rotulo) + '</label>' +
+        '<input id="' + id + '" class="f-input" type="text" inputmode="numeric" autocomplete="off" required value="' + esc(valor || '') + '"></div>';
+    }
+    var erro = leitura.mensagem ? '<p class="tc-aviso" role="alert">' + esc(leitura.mensagem) + '</p>' : '';
+    return '<section class="tc-bloco"><h3>Número da coleta da PINEX</h3><p>Informe o número da coleta que a PINEX enviou na confirmação do agendamento' +
+      (pedirAwb ? ' e o número do Frete, que é a AWB.' : '.') + '</p>' +
+      '<div class="tc-campos">' + campo('tcPinexColeta', 'Nº da coleta (PINEX COL. Nº)', leitura.coleta) +
+      (pedirAwb ? campo('tcPinexAwb', 'Frete (AWB)', leitura.awb) : '') + '</div>' + erro + '</section>' +
+      '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="pinex-ok"' + (TC_ENVIO.pinexSalvando ? ' disabled' : '') + '>' +
+      (TC_ENVIO.pinexSalvando ? 'Salvando…' : 'Salvar e continuar') + '</button></div>';
   }
 
   function transpCentralHtmlGerar(registro) {
@@ -543,8 +551,8 @@
   function transpCentralDigitadoSemGravar() {
     if (!TC_ENVIO.dados || TC_ENVIO.gerando) return false;
     if (TC_ENVIO.matEdit) return true;
-    var pinex = document.getElementById('tcPinexTexto');
-    if (TC_ENVIO.passo === 'pinex_numeros' && pinex && String(pinex.value || '').trim() && !(TC_ENVIO.pinex && TC_ENVIO.pinex.ok)) return true;
+    var pinex = document.getElementById('tcPinexColeta');
+    if (TC_ENVIO.passo === 'pinex_numeros' && pinex && String(pinex.value || '').trim()) return true;
     var awb = document.getElementById('tcCampo_awb');
     return TC_ENVIO.passo === 'awb' && !!awb && String(awb.value || '').trim() !== String((TC_ENVIO.dados.registro || {}).awb || '').trim();
   }
@@ -592,24 +600,38 @@
         // O aviso é uma ajuda: sem ele, a AWB é gravada e a geração faz a conferência de sempre.
         .withFailureHandler(function() { TC_ENVIO.awbConsultando = false; if (transpCentralEnvioAtual(seqAwb) && TC_ENVIO.passo === 'awb') gravarAwb(); })
         .getTransporteAwbAviso(Object.assign({}, registro, { awb: awb }));
-    } else if (acao === 'pinex-ler') {
-      var texto = (document.getElementById('tcPinexTexto') || {}).value || '';
+    } else if (acao === 'pinex-ok') {
+      if (TC_ENVIO.pinexSalvando) return;
+      var coletaEl = document.getElementById('tcPinexColeta');
+      var awbEl = document.getElementById('tcPinexAwb');
+      var dadosPinex = { coleta: String((coletaEl || {}).value || '').trim(), awb: String((awbEl || {}).value || '').trim() };
+      if (!dadosPinex.coleta) { TC_ENVIO.pinex = { mensagem: 'Informe o número da coleta da PINEX.', coleta: '', awb: dadosPinex.awb }; transpCentralRenderPasso(); return; }
       var seq = TC_ENVIO.seq;
+      TC_ENVIO.pinexSalvando = true; TC_ENVIO.pinex = { coleta: dadosPinex.coleta, awb: dadosPinex.awb };
+      transpCentralRenderPasso();
       google.script.run.withSuccessHandler(function(resposta) {
         if (!transpCentralEnvioAtual(seq)) return;
-        TC_ENVIO.pinex = resposta || null;
-        if (resposta && resposta.ok) {
-          TC_ENVIO.dados.versao = resposta.versao;
-          TC_ENVIO.dados.passos = resposta.passos || TC_ENVIO.dados.passos;
-          if (resposta.registro) TC_ENVIO.dados.registro = resposta.registro;
-          appClearUnsavedChanges('tcWizard');
+        TC_ENVIO.pinexSalvando = false;
+        if (!resposta || !resposta.ok) {
+          TC_ENVIO.pinex = { mensagem: (resposta && resposta.mensagem) || 'Não foi possível salvar.', pedirAwb: !!(resposta && resposta.pedirAwb), coleta: dadosPinex.coleta, awb: dadosPinex.awb };
+          transpCentralRenderPasso();
+          return;
         }
+        // O servidor já gravou os números e o passo seguinte: segue direto, sem outra chamada.
+        TC_ENVIO.pinex = null;
+        TC_ENVIO.dados.versao = resposta.versao;
+        TC_ENVIO.dados.passos = resposta.passos || TC_ENVIO.dados.passos;
+        if (resposta.registro) TC_ENVIO.dados.registro = resposta.registro;
+        appClearUnsavedChanges('tcWizard');
+        (resposta.avisos || []).forEach(function(aviso) { snack(aviso); });
+        var passos = TC_ENVIO.dados.passos || [];
+        transpCentralIrParaPasso(passos.indexOf(resposta.passo) >= 0 ? resposta.passo : passos[0]);
+      }).withFailureHandler(function(erro) {
+        if (!transpCentralEnvioAtual(seq)) return;
+        TC_ENVIO.pinexSalvando = false;
         transpCentralRenderPasso();
-      }).withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seq)) snackErro(erro); })
-        .registrarRespostaPinexEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, texto);
-    } else if (acao === 'pinex-ok') {
-      var seguinte = transpCentralProximoPasso();
-      transpCentralSalvar({}, seguinte, function() { transpCentralIrParaPasso(seguinte); });
+        snackErro(erro);
+      }).registrarRespostaPinexEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, dadosPinex);
     } else if (acao === 'gerar') {
       transpCentralGerar();
     } else if (acao === 'gerado-ok') {

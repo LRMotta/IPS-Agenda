@@ -77,7 +77,11 @@ const B = 'b@example.invalid';
 
 test('preparo: uma pessoa por envio, envios diferentes em paralelo e expiração', () => {
   const s = servidor(new FakeSpreadsheet({}));
-  assert.deepEqual(plano(s.transporteEnvioReivindicar_('ab12cd34', '1', A, { agora: T0 })), { ok: true, versao: 0, assumiu: true });
+  assert.deepEqual(plano(s.transporteEnvioReivindicar_('ab12cd34', '1', A, { agora: T0 })), { ok: true, versao: 0, assumiu: true, registro: null, passo: '' });
+  // Quem reivindica de novo recebe a linha lida no lock: getTransporteEnvio nao rele a aba.
+  const gravado = s.transporteRegistroGravar_('ab12cd34', '1', { courier: 'MARKEN' }, { versaoEsperada: 0, usuario: A, passo: 'conferir', agora: mais(1) });
+  const renovado = plano(s.transporteEnvioReivindicar_('ab12cd34', '1', A, { agora: mais(2) }));
+  assert.deepEqual([renovado.versao, renovado.passo, renovado.registro], [gravado.versao, 'conferir', { courier: 'MARKEN' }]);
   const recusa = s.transporteEnvioReivindicar_('ab12cd34', '1', B, { agora: mais(1) });
   assert.equal(recusa.ok, false);
   assert.equal(recusa.emPreparoPor, A);
