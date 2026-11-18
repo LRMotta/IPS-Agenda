@@ -119,7 +119,7 @@ function transporteTarefaSemana_(data) {
 /**
  * Acompanhamento de uma linha da Agenda (mesmas regras das Pendencias, sem nova leitura):
  * Backups nao agendados (qualquer data), transportes enviados e nao entregues (qualquer data) e
- * transportes agendados aguardando confirmacao e confirmados (so de hoje em diante).
+ * transportes agendados aguardando confirmacao (so de hoje em diante) e confirmados (qualquer data).
  */
 function transporteAcompanharLinha_(r, ctx, saida, hoje, pinexPedidos) {
   var i = AGENDA_CFG.idx;
@@ -179,10 +179,13 @@ function transporteAcompanharLinha_(r, ctx, saida, hoje, pinexPedidos) {
       var aguardando = Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, statusCourier: statusTexto });
       saida.confirmacao.push(aguardando);
-    } else if (status === 'confirmado' && !passada && normText_(statusTexto).indexOf('colet') < 0) {
-      // Confirmado pela courier, de hoje em diante: aba "Confirmadas", com o botao de cancelar. "Coletado" fica fora.
+    } else if (status === 'confirmado' && normText_(statusTexto).indexOf('colet') < 0) {
+      // Retirada confirmada pela courier e ainda nao feita (qualquer data): aba "Confirmadas". "Coletado" fica fora.
+      // Marcar como enviada so a partir da data da visita; cancelar so de hoje em diante.
+      // Sem prazo nem vermelho: a coleta esta combinada, nao ha nada atrasado a fazer.
       saida.confirmadas.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
-        destino: String(r[cfg.destino] || '').trim(), awb: awb, trackingUrl: agendaTrackingUrl_(awb, nome), statusCourier: statusTexto }));
+        destino: String(r[cfg.destino] || '').trim(), awb: awb, trackingUrl: agendaTrackingUrl_(awb, nome), statusCourier: statusTexto,
+        podeEnviar: !!data && data.getTime() <= hoje.getTime(), podeCancelar: !!data && !passada, prazoHoras: null, prazoLabel: '' }));
     }
   });
 }

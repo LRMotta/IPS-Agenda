@@ -439,6 +439,27 @@
   </div>
 </div>
 
+<!-- MARCAR TRANSPORTE CONFIRMADO COMO ENVIADO (tela de Transporte, aba Confirmadas) -->
+<div class="modal-overlay" id="modalEnviadaTransporteCentral" data-accessible-dialog data-extra-dialog inert data-dialog-close="transpCentralFecharEnviada" onclick="if(event.target.id==='modalEnviadaTransporteCentral') transpCentralFecharEnviada()">
+  <div class="confirm-box pendencia-entrega-box" role="dialog" aria-modal="true" aria-labelledby="tcEnvTitulo" aria-describedby="tcEnvAviso">
+    <div class="pendencia-entrega-icon"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span></div>
+    <h3 id="tcEnvTitulo">Marcar como enviada?</h3>
+    <p id="tcEnvAviso">Confirme que a courier já retirou as amostras. O status deste transporte passará a <strong>Enviado</strong> na Agenda, e ele vai para Em trânsito.</p>
+    <div class="pendencia-entrega-grid">
+      <div><span>Participante</span><strong id="tcEnvParticipante">—</strong></div>
+      <div><span>Transporte</span><strong id="tcEnvTransporte">—</strong></div>
+      <div><span>Courier / temperatura</span><strong id="tcEnvCourier">—</strong></div>
+      <div><span>AWB</span><strong id="tcEnvAwb">—</strong></div>
+      <div><span>Data e hora</span><strong id="tcEnvDataHora">—</strong></div>
+    </div>
+    <p class="tc-canc-status" id="tcEnvStatus" role="status" aria-live="polite"></p>
+    <div class="confirm-actions">
+      <button type="button" class="btn-txt" onclick="transpCentralFecharEnviada()">Voltar</button>
+      <button type="button" class="btn-save pendencia-entrega-submit" id="tcEnvConfirmar" onclick="transpCentralExecutarEnviada()"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span>Sim, marcar como enviada</button>
+    </div>
+  </div>
+</div>
+
 <!-- CANCELAR TRANSPORTE CONFIRMADO (tela de Transporte, aba Confirmadas) -->
 <div class="modal-overlay" id="modalCancelarTransporteCentral" data-accessible-dialog data-extra-dialog inert data-dialog-close="transpCentralFecharCancelamento" onclick="if(event.target.id==='modalCancelarTransporteCentral') transpCentralFecharCancelamento()">
   <div class="confirm-box pendencia-entrega-box" role="dialog" aria-modal="true" aria-labelledby="tcCancTitulo" aria-describedby="tcCancAviso">

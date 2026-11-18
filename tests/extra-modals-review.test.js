@@ -9,7 +9,7 @@ const { contentAccessibilitySource } = require('./helpers/content-accessibility-
 test('modais extras participam da pilha acessível e identificam os controles visíveis', () => {
   const html = readProjectFile('IndexExtraModals.html');
   const overlays = html.match(/<div class="modal-overlay"[^>]+>/g);
-  assert.equal(overlays.length, 12);
+  assert.equal(overlays.length, 13);
   assert.match(html, /id="modalAgendaHistorico"/);
   for (const overlay of overlays) {
     assert.match(overlay, /data-accessible-dialog/);
