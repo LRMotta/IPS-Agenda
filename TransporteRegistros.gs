@@ -241,11 +241,12 @@ function transporteEnvioReivindicar_(agendaId, slot, usuario, opcoes) {
     if (dono && dono.por !== quem) return { ok: false, emPreparoPor: dono.por, versao: atual.versao };
     if (!atual) {
       sh.getRange(sh.getLastRow() + 1, 1, 1, width).setValues([[k.chave, k.agendaId, k.slot, '', '', 0, agora.toISOString(), quem, quem, agora.toISOString()]]);
-      return { ok: true, versao: 0, assumiu: true };
+      return { ok: true, versao: 0, assumiu: true, registro: null, passo: '' };
     }
     // Atualiza so os campos do dono; o resto da linha (dados, passo, versao) fica como esta.
     sh.getRange(linha, 9, 1, 2).setValues([[quem, agora.toISOString()]]);
-    return { ok: true, versao: atual.versao, assumiu: !dono };
+    // registro e passo lidos aqui dentro do lock: quem abre o envio nao precisa reler a aba.
+    return { ok: true, versao: atual.versao, assumiu: !dono, registro: atual.registro, passo: atual.passo };
   });
 }
 

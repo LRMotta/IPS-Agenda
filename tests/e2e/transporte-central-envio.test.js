@@ -190,15 +190,31 @@ test('passo AWB com dica da última AWB; números da PINEX com aviso de data', a
 
     const p2 = await abrir(browser, 1280);
     await iniciar(p2.page, envio({ passo: 'pinex_numeros', passos: ['conferir', 'pinex_numeros', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { courier: 'PINEX', awb: '' }) }));
-    assert.match(await p2.page.locator('.tc-wiz-main').innerText(), /Cole a linha de confirmação/);
-    await p2.page.fill('#tcPinexTexto', 'Coleta: 78429 - Frete: 94624 - Protocolo: MB12C0224 - Data da coleta: 11/03/2026');
-    await p2.page.getByRole('button', { name: 'Ler a resposta' }).click();
-    assert.deepEqual((await p2.page.evaluate(() => window.__rpc.find((p) => p.rpc === 'registrarRespostaPinexEnvio').args)).slice(0, 3), ['a1', '1', 3]);
-    await responder(p2.page, 'registrarRespostaPinexEnvio', { ok: true, versao: 4, passos: ['conferir', 'pinex_numeros', 'gerar', 'enviar'],
-      leitura: { coleta: '78429', frete: '94624', protocolo: 'MB12C0224' }, avisos: ['A PINEX marcou a coleta para 11/03/2026, diferente da data do envio.'] });
-    assert.match(await p2.page.locator('.tc-wiz-main').innerText(), /Coleta: 78429[\s\S]*Frete \(AWB\): 94624[\s\S]*diferente da data do envio/);
-    await p2.page.getByRole('button', { name: 'Continuar', exact: true }).click();
-    assert.deepEqual(await p2.page.evaluate(() => window.__rpc.find((p) => p.rpc === 'salvarTransporteEnvio').args.slice(3)), [{}, 'gerar']);
+    assert.match(await p2.page.locator('.tc-wiz-main').innerText(), /Número da coleta da PINEX[\s\S]*Frete/);
+    await p2.page.getByRole('button', { name: 'Salvar e continuar' }).click();
+    assert.match(await p2.page.locator('.tc-wiz-main').innerText(), /Informe o número da coleta/);
+    assert.equal(await p2.page.evaluate(() => window.__rpc.some((p) => p.rpc === 'registrarRespostaPinexEnvio')), false);
+    await p2.page.fill('#tcPinexColeta', '78429');
+    await p2.page.fill('#tcPinexAwb', '94624');
+    await p2.page.getByRole('button', { name: 'Salvar e continuar' }).click();
+    assert.deepEqual(await p2.page.evaluate(() => window.__rpc.find((p) => p.rpc === 'registrarRespostaPinexEnvio').args), ['a1', '1', 3, { coleta: '78429', awb: '94624' }]);
+    await responder(p2.page, 'registrarRespostaPinexEnvio', { ok: true, versao: 4, passo: 'conferir', passos: ['conferir', 'gerar', 'anvisa'],
+      registro: Object.assign(envio().registro, { courier: 'PINEX', awb: '94624', pinexColeta: '78429' }), avisos: [] });
+    assert.match(await p2.page.locator('.tc-wiz-progress').innerText(), /Passo 1 de 3 · Conferir/);
+    assert.equal(await p2.page.evaluate(() => window.__rpc.some((p) => p.rpc === 'salvarTransporteEnvio')), false, 'sem segunda chamada');
+    await p2.page.close();
+
+    // Com a AWB já na Agenda, só o número da coleta.
+    const p3 = await abrir(browser, 1280);
+    await iniciar(p3.page, envio({ passo: 'pinex_numeros', passos: ['pinex_numeros', 'conferir', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { courier: 'PINEX (Agendamento)', awb: '120447' }) }));
+    assert.equal(await p3.page.locator('#tcPinexAwb').count(), 0);
+    await p3.page.fill('#tcPinexColeta', '78429');
+    await p3.page.getByRole('button', { name: 'Salvar e continuar' }).click();
+    assert.deepEqual((await p3.page.evaluate(() => window.__rpc.find((p) => p.rpc === 'registrarRespostaPinexEnvio').args))[3], { coleta: '78429', awb: '' });
+    await responder(p3.page, 'registrarRespostaPinexEnvio', { ok: false, mensagem: 'O número da coleta da PINEX tem 5 ou 6 dígitos.' });
+    assert.match(await p3.page.locator('.tc-wiz-main').innerText(), /5 ou 6 dígitos/);
+    assert.equal(await p3.page.locator('#tcPinexColeta').inputValue(), '78429');
+    p2.erros.push(...p3.erros);
     assert.deepEqual(erros.concat(p2.erros), []);
   } finally { await browser.close(); }
 });
