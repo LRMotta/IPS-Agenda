@@ -59,9 +59,9 @@ var APP_VERSION_INITIAL_CHECK_DELAY_MS = 10 * 1000;
 var APP_VERSION_CHECK_TIMER = null;
 var APP_VERSION_NOTICE_VISIBLE = false;
 var APP_VERSION_CHECK_IN_FLIGHT = false;
-// Ao voltar para a aba, so consulta se a ultima verificacao tiver mais de 1 min,
-// para trocas rapidas de aba nao gerarem uma RPC (~3 s de custo fixo) cada.
-var APP_VERSION_RETURN_MIN_GAP_MS = 60 * 1000;
+// Ao voltar para a aba, so consulta se a ultima verificacao tiver mais de 5 min:
+// na versao 387 cada volta gerava uma RPC (~3 s de custo fixo), a cada ~30 s.
+var APP_VERSION_RETURN_MIN_GAP_MS = APP_VERSION_CHECK_INTERVAL_MS;
 var APP_VERSION_LAST_CHECK_AT = 0;
 var USERS_ADMIN_ROWS = [];
 var USER_PROFILE_FORMACOES = [];
