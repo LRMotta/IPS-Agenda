@@ -77,7 +77,7 @@ test('requisição preenchida aguarda atualização de solicitantes e permite te
       function requisicaoEl(key) { return document.getElementById({gerarBtn:'generate',status:'status',solicitanteCard:'card',solicitanteCardNome:'cardName',solicitanteCardDetalhe:'cardDetail'}[key]); }
       function setRequisicaoStatus(message) { document.getElementById('status').textContent=message; }
       function requisicaoMissingRequiredChecks() { return []; } function requisicaoRequiredValues() { return []; }
-      ${contentAccessibilitySource(['rqLookupKey', 'rqLookupEmail', 'rqIndexBy', 'rebuildRequisicaoLookups',
+      ${contentAccessibilitySource(['rqLookupKey', 'rqLookupEmail', 'rqIndexBy', 'rqGroupBy', 'rebuildRequisicaoLookups',
         'carregarSolicitantesRequisicao', 'updateRequisicaoGenerateAvailability', 'gerarRequisicao', 'preencherDadosSolicitante'])}
       carregarSolicitantesRequisicao();
     ` });

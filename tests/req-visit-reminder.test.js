@@ -12,11 +12,11 @@ function fixture() {
   const context = vm.createContext({
     document: { getElementById: id => elements[id] || null, querySelectorAll: () => [{}] },
     window: {}, _rqOrigemContext: null, _rqOrigemRequestId: 0, _rqAgendaOrigemId: '', _agendaEditId: '',
-    _rqLookup: { participantePorNome: {}, solicitantePorNome: {} }, _rqUrgente: false,
+    _rqLookup: { participantesPorNome: {}, solicitantePorNome: {} }, _rqUrgente: false,
     ensureRequisicaoDataLoaded: fn => pending.push(fn), preencherSolicitanteUsuarioAtual() {}, preencherEnderecoReq() {},
     updateRequisicaoGenerateAvailability() {}, setRequisicaoFieldInvalid() {}, snack() {}, getExames: () => ['Exame'],
   });
-  const core = contentAccessibilitySource(['atualizarRequisicaoLembreteVisita', 'limparRequisicaoOrigem', 'requisicaoAgendaOrigemIdAtual', 'rqLookupKey', 'preencherDadosPaciente', 'onRequisicaoRequiredInput', 'montarPayloadRequisicao']);
+  const core = contentAccessibilitySource(['atualizarRequisicaoLembreteVisita', 'limparRequisicaoOrigem', 'requisicaoAgendaOrigemIdAtual', 'rqLookupKey', 'codexNormText', 'rqGroupBy', 'rqEscolherParticipacao', 'rqContextoParticipacaoOrigem', 'rqParticipacoesDescricao', 'preencherDadosPaciente', 'onRequisicaoRequiredInput', 'montarPayloadRequisicao']);
   const agenda = readProjectFile('IndexAgendaScripts.html').match(/  function aplicarAgendaNaRequisicao\([^]*?\n  \}/)[0];
   vm.runInContext(core + '\n' + agenda, context);
   return { context, elements, pending };
@@ -98,4 +98,51 @@ test('atalho completo da Agenda repassa o braço carregado somente para o partic
   context._agendaParticipanteInfo = { nome: 'Outra pessoa', braco: 'A' };
   context.abrirReqExamesDaAgenda();
   assert.equal(received.braco, '');
+});
+
+function carregarParticipacoes(context, lista) {
+  context._rqLookup.participantesPorNome = context.rqGroupBy(lista, 'nome');
+}
+
+const WILLIAM = [
+  { id: '81231589', nome: 'William Rafael da Silva Lourenço', nascimento: '3/mai./1954', protocolo: 'J6Z-MC-IIBD', medico: 'Dr. A', status: 'Falha de Pré-Triagem', ativa: false },
+  { id: '81231591', nome: 'William Rafael da Silva Lourenço', nascimento: '3/mai./1994', protocolo: 'TOPAZ-UC', medico: 'Dr. B', status: 'Em Triagem', ativa: true }
+];
+
+test('requisição digitada usa a participação ativa, não a primeira cadastrada', () => {
+  const { context, elements } = fixture();
+  carregarParticipacoes(context, WILLIAM);
+  elements.rqPaciente.value = WILLIAM[0].nome;
+  context.preencherDadosPaciente();
+  assert.equal(elements.rqProtocolo.value, 'TOPAZ-UC');
+  assert.equal(elements.rqNascimento.value, '3/mai./1994');
+  assert.equal(elements.rqMedico.value, 'Dr. B');
+});
+
+test('requisição aberta pela Agenda usa a participação do evento, mesmo encerrada', () => {
+  const { context, elements, pending } = fixture();
+  carregarParticipacoes(context, WILLIAM);
+  context.aplicarAgendaNaRequisicao({ id: 'A', participante: WILLIAM[0].nome, projeto: 'J6Z-MC-IIBD' });
+  pending[0]();
+  assert.equal(elements.rqProtocolo.value, 'J6Z-MC-IIBD');
+  context.aplicarAgendaNaRequisicao({ id: 'B', participante: WILLIAM[0].nome, projeto: 'Outro', participanteCadastroId: '81231591' });
+  pending[1]();
+  assert.equal(elements.rqProtocolo.value, 'TOPAZ-UC');
+});
+
+test('sugestões de paciente mostram protocolo e status de cada participação', () => {
+  const { context } = fixture();
+  carregarParticipacoes(context, WILLIAM);
+  assert.equal(context.rqParticipacoesDescricao(WILLIAM[0].nome), 'J6Z-MC-IIBD (Falha de Pré-Triagem) · TOPAZ-UC (Em Triagem)');
+});
+
+test('participação encerrada em um protocolo não prevalece sobre a nova pré-triagem', () => {
+  const { context, elements } = fixture();
+  carregarParticipacoes(context, [
+    { id: '81231586', nome: 'Felipe Jose Mente', protocolo: 'SUNSCAPE-1', status: 'Falha de Pré-Triagem', ativa: false },
+    { id: '81231592', nome: 'Felipe Jose Mente', protocolo: 'EMERALD-3', status: 'Pré-Triagem', ativa: true }
+  ]);
+  elements.rqPaciente.value = 'Felipe Jose Mente';
+  context.preencherDadosPaciente();
+  assert.equal(elements.rqProtocolo.value, 'EMERALD-3');
 });

@@ -3151,11 +3151,19 @@ function buscarParticipantesRequisicao() {
         const nascimento = row[2] instanceof Date
           ? formatarDataMesCurtoPt_(row[2])
           : (row[2] ? row[2].toString() : '');
+        const status = row[8] ? row[8].toString().trim() : '';
+        // A mesma pessoa pode ter uma participação por protocolo; o cliente escolhe a
+        // participação certa pelo ID ou projeto de origem e, sem eles, pela ativa.
+        const encerrada = normText_(status) === 'obito' || CadastroRules_.participantAllowsNewParticipation(status);
         return {
+          id:        row[0] ? row[0].toString().trim() : '',
           nome:      row[1].toString().trim(),
           nascimento: nascimento,
+          numero:     row[4] ? row[4].toString().trim() : '',
           protocolo:  projeto,
-          medico:     projetosMap[projeto] || ''
+          medico:     projetosMap[projeto] || '',
+          status:     status,
+          ativa:      !encerrada
         };
       });
   } catch(e) { return []; }

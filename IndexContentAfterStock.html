@@ -419,7 +419,7 @@
       <div class="soa-import-note"><span class="material-symbols-outlined" aria-hidden="true">info</span><div><strong>Como funciona</strong><span>No Polo Trial, exporte o Flowchart do estudo em CSV. Selecione o arquivo, informe o braço e confira a prévia antes de importar. Valores e procedimentos do arquivo não são enviados.</span></div></div>
       <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span> Arquivo e regras da importação</div>
-        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportArquivo">Arquivo CSV do Polo Trial <span class="required-star">*</span></label><input type="file" id="soaImportArquivo" class="f-input" accept=".csv,text/csv" onchange="lerSoAArquivoApp(event)"></div>
+        <div class="field" style="margin-bottom:14px;"><label class="field-label" for="soaImportArquivo">Arquivo CSV do Polo Trial <span class="required-star">*</span></label><div class="file-picker"><input type="file" id="soaImportArquivo" class="file-picker-input" accept=".csv,text/csv" onchange="lerSoAArquivoApp(event)"><label class="file-picker-btn" for="soaImportArquivo" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span>Selecionar CSV</label><span class="file-picker-name" id="soaImportArquivoNome" data-empty="Nenhum arquivo selecionado">Nenhum arquivo selecionado</span></div></div>
         <div class="field-row cols-3"><div><label class="field-label" for="soaImportBraco">Nome do braço <span class="required-star">*</span></label><input type="text" id="soaImportBraco" class="f-input" list="soaImportBracosLista" maxlength="120" autocomplete="off" oninput="invalidarPreviaImportacaoSoA_()" placeholder="Digite ou escolha um braço"><datalist id="soaImportBracosLista"></datalist><div class="field-help">O arquivo não informa o braço. As visitas serão vinculadas a este nome; um braço novo será criado ao importar.</div></div><div><label class="field-label" for="soaImportModo">Visitas já cadastradas</label><select id="soaImportModo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="adicionar">Adicionar sem duplicar</option><option value="atualizar">Atualizar as visitas encontradas</option></select></div><div><label class="field-label" for="soaImportBaseCalculo">Contagem das datas</label><select id="soaImportBaseCalculo" onchange="invalidarPreviaImportacaoSoA_()" class="f-input"><option value="">Definir automaticamente</option><option value="MANTER_DATAS_PREVISTAS">Manter datas previstas</option><option value="RECALCULAR_VISITA_REALIZADA">Recalcular pela visita realizada</option></select><div class="field-help">A visita de referência vem do arquivo. Esta escolha só é necessária quando uma visita conta a partir de outra visita calculada.</div></div></div>
       </div>
       <div class="form-section">
@@ -1118,7 +1118,11 @@
     <div class="modal-body">
       <div class="form-section">
         <label class="field-label" for="medNfPdfsInput">Arquivos PDF (até 10 MB cada)</label>
-        <input type="file" id="medNfPdfsInput" class="f-input" accept="application/pdf,.pdf" multiple onchange="medNfArquivosSelecionados(this.files)">
+        <div class="file-picker">
+          <input type="file" id="medNfPdfsInput" class="file-picker-input" accept="application/pdf,.pdf" multiple onchange="medNfArquivosSelecionados(this.files)">
+          <label class="file-picker-btn" for="medNfPdfsInput" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span>Selecionar PDFs</label>
+          <span class="file-picker-name" id="medNfPdfsInputNome" data-empty="Nenhum arquivo selecionado">Nenhum arquivo selecionado</span>
+        </div>
         <div class="med-nf-hint">Quando o nome do arquivo tem o número da NF, a nota é escolhida automaticamente. Confira antes de anexar.</div>
         <table class="med-nf-arquivos" aria-label="Arquivos selecionados"><tbody id="medNfPdfsLista"></tbody></table>
       </div>

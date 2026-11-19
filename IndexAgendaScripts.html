@@ -4292,7 +4292,8 @@
       _rqAgendaOrigemId = dados.id || _agendaEditId || '';
       _rqOrigemContext = {
         tipo: 'agenda', agendaId: _rqAgendaOrigemId,
-        participante: dados.participante || '', braco: dados.braco || '', visita: dados.visita || ''
+        participante: dados.participante || '', braco: dados.braco || '', visita: dados.visita || '',
+        participanteCadastroId: dados.participanteCadastroId || '', projeto: dados.projeto || ''
       };
       var reqPage = document.getElementById('page-requisicao');
       if (reqPage && reqPage.dataset) reqPage.dataset.agendaId = _rqAgendaOrigemId;

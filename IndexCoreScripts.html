@@ -5543,6 +5543,15 @@ function appSetButtonBusy(btnOrId, busy) {
   var btn = typeof btnOrId === 'string' ? document.getElementById(btnOrId) : btnOrId;
   if (btn) btn.disabled = !!busy;
 }
+function appFilePickerSync(inputOrId) {
+  var input = typeof inputOrId === 'string' ? document.getElementById(inputOrId) : inputOrId;
+  var nome = input && document.getElementById(input.id + 'Nome');
+  if (!nome) return;
+  var files = input.files || [];
+  nome.textContent = files.length > 1 ? files.length + ' arquivos selecionados' : (files.length ? files[0].name : (nome.getAttribute('data-empty') || ''));
+  nome.title = files.length === 1 ? files[0].name : '';
+  if (nome.parentNode && nome.parentNode.classList) nome.parentNode.classList.toggle('has-file', files.length > 0);
+}
 function appLoadingRow(colspan, label) {
   return '<tr class="loading-row"><td colspan="' + esc(colspan || 1) + '"><div class="spinner"></div>' + esc(label || 'Carregando...') + '</td></tr>';
 }
@@ -7766,6 +7775,7 @@ function abrirSoAImportForm() {
   invalidarPreviaImportacaoSoA_();
   _soaImportCsvTexto = '';
   document.getElementById('soaImportArquivo').value = '';
+  appFilePickerSync('soaImportArquivo');
   document.getElementById('soaImportBraco').value = '';
   document.getElementById('soaImportBracosLista').innerHTML = (_bracosProjetoAtual || []).filter(function(item) { return item.ativo !== false; }).map(function(item) { return '<option value="' + esc(item.nome) + '"></option>'; }).join('');
   document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Selecione o CSV, informe o braço e clique em Pré-visualizar.</div>';
@@ -7777,6 +7787,7 @@ function abrirSoAImportForm() {
 }
 
 function lerSoAArquivoApp(event) {
+  if (event && event.target) appFilePickerSync(event.target);
   invalidarPreviaImportacaoSoA_();
   _soaImportCsvTexto = '';
   var file = event && event.target && event.target.files && event.target.files[0];
@@ -8648,7 +8659,7 @@ var _rqPrestadoresNomes   = [];
 var _rqSolicitantes       = [];
 var _rqSolicitantesNomes  = [];
 var _rqLookup = {
-  participantePorNome: {},
+  participantesPorNome: {},
   prestadorPorEmpresa: {},
   solicitantePorNome: {},
   solicitantePorEmail: {}
@@ -8696,9 +8707,64 @@ function rqIndexBy(rows, field, normalizer) {
   return out;
 }
 
+function rqGroupBy(rows, field) {
+  var out = {};
+  (rows || []).forEach(function(row) {
+    var key = rqLookupKey(row && row[field]);
+    if (!key) return;
+    if (!out[key]) out[key] = [];
+    out[key].push(row);
+  });
+  return out;
+}
+
+// Uma pessoa pode ter uma participação por protocolo, com o mesmo nome. A origem
+// (evento da Agenda ou cadastro) define a participação; sem ela, vale a ativa e,
+// entre empates, a mais recente (as participações novas entram no fim da aba).
+function rqEscolherParticipacao(nome, contexto) {
+  var candidatos = _rqLookup.participantesPorNome[rqLookupKey(nome)] || [];
+  if (candidatos.length < 2) return candidatos[0] || null;
+  contexto = contexto || {};
+  var cadastroId = String(contexto.cadastroId || '').trim();
+  if (cadastroId) {
+    var porId = candidatos.filter(function(p) { return String(p.id || '').trim() === cadastroId; });
+    if (porId.length) return porId[0];
+  }
+  var projeto = codexNormText(contexto.projeto || '');
+  if (projeto) {
+    var porProjeto = candidatos.filter(function(p) { return codexNormText(p.protocolo || '') === projeto; });
+    if (porProjeto.length) return porProjeto[porProjeto.length - 1];
+  }
+  var ativas = candidatos.filter(function(p) { return p.ativa !== false; });
+  var base = ativas.length ? ativas : candidatos;
+  return base[base.length - 1];
+}
+
+function rqContextoParticipacaoOrigem() {
+  var origem = _rqOrigemContext;
+  if (!origem) return null;
+  if (origem.tipo === 'agenda') {
+    return { cadastroId: origem.participanteCadastroId || '', projeto: origem.projeto || '' };
+  }
+  if (origem.tipo === 'participante') {
+    var p = origem.participante || {};
+    return { cadastroId: p.id || '', projeto: p.projeto || '' };
+  }
+  return null;
+}
+
+function rqParticipacoesDescricao(nome) {
+  var lista = _rqLookup.participantesPorNome[rqLookupKey(nome)] || [];
+  return lista.map(function(p) {
+    var protocolo = String(p.protocolo || '').trim() || 'Sem protocolo';
+    var status = String(p.status || '').trim();
+    return status ? protocolo + ' (' + status + ')' : protocolo;
+  }).join(' · ');
+}
+
 function rebuildRequisicaoLookups() {
   _rqLookup = {
-    participantePorNome: rqIndexBy(_rqParticipantes, 'nome'),
+    participantesPorNome: rqGroupBy(_rqParticipantes, 'nome'),
     prestadorPorEmpresa: rqIndexBy(_rqPrestadores, 'empresa'),
     solicitantePorNome: rqIndexBy(_rqSolicitantes, 'nome'),
     solicitantePorEmail: rqIndexBy(_rqSolicitantes, 'email', rqLookupEmail)
@@ -8810,9 +8876,11 @@ function initRequisicao() {
     method: 'buscarParticipantesRequisicao',
     onSuccess: function(lista) {
       _rqParticipantes      = lista || [];
-      _rqParticipantesNomes = _rqParticipantes.map(function(p) { return p.nome; });
-      _rqAcOptionsCache.rqPacienteList = null;
       rebuildRequisicaoLookups();
+      _rqParticipantesNomes = Object.keys(_rqLookup.participantesPorNome).map(function(key) {
+        return _rqLookup.participantesPorNome[key][0].nome;
+      });
+      _rqAcOptionsCache.rqPacienteList = null;
       _rqParticipantesLoaded = true;
       flushRequisicaoLoadCallbacks();
     },
@@ -8897,6 +8965,15 @@ function renderReqAC(inputId, listId, opts, selVarName) {
       div.setAttribute('aria-selected', 'false');
       div.dataset.val = o;
       div.textContent = o;
+      if (listId === 'rqPacienteList') {
+        var detalhe = rqParticipacoesDescricao(o);
+        if (detalhe) {
+          var meta = document.createElement('div');
+          meta.className = 'ac-item-meta';
+          meta.textContent = detalhe;
+          div.appendChild(meta);
+        }
+      }
       div.addEventListener('mousedown', function(evt) {
         evt.preventDefault();
         pickReqAC(inputId, listId, o, selVarName);
@@ -8975,7 +9052,7 @@ function navReqAC(e, inputId, listId, opts, selVarName) {
 function preencherDadosPaciente() {
   atualizarRequisicaoLembreteVisita();
   var nome = document.getElementById('rqPaciente').value.trim();
-  var p = _rqLookup.participantePorNome[rqLookupKey(nome)] || null;
+  var p = rqEscolherParticipacao(nome, rqContextoParticipacaoOrigem());
   if (p) {
     document.getElementById('rqNascimento').value  = p.nascimento || '';
     document.getElementById('rqProtocolo').value   = p.protocolo  || '';

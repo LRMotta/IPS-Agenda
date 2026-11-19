@@ -496,6 +496,13 @@
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">assignment_return</span></div>
         </div>
       </div>
+      <div class="med-view-bar">
+        <div class="proj-seg" role="group" aria-label="Visualização de equipamentos">
+          <button type="button" class="proj-seg-btn active" id="eqViewItens" aria-pressed="true" onclick="eqSetView('itens')">Itens recebidos</button>
+          <button type="button" class="proj-seg-btn" id="eqViewNotas" aria-pressed="false" onclick="eqSetView('notas')">Notas fiscais<span class="proj-seg-count" id="eqNfPendentesCount"></span></button>
+        </div>
+      </div>
+      <div id="eqItensView">
       <div class="toolbar-card">
         <div class="search-wrap">
           <span class="material-symbols-outlined" aria-hidden="true">search</span>
@@ -522,6 +529,52 @@
             <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
           </tbody>
         </table>
+      </div>
+      </div>
+      <div id="eqNotasView" hidden>
+        <div class="toolbar-card med-nf-toolbar">
+          <div class="search-wrap">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+            <input type="text" id="searchEqNotas" placeholder="Buscar por NF, remetente, projeto ou movimento..." oninput="medNfRender('equipamentos')" aria-label="Buscar notas fiscais de equipamentos">
+          </div>
+          <div class="proj-seg" role="group" aria-label="Filtrar notas fiscais de equipamentos por situação">
+            <button type="button" class="proj-seg-btn active" data-eq-nf-filtro="rm_pendente" aria-pressed="true" onclick="medNfSetFiltro('rm_pendente','equipamentos')">RM pendente<span class="proj-seg-count" id="eqNfCount_rm_pendente"></span></button>
+            <button type="button" class="proj-seg-btn" data-eq-nf-filtro="falta_pdf" aria-pressed="false" onclick="medNfSetFiltro('falta_pdf','equipamentos')">Falta PDF<span class="proj-seg-count" id="eqNfCount_falta_pdf"></span></button>
+            <button type="button" class="proj-seg-btn" data-eq-nf-filtro="pronta" aria-pressed="false" onclick="medNfSetFiltro('pronta','equipamentos')">Prontas<span class="proj-seg-count" id="eqNfCount_pronta"></span></button>
+            <button type="button" class="proj-seg-btn" data-eq-nf-filtro="concluida" aria-pressed="false" onclick="medNfSetFiltro('concluida','equipamentos')">Enviadas<span class="proj-seg-count" id="eqNfCount_concluida"></span></button>
+            <button type="button" class="proj-seg-btn" data-eq-nf-filtro="todas" aria-pressed="false" onclick="medNfSetFiltro('todas','equipamentos')">Todas<span class="proj-seg-count" id="eqNfCount_todas"></span></button>
+          </div>
+        </div>
+        <div class="toolbar-card med-nf-actions">
+          <span class="med-nf-selecao" id="eqNfSelecaoInfo" role="status" aria-live="polite">Nenhuma nota selecionada.</span>
+          <button type="button" class="btn-txt" onclick="medNfAbrirAnexos(null,'equipamentos')">
+            <span class="material-symbols-outlined" aria-hidden="true">upload_file</span> Anexar PDFs
+          </button>
+          <button type="button" class="btn-txt" id="btnEqNfMarcarEnviadas" onclick="medNfConfirmarMarcarEnviadas('equipamentos')" disabled>
+            <span class="material-symbols-outlined" aria-hidden="true">mark_email_read</span> Marcar como enviadas
+          </button>
+          <button type="button" class="btn-new" id="btnEqNfPrepararEmail" onclick="medNfAbrirEmail('equipamentos')" disabled>
+            <span class="material-symbols-outlined" aria-hidden="true">forward_to_inbox</span> Preparar e-mail
+          </button>
+        </div>
+        <div class="table-card">
+          <table class="data-table">
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="eqNfSelecionarTodas" onchange="medNfSelecionarTodas(this.checked,'equipamentos')" aria-label="Selecionar todas as notas de equipamentos listadas"></th>
+              <th>Nota fiscal</th>
+              <th>Projeto</th>
+              <th>Itens</th>
+              <th>Recebimento</th>
+              <th>Movimento RM</th>
+              <th>PDF</th>
+              <th>Situação</th>
+              <th style="text-align:right;padding-right:20px">Ações</th>
+            </tr></thead>
+            <tbody id="bodyEqNotas">
+              <tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
