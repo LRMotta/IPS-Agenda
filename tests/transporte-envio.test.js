@@ -266,3 +266,23 @@ test('o número do passo é gravado com o passo e reflete os passos do envio (AW
   assert.equal(s.transporteEnvioNumeroPasso_(registro(), 'concluido'), 0);
   assert.equal(s.transporteEnvioNumeroPasso_(registro({ fasePinex: 'resposta' }), 'pinex_numeros'), 1);
 });
+
+test('OCASA Ambiente: last call às 12h de dois dias úteis antes da coleta, pulando fim de semana e feriado', () => {
+  const s = servidor(new FakeSpreadsheet({}));
+  const ocasa = registro({ courier: 'OCASA', temperatura: 'AMBIENTE', dataEnvio: '2026-11-23' });
+  const limite = s.transporteOcasaLastCall_(ocasa, {});
+  assert.deepEqual([limite.getFullYear(), limite.getMonth() + 1, limite.getDate(), limite.getHours()], [2026, 11, 19, 12]);
+  const comFeriado = s.transporteOcasaLastCall_(ocasa, { '2026-11-20': true });
+  assert.equal(comFeriado.getDate(), 18);
+  assert.equal(s.transporteOcasaLastCallAviso_(ocasa, {}, new Date(2026, 10, 19, 11, 59)),
+    'Last call da OCASA: peça a coleta até 12h de qui., 19/11 (2 dias úteis antes da coleta).');
+  assert.match(s.transporteOcasaLastCallAviso_(ocasa, {}, new Date(2026, 10, 19, 12, 1)), /^Passou o last call da OCASA \(12h de qui\., 19\/11/);
+  // Outras temperaturas e couriers não têm essa regra; envio concluído não avisa nem lê feriados.
+  assert.equal(s.transporteOcasaLastCall_(Object.assign({}, ocasa, { temperatura: 'CONGELADO' }), {}), null);
+  assert.equal(s.transporteOcasaLastCall_(Object.assign({}, ocasa, { courier: 'MARKEN' }), {}), null);
+  s.getAgendaFeriadosPendenciasMap_ = () => { throw new Error('feriados lidos'); };
+  assert.deepEqual(Array.from(s.transporteEnvioAvisoLastCall_(registro(), 'conferir')), []);
+  assert.deepEqual(Array.from(s.transporteEnvioAvisoLastCall_(ocasa, 'concluido')), []);
+  s.getAgendaFeriadosPendenciasMap_ = () => ({});
+  assert.equal(s.transporteEnvioAvisoLastCall_(ocasa, 'conferir').length, 1);
+});

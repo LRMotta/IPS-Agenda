@@ -10,7 +10,12 @@ cadastros; a resolução dos rótulos do Transporte exige combinação inequívo
 | BioSystem | Marken | Ambiente | Rascunho para `operacoes.cs@marken.com`, Invoice com 2 kg e Fornecer caixa = "Sim, BioSystem". |
 | Extreme Ambient | Marken | Ambiente | Rascunho para os destinatários padrão da Marken (sem mudança de cópia), Invoice com 2 kg e Fornecer caixa = "Sim, Extreme Ambient". |
 | Crēdo Cube | Marken | Ambiente, Refrigerado ou Congelado (uma regra por temperatura) | Rascunho para `protocolos.credo@marken.com`, Fornecer caixa = "Sim, Crēdo Cube", Invoice com 5 kg e Declaração sem gelo seco (---). |
-| Sepio | Ocasa | Ambiente | Identificação da caixa na tela de Transporte, mantendo e-mail e documentos existentes. |
+| Sepio | Ocasa | Ambiente | Identificação da caixa na tela de Transporte; o e-mail ganha, ao fim da tabela, a linha "Instruções especiais: CAIXA SEPIO" em vermelho, como no Welcome Pack da OCASA (17/11/2026). Destinatários e documentos não mudam. |
+
+OCASA em Ambiente também mostra, nos passos Conferir e Enviar do envio, o *last call*
+da OCASA para Caxias do Sul: pedir a coleta até 12h de dois dias úteis antes da data do
+envio, sem fim de semana nem feriados operacionais. Antes do limite, o aviso informa a
+data; depois, avisa que o prazo passou. Não bloqueia. Envios concluídos não avisam.
 
 Não há inferência para temperaturas mistas nem substituição do comportamento de
 transportes sem regra correspondente. Para Marken em temperatura Ambiente, o

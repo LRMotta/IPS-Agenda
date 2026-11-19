@@ -154,3 +154,15 @@ test('datas em dd/MM/yyyy ou ISO geram o mesmo texto e courier sem e-mail cadast
   s.transporteReadAgendaCourierConfigs_ = () => ({});
   assert.throws(() => s.transporteEmailDoRegistro_(registro()), /Cadastre o e-mail da courier/);
 });
+
+test('OCASA com caixa Sepio: e-mail ganha "Instruções especiais: CAIXA SEPIO" em vermelho; sem Sepio, nada muda', () => {
+  const s = servidor();
+  const sepio = { tipoCaixa: 'SEPIO' };
+  const comSepio = s.transporteEmailDoRegistro_(registro({ temperatura: 'AMBIENTE', caixaTransporte: sepio }));
+  assert.match(comSepio.html, /<tr><td style="[^"]*color:#ff0000;font-weight:bold[^"]*">Instruções especiais:<\/td><td style="[^"]*color:#ff0000[^"]*">CAIXA SEPIO<\/td><\/tr><\/table>/);
+  // Sem caixa, em outra temperatura ou em outra courier: corpo igual ao modelo, sem a linha.
+  for (const extra of [{ temperatura: 'AMBIENTE' }, { temperatura: 'CONGELADO', caixaTransporte: sepio }, { temperatura: 'AMBIENTE', caixaTransporte: { tipoCaixa: 'BIOSYSTEM' } }]) {
+    assert.doesNotMatch(s.transporteEmailDoRegistro_(registro(extra)).html, /Instruções especiais|CAIXA SEPIO/);
+  }
+  assert.equal(s.transporteCaixaInstrucaoOcasa_({ courier: 'MARKEN', temperatura: 'AMBIENTE', caixaTransporte: sepio }), '');
+});

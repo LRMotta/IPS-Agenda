@@ -212,6 +212,44 @@ function transporteEnvioAvisos_(registro) {
   return avisos;
 }
 
+// Last call da OCASA para Caxias do Sul (CXJ), ambiente controlado 15-25 C: pedido de coleta ate 12h
+// de dois dias uteis antes. Fonte: tabela de Last Calling Times do Welcome Pack da OCASA (17/11/2026).
+var TRANSPORTE_OCASA_LAST_CALL_ = { diasUteis: 2, hora: 12 };
+
+// Limite do pedido de coleta OCASA Ambiente, ou null. Dias uteis sem fim de semana nem feriados operacionais.
+function transporteOcasaLastCall_(registro, feriados) {
+  if (transporteNormalizeCourierFromCodex_(registro.courier) !== 'OCASA') return null;
+  if (transporteNormalizeTemperaturaFromCodex_(registro.temperatura) !== 'AMBIENTE') return null;
+  var data = transporteEmailData_(registro.dataEnvio);
+  if (!(data instanceof Date) || isNaN(data.getTime())) return null;
+  var limite = new Date(data.getFullYear(), data.getMonth(), data.getDate());
+  var contados = 0;
+  while (contados < TRANSPORTE_OCASA_LAST_CALL_.diasUteis) {
+    limite.setDate(limite.getDate() - 1);
+    if (isDiaOperacionalPendencia_(limite, feriados || {})) contados++;
+  }
+  limite.setHours(TRANSPORTE_OCASA_LAST_CALL_.hora, 0, 0, 0);
+  return limite;
+}
+
+function transporteOcasaLastCallAviso_(registro, feriados, agora) {
+  var limite = transporteOcasaLastCall_(registro, feriados);
+  if (!limite) return '';
+  var dias = ['dom.', 'seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.'];
+  var texto = dias[limite.getDay()] + ', ' + ('0' + limite.getDate()).slice(-2) + '/' + ('0' + (limite.getMonth() + 1)).slice(-2);
+  if ((agora || new Date()).getTime() > limite.getTime()) {
+    return 'Passou o last call da OCASA (12h de ' + texto + ', 2 dias úteis antes da coleta). Peça a coleta e confirme com a OCASA se ela atende.';
+  }
+  return 'Last call da OCASA: peça a coleta até 12h de ' + texto + ' (2 dias úteis antes da coleta).';
+}
+
+// So OCASA Ambiente le os feriados; os demais envios abrem sem essa leitura.
+function transporteEnvioAvisoLastCall_(registro, passo) {
+  if (passo === 'concluido' || !transporteOcasaLastCall_(registro, {})) return [];
+  var aviso = transporteOcasaLastCallAviso_(registro, getAgendaFeriadosPendenciasMap_());
+  return aviso ? [aviso] : [];
+}
+
 // codexAuthorizeWebAppRequest_ entrega o e-mail em userEmail; email fica como fallback legado.
 function transporteEnvioUsuario_(access) {
   var email = String(access && (access.userEmail || access.email) || '').trim().toLowerCase();
@@ -304,7 +342,7 @@ function transporteEnvioAbrir_(agendaId, slot, usuario, lap) {
   }
   return {
     ok: true, registro: registro, versao: versao, passo: passoInicial, passos: transporteEnvioPassos_(registro),
-    internacional: transporteEnvioInternacional_(registro), avisos: transporteEnvioAvisos_(registro).concat(avisosAgenda),
+    internacional: transporteEnvioInternacional_(registro), avisos: transporteEnvioAvisos_(registro).concat(transporteEnvioAvisoLastCall_(registro, passoInicial), avisosAgenda),
     // Os documentos anteriores, se existem, foram feitos com outros dados: o token de geracao foi descartado acima.
     dadosAtualizados: dadosAtualizados
   };
