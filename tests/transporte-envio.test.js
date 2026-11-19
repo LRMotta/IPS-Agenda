@@ -35,6 +35,34 @@ function registro(extra) {
   }, extra || {});
 }
 
+test('abertura do envio: agendador pelo acesso, Projetos lido uma vez e memória descartada ao sair', () => {
+  const s = servidor(new FakeSpreadsheet({}));
+  s.codexAssertAdmin_ = () => ({ ok: true, role: 'admin', userEmail: A, name: 'Ana Souza', firstName: 'Ana' });
+  s.transporteActiveUserEmail_ = () => A;
+  s.transporteAgendadoresConfig_ = () => ['Bia', 'Ana Souza'];
+  let leiturasUsers = 0;
+  let leiturasProjetos = 0;
+  s.codexGetAllowedUsers_ = () => { leiturasUsers++; return { [A]: { name: 'Ana Souza', firstName: 'Ana' } }; };
+  s.getCodexSheetDataByName_ = (nome) => { if (nome === 'Projetos') leiturasProjetos++; return [['ID', 'Nome', 'Código'], ['p1', 'Estudo X', 'EX']]; };
+  let dentro = null;
+  s.transporteEnvioMontarRegistro_ = () => {
+    dentro = [s.transporteAgendadorPadrao_(), s.transporteAgendadorPadrao_(), s.transporteReadProjetosDireto_().length, s.transporteReadProjetosDireto_().length];
+    return registro();
+  };
+  assert.equal(plano(s.getTransporteEnvio('ab12cd34', '1')).ok, true);
+  assert.deepEqual(dentro, ['Ana Souza', 'Ana Souza', 1, 1]);
+  assert.deepEqual([leiturasUsers, leiturasProjetos], [0, 1]);
+  // Fora da abertura, cada chamada lê de novo, como antes.
+  s.transporteAgendadorPadrao_();
+  s.transporteReadProjetosDireto_();
+  assert.deepEqual([leiturasUsers, leiturasProjetos], [1, 2]);
+  // Erro no meio da abertura também descarta a memória.
+  s.transporteEnvioMontarRegistro_ = () => { s.transporteReadProjetosDireto_(); throw new Error('falhou'); };
+  assert.throws(() => s.getTransporteEnvio('zz99yy88', '1'), /falhou/);
+  s.transporteReadProjetosDireto_();
+  assert.equal(leiturasProjetos, 4);
+});
+
 test('resposta da PINEX: coleta com 5 ou 6 dígitos, frete, protocolo e data', () => {
   const s = servidor(new FakeSpreadsheet({}));
   const linha = 'Confirmação de agendamento - Coleta: 78429 - Frete: 94624 - Protocolo: MB12C0224 - Data da coleta: 11/03/2026';

@@ -2333,7 +2333,26 @@ function transporteParticipantKey_(value) {
   return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
+/**
+ * Memoria de uma abertura de envio (getTransporteEnvio), so de leitura: ativa apenas enquanto essa RPC
+ * roda e descartada no fim. Fora dela cada chamada le de novo, como antes. Nao guarda nada entre execucoes
+ * nem serve de autorizacao.
+ */
+var TRANSPORTE_ABERTURA_MEMO_ = null;
+
+function transporteAberturaMemo_(chave, calcular) {
+  var memo = TRANSPORTE_ABERTURA_MEMO_;
+  if (!memo) return calcular();
+  if (!Object.prototype.hasOwnProperty.call(memo, chave)) memo[chave] = calcular();
+  return memo[chave];
+}
+
 function transporteReadProjetosDireto_() {
+  // Os dados ja tem cache por execucao, mas cada consulta refaz aba, linhas e colunas (~0,35 s em producao).
+  return transporteAberturaMemo_('projetos', transporteReadProjetosDiretoSemMemo_);
+}
+
+function transporteReadProjetosDiretoSemMemo_() {
   var rows = typeof getCodexSheetDataByName_ === 'function'
     ? (getCodexSheetDataByName_('Projetos') || [])
     : [];
@@ -2769,13 +2788,22 @@ function transporteAgendadoresConfig_() {
 }
 
 function transporteAgendadorPadrao_() {
+  return transporteAberturaMemo_('agendador', transporteAgendadorPadraoSemMemo_);
+}
+
+function transporteAgendadorPadraoSemMemo_() {
   var agendadores = transporteAgendadoresConfig_();
   if (!agendadores.length) return '';
   var email = transporteNormalizeEmail_(transporteActiveUserEmail_());
   var nomes = [];
   if (email) nomes.push(email);
   try {
-    if (email && typeof codexGetAllowedUsers_ === 'function') {
+    // Na abertura do envio, nome e apelido vem do acesso ja autorizado (mesma aba Users), sem reler.
+    var doAcesso = TRANSPORTE_ABERTURA_MEMO_ && TRANSPORTE_ABERTURA_MEMO_.usuario;
+    if (email && doAcesso && transporteNormalizeEmail_(doAcesso.email) === email) {
+      if (doAcesso.name) nomes.push(doAcesso.name);
+      if (doAcesso.firstName) nomes.push(doAcesso.firstName);
+    } else if (email && typeof codexGetAllowedUsers_ === 'function') {
       var user = (codexGetAllowedUsers_() || {})[email] || {};
       if (user.name) nomes.push(user.name);
       if (user.firstName) nomes.push(user.firstName);

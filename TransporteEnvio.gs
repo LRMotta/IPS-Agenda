@@ -235,6 +235,16 @@ function getTransporteEnvio(agendaId, slot) {
   var access = codexAssertAdmin_();
   lap('acesso');
   var usuario = transporteEnvioUsuario_(access);
+  // Leituras repetidas desta abertura (Projetos, agendador) uma vez so; descartadas ao sair.
+  TRANSPORTE_ABERTURA_MEMO_ = { usuario: { email: usuario, name: access.name || '', firstName: access.firstName || '' } };
+  try {
+    return transporteEnvioAbrir_(agendaId, slot, usuario, lap);
+  } finally {
+    TRANSPORTE_ABERTURA_MEMO_ = null;
+  }
+}
+
+function transporteEnvioAbrir_(agendaId, slot, usuario, lap) {
   var claim = transporteEnvioReivindicar_(agendaId, slot, usuario);
   lap('reivindicar');
   if (!claim.ok) return transporteEnvioRespostaOcupado_({ emPreparoPor: claim.emPreparoPor }, transporteTarefasNomes_());
