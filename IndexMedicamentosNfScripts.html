@@ -232,6 +232,7 @@ function medNfAbrirAnexos(nota) {
   var input = document.getElementById('medNfPdfsInput');
   input.value = '';
   input.multiple = !_medNfArquivoNotaFixa;
+  appFilePickerSync(input);
   document.getElementById('medNfPdfsLista').innerHTML = '';
   document.getElementById('btnMedNfAnexar').disabled = true;
   appSetStatus('statusMedNfPdfs', _medNfArquivoNotaFixa ? 'PDF da NF ' + nota.notaFiscal + '.' : '');
@@ -239,6 +240,7 @@ function medNfAbrirAnexos(nota) {
 }
 
 function medNfArquivosSelecionados(files) {
+  appFilePickerSync('medNfPdfsInput');
   _medNfArquivos = Array.prototype.slice.call(files || []).map(function(file) {
     return { file: file, chave: _medNfArquivoNotaFixa || medNfSugerirNota(file.name), status: '' };
   });

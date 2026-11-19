@@ -126,6 +126,21 @@ test('manipuladores inline dos botoes chamam funcoes cliente existentes', () => 
   assert.deepEqual(unresolved, []);
 });
 
+test('seletores de arquivo usam o componente do app, sem o botao nativo do navegador', () => {
+  const inputs = [];
+  htmlSources().forEach(({ fileName, source }) => {
+    for (const match of source.matchAll(/<input\b[^>]*\btype=["']file["'][^>]*>/gi)) inputs.push({ fileName, tag: match[0], source });
+  });
+  assert.ok(inputs.length > 0);
+  inputs.forEach(({ fileName, tag, source }) => {
+    const id = (tag.match(/\bid="([^"]+)"/) || [])[1];
+    assert.ok(id, fileName + ': input de arquivo sem id');
+    assert.match(tag, /\bclass="file-picker-input"/, fileName + ' #' + id + ' precisa da classe file-picker-input');
+    assert.ok(source.includes('class="file-picker-btn" for="' + id + '"'), fileName + ' #' + id + ' precisa do botao do app');
+    assert.ok(source.includes('id="' + id + 'Nome"'), fileName + ' #' + id + ' precisa exibir o nome do arquivo');
+  });
+});
+
 test('RPCs referenciadas pela interface continuam publicas no servidor', () => {
   const rpcNames = referencedRpcNames(htmlSources());
   const publicFunctions = publicServerFunctionNames();

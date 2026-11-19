@@ -21,7 +21,7 @@ function importFixture() {
     _soaImportCsvTexto: 'V1', soaPoloExtrair_: text => ({ visitas: [{ codigo: text }] }),
     appServerRun: options => requests.push(options),
     appSetButtonBusy: (button, busy) => { button.disabled = busy; },
-    appSetStatus() {}, appErrorMessage: error => error.message,
+    appSetStatus() {}, appFilePickerSync() {}, appErrorMessage: error => error.message,
     renderSoAImportPreview_: result => { elements.btnImportarSoAConfirm.disabled = !result || !result.ok || !result.visitas.length; },
     FileReader: function() { readers.push(this); this.readAsText = () => {}; },
     fecharOverlay() {}, snack() {}, carregarSoAVisitasProjeto() {}, carregarBracosProjeto() {}

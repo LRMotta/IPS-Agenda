@@ -51,7 +51,7 @@ for (const width of [2560, 1280, 390]) {
         function snack(message) { testSuccess = message; }
         function carregarSoAVisitasProjeto() {} function carregarBracosProjeto() {}
         function appServerRun(options) { testRequests.push(options.method); window.planningRpc(options.method,options.args).then(options.onSuccess,options.onFailure); }
-        ${contentAccessibilitySource(['appSetButtonBusy'])}
+        ${contentAccessibilitySource(['appSetButtonBusy', 'appFilePickerSync'])}
         ${importer}
         abrirSoAImportForm();
       ` });
@@ -64,11 +64,9 @@ for (const width of [2560, 1280, 390]) {
       // Mesmo padrão visual dos demais modais: seções, controles alinhados e seletor de arquivo sem aparência nativa.
       assert.equal(await page.locator('#modalSoAImport .modal-body > .form-section .section-label').count(), 2);
       assert.equal(await page.locator('#modalSoAImport .form-section #soaImportPreview').count(), 1);
-      const fileButton = await page.locator('#soaImportArquivo').evaluate(el => {
-        const style = window.getComputedStyle(el, '::file-selector-button');
-        return { color: style.color, height: style.height };
-      });
-      assert.deepEqual(fileButton, { color: await page.locator('#btnPreviewSoA').evaluate(el => window.getComputedStyle(el).color), height: '31px' });
+      assert.ok((await page.locator('#soaImportArquivo').boundingBox()).width <= 1);
+      assert.equal(await page.locator('#modalSoAImport label.file-picker-btn[for="soaImportArquivo"]').isVisible(), true);
+      assert.equal(await page.locator('#soaImportArquivoNome').innerText(), 'Nenhum arquivo selecionado');
       if (width > 760) {
         const tops = await page.locator('#soaImportBraco, #soaImportModo, #soaImportBaseCalculo').evaluateAll(els => els.map(el => el.getBoundingClientRect().top));
         assert.equal(new Set(tops).size, 1);
@@ -78,6 +76,7 @@ for (const width of [2560, 1280, 390]) {
       await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.includes('Selecione o arquivo CSV'));
       await page.locator('#soaImportArquivo').setInputFiles(csvFile(chainedVisits()));
       await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.startsWith('Arquivo carregado'));
+      assert.equal(await page.locator('#soaImportArquivoNome').innerText(), 'Polo_Trial_Flowchart.csv');
       await page.locator('#btnPreviewSoA').click();
       await page.waitForFunction(() => document.getElementById('statusSoAImport').textContent.includes('Informe o nome do braço'));
 

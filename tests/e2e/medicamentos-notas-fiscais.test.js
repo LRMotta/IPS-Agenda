@@ -54,7 +54,7 @@ async function fixture(browser, width) {
     ${contentAccessibilitySource(['appServerRun', 'appSetButtonBusy', 'bindTableRecordActions', 'abrirConfirmacaoDestrutiva',
       'appDialogFocusable', 'appFocusDialog', 'appSyncContentFieldAccessibility', 'appSyncAccessibleDialogs', 'appAccessibleDialogKeydown',
       'appInitContentAccessibility', 'appHasUnsavedChanges', 'appMarkUnsavedChanges', 'appClearUnsavedChanges', 'appEditableDirtyScope',
-      'appConfirmNavigationIfDirty', 'appOpenUnsavedConfirm', 'fecharConfirmUnsaved', 'fecharOverlay', 'appSetStatus', 'appSetInlineStatusMessage'])}
+      'appConfirmNavigationIfDirty', 'appOpenUnsavedConfirm', 'fecharConfirmUnsaved', 'fecharOverlay', 'appSetStatus', 'appSetInlineStatusMessage', 'appFilePickerSync'])}
     appInitContentAccessibility();
   ` });
   await page.addScriptTag({ content: readProjectFile('IndexMedicamentosNfScripts.html').replace(/^\s*<script>\s*/i, '').replace(/\s*<\/script>\s*$/i, '') });
@@ -120,8 +120,14 @@ test('notas fiscais: filtros, movimento, seleção e rascunho do e-mail em deskt
 
       // Arquivo com o número da NF no nome sugere a nota automaticamente.
       await page.getByRole('button', { name: /Anexar PDFs/ }).click();
+      // Seletor de arquivo no visual do app: nada do botão nativo do navegador aparece.
+      assert.ok((await page.locator('#medNfPdfsInput').boundingBox()).width <= 1);
+      assert.equal(await page.locator('label.file-picker-btn[for="medNfPdfsInput"]').isVisible(), true);
+      assert.equal(await page.locator('#medNfPdfsInputNome').innerText(), 'Nenhum arquivo selecionado');
       await page.locator('#medNfPdfsInput').setInputFiles([{ name: 'NF 0222 digitalizada.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') }]);
       assert.equal(await page.locator('[data-med-nf-arquivo="0"]').inputValue(), '222|B');
+      assert.equal(await page.locator('#medNfPdfsInputNome').innerText(), 'NF 0222 digitalizada.pdf');
+      await page.screenshot({ animations: 'disabled', path: path.join(artifacts, 'medicamentos-nf-anexar-' + width + '.png') });
       await page.locator('#btnMedNfAnexar').click();
       await page.waitForFunction(() => window.pending.some((p) => p.method === 'anexarPdfNotaFiscal'));
       const anexo = await page.evaluate(() => window.pending.filter((p) => p.method === 'anexarPdfNotaFiscal').at(-1).args[0]);

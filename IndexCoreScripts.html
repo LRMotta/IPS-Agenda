@@ -5543,6 +5543,15 @@ function appSetButtonBusy(btnOrId, busy) {
   var btn = typeof btnOrId === 'string' ? document.getElementById(btnOrId) : btnOrId;
   if (btn) btn.disabled = !!busy;
 }
+function appFilePickerSync(inputOrId) {
+  var input = typeof inputOrId === 'string' ? document.getElementById(inputOrId) : inputOrId;
+  var nome = input && document.getElementById(input.id + 'Nome');
+  if (!nome) return;
+  var files = input.files || [];
+  nome.textContent = files.length > 1 ? files.length + ' arquivos selecionados' : (files.length ? files[0].name : (nome.getAttribute('data-empty') || ''));
+  nome.title = files.length === 1 ? files[0].name : '';
+  if (nome.parentNode && nome.parentNode.classList) nome.parentNode.classList.toggle('has-file', files.length > 0);
+}
 function appLoadingRow(colspan, label) {
   return '<tr class="loading-row"><td colspan="' + esc(colspan || 1) + '"><div class="spinner"></div>' + esc(label || 'Carregando...') + '</td></tr>';
 }
@@ -7766,6 +7775,7 @@ function abrirSoAImportForm() {
   invalidarPreviaImportacaoSoA_();
   _soaImportCsvTexto = '';
   document.getElementById('soaImportArquivo').value = '';
+  appFilePickerSync('soaImportArquivo');
   document.getElementById('soaImportBraco').value = '';
   document.getElementById('soaImportBracosLista').innerHTML = (_bracosProjetoAtual || []).filter(function(item) { return item.ativo !== false; }).map(function(item) { return '<option value="' + esc(item.nome) + '"></option>'; }).join('');
   document.getElementById('soaImportPreview').innerHTML = '<div class="soa-visita-empty">Selecione o CSV, informe o braço e clique em Pré-visualizar.</div>';
@@ -7777,6 +7787,7 @@ function abrirSoAImportForm() {
 }
 
 function lerSoAArquivoApp(event) {
+  if (event && event.target) appFilePickerSync(event.target);
   invalidarPreviaImportacaoSoA_();
   _soaImportCsvTexto = '';
   var file = event && event.target && event.target.files && event.target.files[0];
