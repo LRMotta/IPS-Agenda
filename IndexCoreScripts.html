@@ -59,6 +59,10 @@ var APP_VERSION_INITIAL_CHECK_DELAY_MS = 10 * 1000;
 var APP_VERSION_CHECK_TIMER = null;
 var APP_VERSION_NOTICE_VISIBLE = false;
 var APP_VERSION_CHECK_IN_FLIGHT = false;
+// Ao voltar para a aba, so consulta se a ultima verificacao tiver mais de 1 min,
+// para trocas rapidas de aba nao gerarem uma RPC (~3 s de custo fixo) cada.
+var APP_VERSION_RETURN_MIN_GAP_MS = 60 * 1000;
+var APP_VERSION_LAST_CHECK_AT = 0;
 var USERS_ADMIN_ROWS = [];
 var USER_PROFILE_FORMACOES = [];
 var APP_DEPLOYMENT_DIAGNOSTICS = null;
@@ -533,8 +537,11 @@ function startAppVersionWatcher() {
 
 function checkAppRuntimeVersion() {
   if (!APP_LOADED_VERSION || APP_VERSION_NOTICE_VISIBLE || APP_VERSION_CHECK_IN_FLIGHT) return;
+  // Aba oculta nao consulta; a verificacao acontece quando ela voltar a ficar visivel.
+  if (document.hidden) return;
   if (typeof google === 'undefined' || !google.script || !google.script.run) return;
   APP_VERSION_CHECK_IN_FLIGHT = true;
+  APP_VERSION_LAST_CHECK_AT = Date.now();
   google.script.run
     .withSuccessHandler(function(info) {
       APP_VERSION_CHECK_IN_FLIGHT = false;
@@ -617,7 +624,9 @@ function appAddReloadParam(url) {
 }
 
 document.addEventListener('visibilitychange', function() {
-  if (!document.hidden) checkAppRuntimeVersion();
+  if (document.hidden) return;
+  if (Date.now() - APP_VERSION_LAST_CHECK_AT < APP_VERSION_RETURN_MIN_GAP_MS) return;
+  checkAppRuntimeVersion();
 });
 
 function handleUserOAuthStatus(auth) {

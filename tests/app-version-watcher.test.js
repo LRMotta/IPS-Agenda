@@ -17,6 +17,21 @@ test('monitor de versao permanece ativo sem depender da URL externa do iframe', 
   assert.doesNotMatch(watcher[1] + checker[1], /appIsPublishedExecRuntime|APP_VERSION_RUNTIME_IS_EXEC/);
 });
 
+test('monitor so consulta com a aba visivel e verifica ao voltar, com intervalo minimo', () => {
+  const checker = source.match(/function checkAppRuntimeVersion\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(checker, 'checkAppRuntimeVersion deve existir');
+  const hiddenGuard = checker[1].indexOf('if (document.hidden) return;');
+  assert.ok(hiddenGuard >= 0, 'aba oculta nao deve chamar o servidor');
+  assert.ok(hiddenGuard < checker[1].indexOf('google.script.run'), 'guarda deve vir antes da RPC');
+  assert.match(checker[1], /APP_VERSION_LAST_CHECK_AT = Date\.now\(\)/);
+
+  const onVisible = source.match(/document\.addEventListener\('visibilitychange', function\(\) \{([\s\S]*?)\n\}\);/);
+  assert.ok(onVisible, 'listener de visibilidade deve existir');
+  assert.match(onVisible[1], /if \(document\.hidden\) return;/);
+  assert.match(onVisible[1], /Date\.now\(\) - APP_VERSION_LAST_CHECK_AT < APP_VERSION_RETURN_MIN_GAP_MS/);
+  assert.match(onVisible[1], /checkAppRuntimeVersion\(\)/);
+});
+
 test('monitor consulta o servidor e exibe aviso quando a versao mudou', () => {
   assert.match(source, /\.getAppRuntimeInfo\(\)/);
   assert.match(source, /current\s*&&\s*current\s*!==\s*APP_LOADED_VERSION/);

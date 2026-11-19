@@ -118,6 +118,13 @@ test('snapshot por slot conserva nota manual, distingue envios e sobrevive à tr
   assert.equal(s.transporteCaixaResolver_({}, payload).tipoCaixa, 'BIOSYSTEM');
   assert.equal(s.transporteCaixaResolver_({}, { ...payload, agendaSlot: '2' }).tipoCaixa, '');
   assert.equal(s.transporteCaixaResolver_({}, { ...payload, destino: 'Outro Lab' }).tipoCaixa, '');
+  // Abertura do envio: com a aba e a linha já lidas, a nota vem da mesma célula sem reabrir a aba
+  // pelo caminho de escrita nem procurar a linha de novo.
+  const original = s.getAgendaSheet_;
+  s.getAgendaSheet_ = () => { throw new Error('não deveria reabrir a Agenda'); };
+  try {
+    assert.equal(s.transporteCaixaResolver_({}, payload, false, { sheet: agenda, linha: 2 }).tipoCaixa, 'BIOSYSTEM');
+  } finally { s.getAgendaSheet_ = original; }
 });
 
 test('reavaliar descarta a Crēdo Cube confirmada pela regra atual e conserva a nota manual', () => {
