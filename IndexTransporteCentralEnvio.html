@@ -465,6 +465,14 @@
       .salvarTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, campos || {}, passo);
   }
 
+  // Ao clicar num botão logo depois de editar um campo, o "change" do campo (salvamento automático) dispara antes
+  // do clique e vai avançar a versão: quem manda a versão espera essa gravação terminar para não mandar a antiga.
+  function transpCentralAposSalvar(seq, acao) {
+    if (!transpCentralEnvioAtual(seq)) return;
+    if (TC_ENVIO.salvando) { setTimeout(function() { transpCentralAposSalvar(seq, acao); }, 200); return; }
+    acao();
+  }
+
   function transpCentralValorCampo(nome) {
     var el = document.getElementById('tcCampo_' + nome);
     return el ? String(el.value || '').trim() : undefined;
@@ -509,10 +517,12 @@
     }
     // Durante a geração nada é gravado: o servidor termina sozinho e guarda o passo seguinte.
     if (!TC_ENVIO.dados || TC_ENVIO.passo === 'fim' || TC_ENVIO.gerando) { fechar(); return; }
-    google.script.run
-      .withSuccessHandler(function() { if (transpCentralEnvioAtual(seq)) fechar(); })
-      .withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seq)) { snackErro(erro); fechar(); } })
-      .sairEnvioTransporte(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, passo);
+    transpCentralAposSalvar(seq, function() {
+      google.script.run
+        .withSuccessHandler(function() { if (transpCentralEnvioAtual(seq)) fechar(); })
+        .withFailureHandler(function(erro) { if (transpCentralEnvioAtual(seq)) { snackErro(erro); fechar(); } })
+        .sairEnvioTransporte(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, passo);
+    });
   }
 
   function transpCentralAcaoMateriais(acao, alvo) {
@@ -557,7 +567,13 @@
     return TC_ENVIO.passo === 'awb' && !!awb && String(awb.value || '').trim() !== String((TC_ENVIO.dados.registro || {}).awb || '').trim();
   }
 
+  var TC_ACOES_COM_VERSAO = ['pinex-ok', 'gerar', 'anvisa-concluir', 'enviado'];
+
   function transpCentralAcao(acao, alvo) {
+    if (TC_ENVIO.salvando && TC_ACOES_COM_VERSAO.indexOf(acao) >= 0) {
+      transpCentralAposSalvar(TC_ENVIO.seq, function() { transpCentralAcao(acao, alvo); });
+      return;
+    }
     var registro = TC_ENVIO.dados && TC_ENVIO.dados.registro;
     if (acao === 'sair' || acao === 'fechar') {
       // Os campos do Conferir salvam sozinhos; estes três só gravam pelo próprio botão.
