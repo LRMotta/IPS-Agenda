@@ -292,6 +292,16 @@ test('PINEX com o pedido de coleta já enviado fora do passo a passo: não pede 
   assert.equal(comDoc.tarefas[0].transportes[0].situacao, 'enviar_doc');
 });
 
+test('PINEX Confirmado com registro antigo em "resposta": vai para Confirmadas, sem tarefa nem aguardando PINEX', () => {
+  const s = servidor();
+  // Caso real (19/11): Começar criou o registro em "resposta", mas a coleta já estava confirmada por e-mail.
+  const preparos = { 'k1|1': { passo: 'pinex_numeros', passoNumero: 1, versao: 3, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false } };
+  const r = construir(s, [linha(s, 'k1', '06/10/2026', [{ nome: 'Pinex', status: 'Confirmado', awb: '120447' }])], { preparos });
+  assert.deepEqual(r.tarefas, []);
+  assert.deepEqual(r.acompanhar.pinex, []);
+  assert.deepEqual(r.acompanhar.confirmadas.map((x) => [x.agendaId, x.slot]), [['k1', '1']]);
+});
+
 test('PINEX aguardando resposta: a tarefa respeita a janela de dias úteis e fora dela fica em Mais adiante', () => {
   const s = servidor();
   const preparos = { 'q1|1': { passo: 'pinex_numeros', passoNumero: 1, versao: 3, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false },

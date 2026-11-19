@@ -7,6 +7,8 @@
  * Backup nao gera tarefa. Somente leitura: nao cria aba, nao adquire lock e nao escreve.
  */
 var TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_ = 7;
+// Status da Agenda em que um envio PINEX ainda pode aguardar os numeros (depois de Confirmado, o registro e antigo).
+var TRANSPORTE_TAREFAS_STATUS_PINEX_RESPOSTA_ = ['naoagendado', 'pendente', 'docsgerados', 'agendado'];
 var TRANSPORTE_TAREFAS_SLOTS_ = [['1', 'Transporte I', 'c1'], ['2', 'Transporte II', 'c2'], ['3', 'Transporte III', 'c3'], ['4', 'Transporte IV', 'c4']];
 
 /**
@@ -172,7 +174,8 @@ function transporteAcompanharLinha_(r, ctx, saida, hoje, pinexPedidos) {
         // A data e a do envio, ja feito: nao ha prazo a cumprir. Como no cartao "AWB enviada nao entregue" das
         // Pendencias (sem prioridade), o item em transito nunca fica vermelho nem "Atrasada".
         prazoHoras: null, prazoLabel: '' }));
-    } else if (familiaPinex && fase === 'resposta' && !passada) {
+    } else if (familiaPinex && fase === 'resposta' && !passada && TRANSPORTE_TAREFAS_STATUS_PINEX_RESPOSTA_.indexOf(status) >= 0) {
+      // Como na tarefa: um registro parado em "resposta" nao esconde o transporte ja Confirmado (vai para Confirmadas).
       saida.pinex.push(Object.assign(base(), { slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, statusCourier: statusTexto }));
     } else if (status === 'agendado' && !passada) {
@@ -229,7 +232,7 @@ function transporteTarefasConstruir_(ctx) {
       var pedidoPinex = transporteEnvioFamiliaPinex_(nome) && !!pinexPedidos[chaveEnvio];
       var fasePinex = transporteEnvioFamiliaPinex_(nome) ? transporteTarefaFasePinex_(ctx.preparos[chaveEnvio], pedidoPinex, awb) : '';
       // Aguardando a resposta da PINEX: tarefa "Informar os números da PINEX" (o item tambem fica em Acompanhar).
-      var pinexResposta = fasePinex === 'resposta' && ['naoagendado', 'pendente', 'docsgerados', 'agendado'].indexOf(status) >= 0;
+      var pinexResposta = fasePinex === 'resposta' && TRANSPORTE_TAREFAS_STATUS_PINEX_RESPOSTA_.indexOf(status) >= 0;
       var preparoEnvio = ctx.preparos[chaveEnvio] || null;
       if (pinexResposta) situacao = 'pinex_numeros';
       // Envio internacional parado no formulario ANVISA (por concluir, ou ja enviado sem o status da Agenda ter
