@@ -2741,6 +2741,7 @@ function transporteAtualizarRegistroPorAgenda_(registro, eventoPrecarregado, opt
       registro.participante || ''
     ).trim();
     registro.participanteCadastroId = (participante && transporteParticipanteCadastroId_(participante)) || referencia.participanteCadastroId || registro.participanteCadastroId || '';
+    lap('rar_fim');
   } catch (e) {
     if (options.obrigatorio) throw e;
     Logger.log('Dados vinculados da Agenda nao atualizados no Transporte: ' + e.message);
@@ -3283,21 +3284,35 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado, opc
     var totalVolume = ativos.reduce(function(sum, m) { return sum + (Number(m.total) || 0); }, 0);
 
     return transporteMeasurePerformance_('getTransporteBootstrap', 'validate', { rowCount: 1 }, function() {
+      // Subetapas de validate no log ([CODEX_PERF] getTransporteBootstrap, prefixo v_): so nome e duracao.
+      var lap = transporteLapStart_('getTransporteBootstrap');
+      // Quem ja autorizou informa o acesso: autorizar de novo releria a aba Users.
+      var access = opcoes && opcoes.acesso && typeof codexAccessPresentation_ === 'function' ? codexAccessPresentation_(opcoes.acesso)
+        : (typeof codexGetCurrentUserAccess === 'function' ? codexGetCurrentUserAccess() : null);
+      lap('v_acesso');
+      var runtime = transporteExecutionContext_();
+      lap('v_runtime');
+      var auth = typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_();
+      lap('v_oauth');
+      var issues = transporteValidate_(registro);
+      lap('v_issues');
+      var awbIssue = opcoes && opcoes.awbAdiada ? null : transporteAwbAviso_(registro);
+      lap('v_awb');
+      var documentos = transporteDocumentosPorCourier_(registro.courier, registro.temperatura, registro.destino);
+      lap('v_documentos');
       return {
-        // Quem ja autorizou informa o acesso: autorizar de novo releria a aba Users.
-        access: opcoes && opcoes.acesso && typeof codexAccessPresentation_ === 'function' ? codexAccessPresentation_(opcoes.acesso)
-          : (typeof codexGetCurrentUserAccess === 'function' ? codexGetCurrentUserAccess() : null),
-        runtime: transporteExecutionContext_(),
+        access: access,
+        runtime: runtime,
         registro: registro,
         options: options,
-        auth: typeof codexGetUserOAuthStatus_ === 'function' ? codexGetUserOAuthStatus_() : transporteGmailOAuthStatus_(),
-        issues: transporteValidate_(registro),
-        awbIssue: opcoes && opcoes.awbAdiada ? null : transporteAwbAviso_(registro),
+        auth: auth,
+        issues: issues,
+        awbIssue: awbIssue,
         resumo: {
           materiaisAtivos: ativos.length,
           totalTubos: totalTubos,
           totalVolume: totalVolume,
-          documentos: transporteDocumentosPorCourier_(registro.courier, registro.temperatura, registro.destino)
+          documentos: documentos
         }
       };
     });
@@ -3306,9 +3321,15 @@ function transporteBuildBootstrap_(eventoPrecarregado, registroPrecarregado, opc
 
 function getTransporteBootstrap() {
   var acesso = transporteMeasurePerformance_('getTransporteBootstrap', 'auth', { rowCount: 0 }, function() { return codexAssertCanRead_(); });
-  return codexWithDocumentLock_('getTransporteBootstrap', function() {
-    return transporteBuildBootstrap_(null, null, { awbAdiada: true, semReferencias: true, acesso: acesso });
-  }, { operation: 'getTransporteBootstrap' });
+  // Leituras repetidas desta abertura (Projetos) uma vez so; descartadas ao sair, como em getTransporteEnvio.
+  TRANSPORTE_ABERTURA_MEMO_ = {};
+  try {
+    return codexWithDocumentLock_('getTransporteBootstrap', function() {
+      return transporteBuildBootstrap_(null, null, { awbAdiada: true, semReferencias: true, acesso: acesso });
+    }, { operation: 'getTransporteBootstrap' });
+  } finally {
+    TRANSPORTE_ABERTURA_MEMO_ = null;
+  }
 }
 
 // Listas, regras de caixa e feriados: leituras de cadastro que nao dependem do envio aberto.
