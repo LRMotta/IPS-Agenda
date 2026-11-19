@@ -259,6 +259,24 @@ test('outra pessoa no envio, falha e nova tentativa com o mesmo token, saída e 
   } finally { await browser.close(); }
 });
 
+test('sair logo depois de editar um campo espera o salvamento automático e manda a versão nova', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const { page, erros } = await abrir(browser, 1280);
+    await iniciar(page);
+    await page.fill('#tcCampo_agendadoPor', 'Ana');
+    // O clique no botão tira o foco do campo: o "change" salva antes do clique chegar.
+    await page.getByRole('button', { name: 'Sair e continuar depois' }).click();
+    assert.equal(await page.evaluate(() => window.__rpc.some((p) => p.rpc === 'salvarTransporteEnvio')), true);
+    await page.waitForTimeout(450);
+    assert.equal(await page.evaluate(() => window.__rpc.some((p) => p.rpc === 'sairEnvioTransporte')), false, 'não sai com a versão antiga');
+    await responder(page, 'salvarTransporteEnvio', { ok: true, versao: 4, passos: ['conferir', 'gerar', 'enviar'], passo: 'conferir' });
+    await page.waitForFunction(() => window.__rpc.some((p) => p.rpc === 'sairEnvioTransporte'));
+    assert.deepEqual(await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'sairEnvioTransporte').args), ['a1', '1', 4, 'conferir']);
+    assert.deepEqual(erros, []);
+  } finally { await browser.close(); }
+});
+
 test('editar materiais: editor, salvar na Agenda, nota e recusa; Corrigir reabre o envio ao voltar', async () => {
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
