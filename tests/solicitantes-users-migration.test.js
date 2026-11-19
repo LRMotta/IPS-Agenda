@@ -108,7 +108,7 @@ test('respostas antigas de solicitantes não repovoam requisição após altera�
     preencherSolicitanteUsuarioAtual: () => {}, flushRequisicaoLoadCallbacks: () => {},
     snackErro: () => assert.fail('erro obsoleto deve ser ignorado')
   });
-  vm.runInContext(contentAccessibilitySource(['rqLookupKey', 'rqLookupEmail', 'rqIndexBy',
+  vm.runInContext(contentAccessibilitySource(['rqLookupKey', 'rqLookupEmail', 'rqIndexBy', 'rqGroupBy',
     'rebuildRequisicaoLookups', 'carregarSolicitantesRequisicao']), context);
   context.carregarSolicitantesRequisicao();
   context.carregarSolicitantesRequisicao();
@@ -139,7 +139,7 @@ test('requisição preenchida bloqueia geração durante recarga e após falha, 
     requisicaoMissingRequiredChecks: () => [], requisicaoRequiredValues: () => [],
     validarRequisicaoAntesDeGerar: () => assert.fail('geração deve permanecer bloqueada')
   });
-  vm.runInContext(contentAccessibilitySource(['rqLookupKey', 'rqLookupEmail', 'rqIndexBy', 'rebuildRequisicaoLookups',
+  vm.runInContext(contentAccessibilitySource(['rqLookupKey', 'rqLookupEmail', 'rqIndexBy', 'rqGroupBy', 'rebuildRequisicaoLookups',
     'carregarSolicitantesRequisicao', 'updateRequisicaoGenerateAvailability', 'gerarRequisicao']), context);
   context.carregarSolicitantesRequisicao();
   context.gerarRequisicao();

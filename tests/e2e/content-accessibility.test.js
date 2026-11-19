@@ -14,7 +14,7 @@ const functions = contentAccessibilitySource([
   'appDialogFocusable', 'appFocusDialog', 'appSyncContentFieldAccessibility', 'appSyncAccessibleDialogs',
   'appAccessibleDialogKeydown', 'appInitContentAccessibility', 'appOpenUnsavedConfirm', 'fecharConfirmUnsaved',
   'appConfirmNavigationIfDirty', 'appClearUnsavedChanges', 'appMarkUnsavedChanges', 'fecharOverlay',
-  'fecharReqPreloadModal', 'renderReqAC', 'reqAcOptionsIndex', 'pickReqAC', 'fecharReqAC', 'navReqAC',
+  'fecharReqPreloadModal', 'renderReqAC', 'rqParticipacoesDescricao', 'rqLookupKey', 'reqAcOptionsIndex', 'pickReqAC', 'fecharReqAC', 'navReqAC',
   'toggleUrgente', 'setAuditView', 'updateAuditTabAccessibility', 'auditTabKeydown'
 ]);
 
@@ -38,7 +38,7 @@ for (const width of [1280, 390]) {
         var APP_ACCESSIBLE_DIALOGS = [], APP_CONTENT_ACCESSIBILITY_READY = false;
         var APP_UNSAVED_SCOPES = {}, APP_UNSAVED_ON_CANCEL = null;
         var _rqAcIdx = {}, _rqAcOptionsCache = {}, _rqUrgente = false, _reqPreloadConflictData = null;
-        var _rqParticipantesNomes = ['Pessoa de teste', 'Outra pessoa'], _rqPrestadoresNomes = ['Laboratório A'];
+        var _rqLookup = { participantesPorNome: {} }, _rqParticipantesNomes = ['Pessoa de teste', 'Outra pessoa'], _rqPrestadoresNomes = ['Laboratório A'];
         var _rqSolicitantesNomes = ['Solicitante de teste'];
         var REQUISICAO_ID_ALIASES = { prestador: ['rqPrestador'] };
         var AUDIT_VIEW = 'log', AUDIT_PAGE_OFFSET = {}, testAuditCalls = [];
