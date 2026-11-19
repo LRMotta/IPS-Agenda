@@ -212,7 +212,7 @@ test('marcar como enviadas exige movimento RM e grava data e responsável', () =
 test('tela usa somente RPCs públicas existentes e mantém o rótulo genérico do e-mail', () => {
   const script = readProjectFile('IndexMedicamentosNfScripts.html');
   const server = readProjectFile('MedicamentosNotasFiscais.gs');
-  for (const rpc of ['getMedicamentosNotasFiscais', 'salvarMovimentoRmNotaFiscal', 'anexarPdfNotaFiscal', 'prepararEmailNotasFiscais', 'marcarNotasFiscaisEnviadas']) {
+  for (const rpc of ['getMedicamentosNotasFiscais', 'getEquipamentosNotasFiscais', 'salvarMovimentoRmNotaFiscal', 'anexarPdfNotaFiscal', 'prepararEmailNotasFiscais', 'marcarNotasFiscaisEnviadas']) {
     assert.match(script, new RegExp("method: '" + rpc + "'"));
     assert.match(server, new RegExp('^function ' + rpc + '\\(', 'm'));
   }
@@ -220,4 +220,87 @@ test('tela usa somente RPCs públicas existentes e mantém o rótulo genérico d
   const content = readProjectFile('IndexContentAfterDashboard.html') + readProjectFile('IndexContentAfterStock.html');
   assert.match(content, /Preparar e-mail/);
   assert.doesNotMatch(content + script, /Ester/);
+});
+
+const EQP = '🖥️ Equipamentos';
+
+function equip(id, data, projeto, nf, remetente, movimento, descricao, serie) {
+  return [id, new Date(data + 'T12:00:00Z'), projeto, 'Sim', movimento ? 'Sim' : 'Não', nf, remetente, movimento, 'TOTVS-1', descricao, 1, serie, 'Resp', 'Sala 1', '', '', '', 'quem@ucs.br'];
+}
+
+const EQ_BASE = [
+  equip('E1', '2026-11-10', 'STAR-121', '000555', 'Fisher Clinical Services', '', 'Centrífuga', 'SN-1'),
+  equip('E2', '2026-11-10', 'STAR-121', '555', 'FISHER CLINICAL', '', 'Freezer', 'SN-2'),
+  equip('E3', '2026-11-01', 'P1', '777', 'Marken', '900', 'Tablet', 'SN-3'),
+  equip('E4', '2026-11-01', 'P1', '', 'Sem NF', '', 'Sem nota', 'SN-4')
+];
+
+function setupEq(rows, extra) {
+  const ctx = setup([], null, extra);
+  const eqSheet = new FakeSheet(EQP, [Array.from(ctx.server.EQUIPAMENTOS_HEADERS_), ...rows]);
+  ctx.ss.sheets[EQP] = eqSheet;
+  return Object.assign(ctx, { eqSheet });
+}
+
+test('equipamentos: notas agrupadas da aba de equipamentos, com série nos itens e controle próprio', () => {
+  const { server, ss } = setupEq(EQ_BASE);
+  const notas = Array.from(server.getEquipamentosNotasFiscais().notas);
+  assert.deepEqual(notas.map((n) => n.chave), ['555|FISHER', '777|MARKEN']);
+  assert.equal(notas[0].itens.length, 2);
+  assert.equal(notas[0].itens[0].serie, 'SN-1');
+  assert.equal(notas[0].situacao, 'rm_pendente');
+  assert.equal(notas[1].movimentoRm, '900');
+  assert.equal(Array.from(server.getMedicamentosNotasFiscais().notas).length, 0, 'medicamentos não misturam equipamentos');
+  assert.equal(ss.getSheetByName('Equipamentos_NF'), null, 'leitura não cria a aba de controle');
+  assert.throws(() => server.marcarNotasFiscaisEnviadas({ tipo: 'outro', chaves: ['777|MARKEN'] }), /Tipo de nota fiscal inválido/);
+});
+
+test('equipamentos: movimento RM grava nas colunas de Registro no RM e Movimento da aba de equipamentos', () => {
+  const { server, eqSheet } = setupEq(EQ_BASE);
+  const r = server.salvarMovimentoRmNotaFiscal({ tipo: 'equipamentos', chave: '555|FISHER', movimentoRm: '1200', movimentosAtuais: '' });
+  assert.equal(r.itens, 2);
+  for (const row of [2, 3]) {
+    assert.equal(eqSheet.rows[row - 1][4], 'Sim');
+    assert.equal(eqSheet.rows[row - 1][7], '1200');
+    assert.equal(eqSheet.rows[row - 1][3], 'Sim', 'Cadastro na UCS intacto');
+  }
+  assert.equal(eqSheet.rows[3][7], '900', 'outras notas intactas');
+  assert.throws(() => server.salvarMovimentoRmNotaFiscal({ chave: '555|FISHER', movimentoRm: '1', movimentosAtuais: '' }), /não foi encontrada/, 'sem tipo vale Medicamentos');
+});
+
+test('equipamentos: PDF vai para a pasta própria e o e-mail usa assunto e texto de equipamentos', () => {
+  const abertas = [];
+  const created = [];
+  const drafts = [];
+  const blob = (id) => ({ id, name: '', getBytes: () => [1], setName(n) { this.name = n; return this; } });
+  const { server, ss, effects } = setupEq(EQ_BASE, {
+    DriveApp: {
+      getFolderById: (id) => { abertas.push(id); return { createFile: (b) => { created.push(b); return { getId: () => 'eq-file', getName: () => b.name }; } }; },
+      getFileById: (id) => ({ getBlob: () => blob(id) })
+    },
+    GmailApp: { createDraft: (to, subject, body, options) => { drafts.push({ to, subject, body, options }); return { getId: () => 'draft-eq' }; } }
+  });
+  effects.scriptProps.MED_NF_PASTA_ID = '13RQvz2lP7BcIHER5U0FW2Bp-pcmnSMIJ';
+  effects.scriptProps.EQP_NF_PASTA_ID = 'https://drive.google.com/drive/folders/1OmuqRoLrEiOeQfuh5DHokFreMuTVTguX?usp=drive_link';
+  const grupos = [];
+  server.getConfigAppValuesByKeys_ = (g) => { grupos.push(g[0]); return []; };
+  server.anexarPdfNotaFiscal({ tipo: 'equipamentos', chave: '777|MARKEN', conteudoBase64: Buffer.from('%PDF-1.4').toString('base64') });
+  assert.deepEqual(abertas, ['1OmuqRoLrEiOeQfuh5DHokFreMuTVTguX']);
+  assert.deepEqual(grupos, ['Equipamentos']);
+  assert.match(created[0].name, /^NF 777 - Marken/);
+  assert.equal(ss.getSheetByName('Medicamentos_NF'), null);
+  const meta = ss.getSheetByName('Equipamentos_NF').rows;
+  assert.deepEqual(meta[0], Array.from(server.MED_NF_HEADERS_));
+  assert.equal(meta[1][3], 'eq-file');
+
+  server.prepararEmailNotasFiscais({ tipo: 'equipamentos', chaves: ['777|MARKEN'], destinatarios: 'financeiro@ucs.br' });
+  const d = drafts[0];
+  assert.equal(d.subject, 'IPS - NOTAS FISCAIS - REMESSA EQUIPAMENTOS');
+  assert.equal(d.options.cc, 'ips@ucs.br');
+  assert.match(d.body, /notas fiscais de equipamentos recebidos/);
+  assert.match(d.body, /NF 777 - Movimento 900/);
+  assert.equal(effects.props.EQP_NF_ULTIMOS_DESTINATARIOS, 'financeiro@ucs.br');
+  assert.equal(effects.props.MED_NF_ULTIMOS_DESTINATARIOS, undefined);
+  const nota = Array.from(server.getEquipamentosNotasFiscais().notas).find((n) => n.chave === '777|MARKEN');
+  assert.equal(nota.situacao, 'concluida');
 });

@@ -25,7 +25,7 @@ const NOTAS = [
   nota('555|E', 'concluida', { pdfId: 'pdf-555', emailPreparadoEm: '10/11/2026 10:00' })
 ];
 
-async function fixture(browser, width) {
+async function fixture(browser, width, pagina) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -42,6 +42,7 @@ async function fixture(browser, width) {
     function snackErro(message){snacks.push('erro:'+appErrorMessage(message));}
     function projetoChip(p){return '<span class="chip chip-blue">'+esc(p)+'</span>';}
     function carregarMedicamentos(){}
+    var recargasEquip=0; function carregarEquipamentos(){recargasEquip++;}
     var APP_ACCESSIBLE_DIALOGS=[], APP_CONTENT_ACCESSIBILITY_READY=false, APP_UNSAVED_SCOPES={}, APP_UNSAVED_ON_CANCEL=null;
     function esc(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
     function appErrorMessage(error){return error && error.message || String(error);}
@@ -58,7 +59,7 @@ async function fixture(browser, width) {
     appInitContentAccessibility();
   ` });
   await page.addScriptTag({ content: readProjectFile('IndexMedicamentosNfScripts.html').replace(/^\s*<script>\s*/i, '').replace(/\s*<\/script>\s*$/i, '') });
-  await page.evaluate(() => { document.getElementById('page-medicamentos').classList.add('active'); });
+  await page.evaluate((id) => { document.getElementById(id).classList.add('active'); }, pagina || 'page-medicamentos');
   return { page, errors };
 }
 
@@ -84,7 +85,7 @@ test('notas fiscais: filtros, movimento, seleção e rascunho do e-mail em deskt
       await page.locator('#modalMedNfMovimento').getByLabel(/Movimento RM/).fill('703');
       await page.locator('#btnMedNfSalvarMov').click();
       const mov = await page.evaluate(() => window.pending.filter((p) => p.method === 'salvarMovimentoRmNotaFiscal').at(-1).args[0]);
-      assert.deepEqual(mov, { chave: '111|A', movimentoRm: '703', movimentosAtuais: '' });
+      assert.deepEqual(mov, { tipo: 'medicamentos', chave: '111|A', movimentoRm: '703', movimentosAtuais: '' });
       await page.evaluate(() => window.pending.filter((p) => p.method === 'salvarMovimentoRmNotaFiscal').at(-1).failure({ message: 'O movimento desta nota mudou. Atualize a lista antes de salvar.' }));
       assert.match(await page.locator('#statusMedNfMov').innerText(), /mudou/);
       await page.locator('#modalMedNfMovimento .modal-close').click();
@@ -104,7 +105,7 @@ test('notas fiscais: filtros, movimento, seleção e rascunho do e-mail em deskt
       await page.screenshot({ animations: 'disabled', path: path.join(artifacts, 'medicamentos-nf-email-' + width + '.png') });
       await page.locator('#btnMedNfCriarRascunho').click();
       const email = await page.evaluate(() => window.pending.filter((p) => p.method === 'prepararEmailNotasFiscais').at(-1).args[0]);
-      assert.deepEqual(email, { chaves: ['333|C', '444|D'], destinatarios: 'financeiro@ucs.br' });
+      assert.deepEqual(email, { tipo: 'medicamentos', chaves: ['333|C', '444|D'], destinatarios: 'financeiro@ucs.br' });
       await responder(page, 'prepararEmailNotasFiscais', { ok: true, message: 'Rascunho criado no Gmail com 2 notas fiscais.' });
       assert.equal(await page.locator('#modalMedNfEmail').evaluate((el) => el.classList.contains('open')), false);
       assert.match(await page.locator('#medNfSelecaoInfo').innerText(), /Nenhuma/);
@@ -132,7 +133,67 @@ test('notas fiscais: filtros, movimento, seleção e rascunho do e-mail em deskt
       await page.waitForFunction(() => window.pending.some((p) => p.method === 'anexarPdfNotaFiscal'));
       const anexo = await page.evaluate(() => window.pending.filter((p) => p.method === 'anexarPdfNotaFiscal').at(-1).args[0]);
       assert.equal(anexo.chave, '222|B');
+      assert.equal(anexo.tipo, 'medicamentos');
       assert.equal(Buffer.from(anexo.conteudoBase64, 'base64').toString(), '%PDF-1.4');
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('notas fiscais de equipamentos: lista própria, série nos itens e tipo enviado ao servidor', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    for (const width of [1440, 390]) {
+      const { page, errors } = await fixture(browser, width, 'page-equipamentos');
+      const eqNotas = [
+        nota('901|F', 'rm_pendente', { movimentos: [], movimentoRm: '', rmPendente: true, itens: [{ descricao: 'Centrífuga', quantidade: 1, serie: 'SN-77' }] }),
+        nota('902|G', 'pronta', { pdfId: 'pdf-902', movimentos: ['950'], movimentoRm: '950', itens: [{ descricao: 'Freezer', quantidade: 1, serie: 'SN-78' }] })
+      ];
+      await page.locator('#page-equipamentos').getByRole('button', { name: /Notas fiscais/ }).click();
+      assert.equal(await page.evaluate(() => window.pending.some((p) => p.method === 'getMedicamentosNotasFiscais')), false);
+      await responder(page, 'getEquipamentosNotasFiscais', { notas: eqNotas, copiaFixa: 'ips@ucs.br', ultimosDestinatarios: 'patrimonio@ucs.br' });
+      assert.equal(await page.locator('#eqItensView').isHidden(), true);
+      assert.equal(await page.locator('#bodyEqNotas tr').count(), 1);
+      assert.equal(await page.locator('#eqNfPendentesCount').innerText(), '1');
+      assert.equal(await page.locator('#bodyMedNotas tr.empty-row').count(), 0, 'lista de medicamentos não é tocada');
+
+      await page.getByRole('button', { name: 'Informar movimento RM da NF 901' }).click();
+      assert.match(await page.locator('#medNfMovItens').innerText(), /série SN-77/);
+      await page.locator('#modalMedNfMovimento').getByLabel(/Movimento RM/).fill('951');
+      await page.locator('#btnMedNfSalvarMov').click();
+      const mov = await page.evaluate(() => window.pending.filter((p) => p.method === 'salvarMovimentoRmNotaFiscal').at(-1).args[0]);
+      assert.deepEqual(mov, { tipo: 'equipamentos', chave: '901|F', movimentoRm: '951', movimentosAtuais: '' });
+      await responder(page, 'salvarMovimentoRmNotaFiscal', { ok: true, message: 'ok' });
+      assert.equal(await page.evaluate(() => window.recargasEquip), 1);
+      assert.equal(await page.evaluate(() => window.pending.filter((p) => p.method === 'getEquipamentosNotasFiscais').length), 2);
+      await responder(page, 'getEquipamentosNotasFiscais', { notas: eqNotas, ultimosDestinatarios: 'patrimonio@ucs.br' });
+
+      await page.locator('[data-eq-nf-filtro="pronta"]').click();
+      await page.getByLabel('Selecionar todas as notas de equipamentos listadas').check();
+      await page.locator('#btnEqNfPrepararEmail').click();
+      assert.equal(await page.locator('#medNfEmailPara').inputValue(), 'patrimonio@ucs.br');
+      assert.equal(await page.locator('#medNfEmailPreview').innerText(), 'NF 902 - Movimento 950');
+      await page.locator('#btnMedNfCriarRascunho').click();
+      const email = await page.evaluate(() => window.pending.filter((p) => p.method === 'prepararEmailNotasFiscais').at(-1).args[0]);
+      assert.deepEqual(email, { tipo: 'equipamentos', chaves: ['902|G'], destinatarios: 'patrimonio@ucs.br' });
+      await responder(page, 'prepararEmailNotasFiscais', { ok: true, message: 'Rascunho criado.' });
+
+      await page.locator('[data-eq-nf-filtro="todas"]').click();
+      await page.locator('#page-equipamentos').getByRole('button', { name: /Anexar PDFs/ }).click();
+      await page.locator('#medNfPdfsInput').setInputFiles([{ name: 'NF 901.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') }]);
+      assert.equal(await page.locator('[data-med-nf-arquivo="0"]').inputValue(), '901|F');
+      await page.locator('#btnMedNfAnexar').click();
+      await page.waitForFunction(() => window.pending.some((p) => p.method === 'anexarPdfNotaFiscal'));
+      const anexo = await page.evaluate(() => window.pending.filter((p) => p.method === 'anexarPdfNotaFiscal').at(-1).args[0]);
+      assert.equal(anexo.tipo, 'equipamentos');
+      assert.equal(anexo.chave, '901|F');
+      const artifacts = process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright');
+      fs.mkdirSync(artifacts, { recursive: true });
+      await page.screenshot({ animations: 'disabled', path: path.join(artifacts, 'equipamentos-nf-lista-' + width + '.png') });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
       assert.deepEqual(errors, []);
       await page.close();
     }

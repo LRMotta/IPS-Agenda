@@ -1,12 +1,34 @@
 <script>
-// Medicamentos > Notas fiscais: movimento RM por nota, PDF digitalizado e rascunho do e-mail com NFs e movimentos.
-var _medNfNotas = [];
-var _medNfFiltro = 'rm_pendente';
-var _medNfSelecionadas = {};
-var _medNfCarregamento = 0;
+// Notas fiscais de Medicamentos e de Equipamentos: movimento RM por nota, PDF digitalizado e rascunho do e-mail.
+// Cada cadastro tem a própria lista (contexto); os modais de movimento, PDFs e e-mail são compartilhados e
+// operam sobre o contexto que os abriu.
+var MED_NF_CONTEXTOS = {
+  medicamentos: {
+    tipo: 'medicamentos', attr: 'med',
+    viewItens: 'medItensView', viewNotas: 'medNotasView', btnItens: 'medViewItens', btnNotas: 'medViewNotas',
+    body: 'bodyMedNotas', busca: 'searchMedNotas', countPrefixo: 'medNfCount_', pendentes: 'medNfPendentesCount',
+    selecaoInfo: 'medNfSelecaoInfo', btnEmail: 'btnMedNfPrepararEmail', btnMarcar: 'btnMedNfMarcarEnviadas',
+    selecionarTodas: 'medNfSelecionarTodas', campoIdentificador: 'lote', rotuloIdentificador: 'lote',
+    recarregarItens: function() { if (typeof carregarMedicamentos === 'function') carregarMedicamentos(true); },
+    notas: [], filtro: 'rm_pendente', selecionadas: {}, carregamento: 0, ultimosDestinatarios: ''
+  },
+  equipamentos: {
+    tipo: 'equipamentos', attr: 'eq',
+    viewItens: 'eqItensView', viewNotas: 'eqNotasView', btnItens: 'eqViewItens', btnNotas: 'eqViewNotas',
+    body: 'bodyEqNotas', busca: 'searchEqNotas', countPrefixo: 'eqNfCount_', pendentes: 'eqNfPendentesCount',
+    selecaoInfo: 'eqNfSelecaoInfo', btnEmail: 'btnEqNfPrepararEmail', btnMarcar: 'btnEqNfMarcarEnviadas',
+    selecionarTodas: 'eqNfSelecionarTodas', campoIdentificador: 'serie', rotuloIdentificador: 'série',
+    recarregarItens: function() { if (typeof carregarEquipamentos === 'function') carregarEquipamentos(true); },
+    notas: [], filtro: 'rm_pendente', selecionadas: {}, carregamento: 0, ultimosDestinatarios: ''
+  }
+};
 var _medNfMovAtual = null;
+var _medNfMovCtx = null;
 var _medNfArquivos = [];
 var _medNfArquivoNotaFixa = '';
+var _medNfArquivosCtx = null;
+var _medNfEmailCtx = null;
+var _medNfEmailParaTipo = '';
 var MED_NF_SITUACOES = {
   rm_pendente: { rotulo: 'RM pendente', chip: 'chip-red' },
   falta_pdf: { rotulo: 'Falta PDF', chip: 'chip-yellow' },
@@ -14,83 +36,98 @@ var MED_NF_SITUACOES = {
   concluida: { rotulo: 'Enviada', chip: 'chip-green' }
 };
 
-function medSetView(view) {
+function medNfCtx(tipo) {
+  return MED_NF_CONTEXTOS[tipo] || MED_NF_CONTEXTOS.medicamentos;
+}
+
+function medNfSetViewCtx(ctx, view) {
   var notas = view === 'notas';
-  document.getElementById('medItensView').hidden = notas;
-  document.getElementById('medNotasView').hidden = !notas;
-  [['medViewItens', !notas], ['medViewNotas', notas]].forEach(function(par) {
+  document.getElementById(ctx.viewItens).hidden = notas;
+  document.getElementById(ctx.viewNotas).hidden = !notas;
+  [[ctx.btnItens, !notas], [ctx.btnNotas, notas]].forEach(function(par) {
     var btn = document.getElementById(par[0]);
     btn.classList.toggle('active', par[1]);
     btn.setAttribute('aria-pressed', par[1] ? 'true' : 'false');
   });
   // Itens editados na outra aba mudam as notas: sempre relê ao abrir.
-  if (notas) medNfCarregar();
+  if (notas) medNfCarregar(ctx.tipo);
 }
 
-function medNfCarregar() {
-  var geracao = ++_medNfCarregamento;
-  var tb = document.getElementById('bodyMedNotas');
-  if (tb && !_medNfNotas.length) tb.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>';
-  appServerRun({
-    method: 'getMedicamentosNotasFiscais',
+function medSetView(view) { medNfSetViewCtx(MED_NF_CONTEXTOS.medicamentos, view); }
+function eqSetView(view) { medNfSetViewCtx(MED_NF_CONTEXTOS.equipamentos, view); }
+
+function medNfCarregar(tipo) {
+  var ctx = medNfCtx(tipo);
+  var geracao = ++ctx.carregamento;
+  var tb = document.getElementById(ctx.body);
+  if (tb && !ctx.notas.length) tb.innerHTML = '<tr class="loading-row"><td colspan="9"><div class="spinner"></div>Carregando…</td></tr>';
+  var opcoes = {
     args: [],
     onSuccess: function(res) {
-      if (geracao !== _medNfCarregamento) return;
+      if (geracao !== ctx.carregamento) return;
       res = res || {};
-      _medNfNotas = res.notas || [];
+      ctx.notas = res.notas || [];
+      ctx.ultimosDestinatarios = res.ultimosDestinatarios || '';
       var existentes = {};
-      _medNfNotas.forEach(function(n) { existentes[n.chave] = true; });
-      Object.keys(_medNfSelecionadas).forEach(function(chave) { if (!existentes[chave]) delete _medNfSelecionadas[chave]; });
-      var para = document.getElementById('medNfEmailPara');
-      if (para && !para.value && res.ultimosDestinatarios) para.value = res.ultimosDestinatarios;
-      medNfRender();
+      ctx.notas.forEach(function(n) { existentes[n.chave] = true; });
+      Object.keys(ctx.selecionadas).forEach(function(chave) { if (!existentes[chave]) delete ctx.selecionadas[chave]; });
+      medNfRender(ctx.tipo);
     },
     onFailure: function(e) {
-      if (geracao !== _medNfCarregamento) return;
+      if (geracao !== ctx.carregamento) return;
       if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="9">Erro: ' + esc(appErrorMessage(e)) + '</td></tr>';
     }
-  });
+  };
+  if (ctx.tipo === 'equipamentos') appServerRun(Object.assign({ method: 'getEquipamentosNotasFiscais' }, opcoes));
+  else appServerRun(Object.assign({ method: 'getMedicamentosNotasFiscais' }, opcoes));
 }
 
-function medNfSetFiltro(filtro) {
-  _medNfFiltro = filtro;
-  document.querySelectorAll('[data-med-nf-filtro]').forEach(function(btn) {
-    var ativo = btn.getAttribute('data-med-nf-filtro') === filtro;
+function medNfSetFiltro(filtro, tipo) {
+  var ctx = medNfCtx(tipo);
+  ctx.filtro = filtro;
+  document.querySelectorAll('[data-' + ctx.attr + '-nf-filtro]').forEach(function(btn) {
+    var ativo = btn.getAttribute('data-' + ctx.attr + '-nf-filtro') === filtro;
     btn.classList.toggle('active', ativo);
     btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
   });
-  medNfRender();
+  medNfRender(ctx.tipo);
 }
 
 function medNfNumero(texto) {
   return String(texto == null ? '' : texto).replace(/\D/g, '').replace(/^0+/, '');
 }
 
-function medNfBusca(nota) {
-  return [nota.notaFiscal, nota.remetente, (nota.projetos || []).join(' '), (nota.movimentos || []).join(' '),
-    (nota.itens || []).map(function(i) { return i.descricao + ' ' + i.lote; }).join(' ')].join(' ').toLowerCase();
+function medNfItemIdentificador(ctx, item) {
+  return String((item && item[ctx.campoIdentificador]) || '');
 }
 
-function medNfVisiveis() {
-  var q = ((document.getElementById('searchMedNotas') || {}).value || '').toLowerCase().trim();
-  return _medNfNotas.filter(function(n) {
-    if (_medNfFiltro !== 'todas' && n.situacao !== _medNfFiltro) return false;
-    return !q || medNfBusca(n).indexOf(q) >= 0;
+function medNfBusca(ctx, nota) {
+  return [nota.notaFiscal, nota.remetente, (nota.projetos || []).join(' '), (nota.movimentos || []).join(' '),
+    (nota.itens || []).map(function(i) { return i.descricao + ' ' + medNfItemIdentificador(ctx, i); }).join(' ')].join(' ').toLowerCase();
+}
+
+function medNfVisiveis(ctx) {
+  var q = ((document.getElementById(ctx.busca) || {}).value || '').toLowerCase().trim();
+  return ctx.notas.filter(function(n) {
+    if (ctx.filtro !== 'todas' && n.situacao !== ctx.filtro) return false;
+    return !q || medNfBusca(ctx, n).indexOf(q) >= 0;
   });
 }
 
-function medNfRender() {
-  var contagem = { rm_pendente: 0, falta_pdf: 0, pronta: 0, concluida: 0, todas: _medNfNotas.length };
-  _medNfNotas.forEach(function(n) { contagem[n.situacao] = (contagem[n.situacao] || 0) + 1; });
+function medNfRender(tipo) {
+  var ctx = medNfCtx(tipo);
+  var contagem = { rm_pendente: 0, falta_pdf: 0, pronta: 0, concluida: 0, todas: ctx.notas.length };
+  ctx.notas.forEach(function(n) { contagem[n.situacao] = (contagem[n.situacao] || 0) + 1; });
   Object.keys(contagem).forEach(function(k) {
-    var el = document.getElementById('medNfCount_' + k);
+    var el = document.getElementById(ctx.countPrefixo + k);
     if (el) el.textContent = contagem[k] ? String(contagem[k]) : '';
   });
-  var pend = document.getElementById('medNfPendentesCount');
+  var pend = document.getElementById(ctx.pendentes);
   if (pend) pend.textContent = contagem.rm_pendente ? String(contagem.rm_pendente) : '';
-  var tb = document.getElementById('bodyMedNotas');
+  var tb = document.getElementById(ctx.body);
   if (!tb) return;
-  var lista = medNfVisiveis();
+  var lista = medNfVisiveis(ctx);
+  var checkAttr = 'data-' + ctx.attr + '-nf-check';
   if (!lista.length) {
     tb.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhuma nota fiscal nesta situação.</td></tr>';
   } else {
@@ -100,7 +137,7 @@ function medNfRender() {
       var movimento = n.movimentos && n.movimentos.length ? n.movimentos.join(' / ') : '—';
       var aviso = n.movimentosDivergentes ? 'Movimentos diferentes entre os itens' : (n.rmPendente && n.movimentos.length ? 'Há itens sem movimento' : '');
       return '<tr>'
-        + '<td><input type="checkbox" data-med-nf-check="' + index + '"' + (_medNfSelecionadas[n.chave] ? ' checked' : '') + ' aria-label="Selecionar NF ' + esc(n.notaFiscal) + '"></td>'
+        + '<td><input type="checkbox" ' + checkAttr + '="' + index + '"' + (ctx.selecionadas[n.chave] ? ' checked' : '') + ' aria-label="Selecionar NF ' + esc(n.notaFiscal) + '"></td>'
         + '<td><div class="row-name">NF ' + esc(n.notaFiscal) + '</div><div class="med-nf-sub">' + esc(n.remetente || '—') + '</div></td>'
         + '<td>' + (n.projetos || []).map(function(p) { return projetoChip(p); }).join(' ') + '</td>'
         + '<td title="' + esc((n.itens || []).map(function(i) { return i.descricao + (i.quantidade !== '' ? ' (' + i.quantidade + ')' : ''); }).join('\n')) + '">' + (n.itens || []).length + '</td>'
@@ -115,58 +152,62 @@ function medNfRender() {
         + '</tr>';
     }).join('');
     bindTableRecordActions(tb, lista, {
-      movimento: function(nota) { medNfAbrirMovimento(nota); },
-      pdf: function(nota) { medNfAbrirAnexos(nota); }
+      movimento: function(nota) { medNfAbrirMovimento(nota, ctx.tipo); },
+      pdf: function(nota) { medNfAbrirAnexos(nota, ctx.tipo); }
     });
-    tb.querySelectorAll('[data-med-nf-check]').forEach(function(box) {
+    tb.querySelectorAll('[' + checkAttr + ']').forEach(function(box) {
       box.addEventListener('change', function() {
-        var nota = lista[Number(box.getAttribute('data-med-nf-check'))];
+        var nota = lista[Number(box.getAttribute(checkAttr))];
         if (!nota) return;
-        if (box.checked) _medNfSelecionadas[nota.chave] = true;
-        else delete _medNfSelecionadas[nota.chave];
-        medNfAtualizarSelecao();
+        if (box.checked) ctx.selecionadas[nota.chave] = true;
+        else delete ctx.selecionadas[nota.chave];
+        medNfAtualizarSelecao(ctx);
       });
     });
   }
-  medNfAtualizarSelecao();
+  medNfAtualizarSelecao(ctx);
 }
 
-function medNfSelecionadasLista() {
-  return _medNfNotas.filter(function(n) { return _medNfSelecionadas[n.chave]; });
+function medNfSelecionadasLista(ctx) {
+  return ctx.notas.filter(function(n) { return ctx.selecionadas[n.chave]; });
 }
 
 function medNfProntaParaEmail(nota) {
   return !nota.rmPendente && !nota.movimentosDivergentes && !!nota.pdfId;
 }
 
-function medNfAtualizarSelecao() {
-  var selecionadas = medNfSelecionadasLista();
-  var info = document.getElementById('medNfSelecaoInfo');
+function medNfAtualizarSelecao(ctx) {
+  var selecionadas = medNfSelecionadasLista(ctx);
+  var info = document.getElementById(ctx.selecaoInfo);
   if (info) info.textContent = selecionadas.length ? (selecionadas.length === 1 ? '1 nota selecionada.' : selecionadas.length + ' notas selecionadas.') : 'Nenhuma nota selecionada.';
-  var email = document.getElementById('btnMedNfPrepararEmail');
+  var email = document.getElementById(ctx.btnEmail);
   if (email) email.disabled = !selecionadas.length || !selecionadas.every(medNfProntaParaEmail);
-  var marcar = document.getElementById('btnMedNfMarcarEnviadas');
+  var marcar = document.getElementById(ctx.btnMarcar);
   if (marcar) marcar.disabled = !selecionadas.length || selecionadas.some(function(n) { return n.rmPendente; });
-  var todas = document.getElementById('medNfSelecionarTodas');
+  var todas = document.getElementById(ctx.selecionarTodas);
   if (todas) {
-    var visiveis = medNfVisiveis();
-    todas.checked = !!visiveis.length && visiveis.every(function(n) { return _medNfSelecionadas[n.chave]; });
+    var visiveis = medNfVisiveis(ctx);
+    todas.checked = !!visiveis.length && visiveis.every(function(n) { return ctx.selecionadas[n.chave]; });
   }
 }
 
-function medNfSelecionarTodas(marcar) {
-  medNfVisiveis().forEach(function(n) {
-    if (marcar) _medNfSelecionadas[n.chave] = true;
-    else delete _medNfSelecionadas[n.chave];
+function medNfSelecionarTodas(marcar, tipo) {
+  var ctx = medNfCtx(tipo);
+  medNfVisiveis(ctx).forEach(function(n) {
+    if (marcar) ctx.selecionadas[n.chave] = true;
+    else delete ctx.selecionadas[n.chave];
   });
-  medNfRender();
+  medNfRender(ctx.tipo);
 }
 
-function medNfAbrirMovimento(nota) {
+function medNfAbrirMovimento(nota, tipo) {
+  var ctx = medNfCtx(tipo);
   _medNfMovAtual = nota;
+  _medNfMovCtx = ctx;
   document.getElementById('medNfMovSub').textContent = 'NF ' + nota.notaFiscal + ' · ' + (nota.remetente || 'sem remetente');
   document.getElementById('medNfMovItens').innerHTML = (nota.itens || []).map(function(i) {
-    return '<li>' + esc(i.descricao || '—') + (i.quantidade !== '' ? ' · ' + esc(i.quantidade) : '') + (i.lote ? ' · lote ' + esc(i.lote) : '') + '</li>';
+    var identificador = medNfItemIdentificador(ctx, i);
+    return '<li>' + esc(i.descricao || '—') + (i.quantidade !== '' ? ' · ' + esc(i.quantidade) : '') + (identificador ? ' · ' + ctx.rotuloIdentificador + ' ' + esc(identificador) : '') + '</li>';
   }).join('');
   document.getElementById('medNfMovAviso').textContent = nota.movimentosDivergentes
     ? 'Os itens têm movimentos diferentes (' + nota.movimentos.join(' / ') + '). O valor salvo substituirá todos.' : '';
@@ -179,6 +220,7 @@ function medNfAbrirMovimento(nota) {
 
 function medNfSalvarMovimento() {
   var nota = _medNfMovAtual;
+  var ctx = _medNfMovCtx || MED_NF_CONTEXTOS.medicamentos;
   var input = document.getElementById('medNfMovInput');
   var movimento = input.value.trim();
   if (!nota) return;
@@ -192,14 +234,14 @@ function medNfSalvarMovimento() {
   appSetStatus('statusMedNfMov', 'Salvando...');
   appServerRun({
     method: 'salvarMovimentoRmNotaFiscal',
-    args: [{ chave: nota.chave, movimentoRm: movimento, movimentosAtuais: (nota.movimentos || []).join(' / ') }],
+    args: [{ tipo: ctx.tipo, chave: nota.chave, movimentoRm: movimento, movimentosAtuais: (nota.movimentos || []).join(' / ') }],
     onSuccess: function(r) {
       appSetButtonBusy(btn, false);
       appSetStatus('statusMedNfMov', '');
       fecharOverlay('modalMedNfMovimento');
       snack((r && r.message) || 'Movimento registrado.');
-      medNfCarregar();
-      if (typeof carregarMedicamentos === 'function') carregarMedicamentos(true);
+      medNfCarregar(ctx.tipo);
+      ctx.recarregarItens();
     },
     onFailure: function(e) {
       appSetButtonBusy(btn, false);
@@ -209,9 +251,9 @@ function medNfSalvarMovimento() {
 }
 
 // Escolhe a nota pelo número no nome do arquivo; prefere notas sem PDF entre as que não foram enviadas.
-function medNfSugerirNota(nomeArquivo) {
+function medNfSugerirNota(ctx, nomeArquivo) {
   var numeros = (String(nomeArquivo || '').match(/\d{3,}/g) || []).map(medNfNumero);
-  var candidatas = _medNfNotas.filter(function(n) { return numeros.indexOf(n.chave.split('|')[0]) >= 0; });
+  var candidatas = ctx.notas.filter(function(n) { return numeros.indexOf(n.chave.split('|')[0]) >= 0; });
   if (candidatas.length > 1) {
     var abertas = candidatas.filter(function(n) { return n.situacao !== 'concluida' && !n.pdfId; });
     if (abertas.length === 1) return abertas[0].chave;
@@ -219,14 +261,15 @@ function medNfSugerirNota(nomeArquivo) {
   return candidatas.length === 1 ? candidatas[0].chave : '';
 }
 
-function medNfOpcoesNota(selecionada) {
-  var opcoes = _medNfNotas.filter(function(n) { return n.situacao !== 'concluida' || n.chave === selecionada; });
+function medNfOpcoesNota(ctx, selecionada) {
+  var opcoes = ctx.notas.filter(function(n) { return n.situacao !== 'concluida' || n.chave === selecionada; });
   return '<option value="">— Escolha a nota —</option>' + opcoes.map(function(n) {
     return '<option value="' + esc(n.chave) + '"' + (n.chave === selecionada ? ' selected' : '') + '>NF ' + esc(n.notaFiscal) + ' · ' + esc(n.remetente || '—') + (n.pdfId ? ' (substitui PDF)' : '') + '</option>';
   }).join('');
 }
 
-function medNfAbrirAnexos(nota) {
+function medNfAbrirAnexos(nota, tipo) {
+  _medNfArquivosCtx = medNfCtx(tipo);
   _medNfArquivos = [];
   _medNfArquivoNotaFixa = nota && nota.chave ? nota.chave : '';
   var input = document.getElementById('medNfPdfsInput');
@@ -240,19 +283,21 @@ function medNfAbrirAnexos(nota) {
 }
 
 function medNfArquivosSelecionados(files) {
+  var ctx = _medNfArquivosCtx || MED_NF_CONTEXTOS.medicamentos;
   appFilePickerSync('medNfPdfsInput');
   _medNfArquivos = Array.prototype.slice.call(files || []).map(function(file) {
-    return { file: file, chave: _medNfArquivoNotaFixa || medNfSugerirNota(file.name), status: '' };
+    return { file: file, chave: _medNfArquivoNotaFixa || medNfSugerirNota(ctx, file.name), status: '' };
   });
   medNfRenderArquivos();
 }
 
 function medNfRenderArquivos() {
+  var ctx = _medNfArquivosCtx || MED_NF_CONTEXTOS.medicamentos;
   var tb = document.getElementById('medNfPdfsLista');
   tb.innerHTML = _medNfArquivos.map(function(item, index) {
     var grande = item.file.size > 10 * 1024 * 1024;
     return '<tr><td>' + esc(item.file.name) + (grande ? '<div class="med-nf-alerta">Maior que 10 MB</div>' : '') + '</td>'
-      + '<td style="width:55%"><select class="f-input f-select" data-med-nf-arquivo="' + index + '" aria-label="Nota fiscal do arquivo ' + esc(item.file.name) + '"' + (_medNfArquivoNotaFixa ? ' disabled' : '') + '>' + medNfOpcoesNota(item.chave) + '</select>'
+      + '<td style="width:55%"><select class="f-input f-select" data-med-nf-arquivo="' + index + '" aria-label="Nota fiscal do arquivo ' + esc(item.file.name) + '"' + (_medNfArquivoNotaFixa ? ' disabled' : '') + '>' + medNfOpcoesNota(ctx, item.chave) + '</select>'
       + (item.status ? '<div class="med-nf-sub">' + esc(item.status) + '</div>' : '') + '</td></tr>';
   }).join('');
   tb.querySelectorAll('[data-med-nf-arquivo]').forEach(function(sel) {
@@ -272,6 +317,7 @@ function medNfLerBase64(file, onOk, onErro) {
 }
 
 function medNfAnexarArquivos() {
+  var ctx = _medNfArquivosCtx || MED_NF_CONTEXTOS.medicamentos;
   var pendentes = _medNfArquivos.filter(function(item) { return !item.enviado; });
   var semNota = pendentes.filter(function(item) { return !item.chave; });
   if (semNota.length) {
@@ -298,7 +344,7 @@ function medNfAnexarArquivos() {
       appSetButtonBusy(btn, false);
       medNfRenderArquivos();
       appSetStatus('statusMedNfPdfs', feitos + ' de ' + pendentes.length + ' PDF(s) anexado(s).' + (falhas ? ' Confira os erros na lista.' : ''), falhas ? '#e53935' : '');
-      medNfCarregar();
+      medNfCarregar(ctx.tipo);
       if (!falhas) {
         fecharOverlay('modalMedNfPdfs');
         snack(feitos === 1 ? 'PDF anexado.' : feitos + ' PDFs anexados.');
@@ -310,7 +356,7 @@ function medNfAnexarArquivos() {
     medNfLerBase64(item.file, function(base64) {
       appServerRun({
         method: 'anexarPdfNotaFiscal',
-        args: [{ chave: item.chave, conteudoBase64: base64 }],
+        args: [{ tipo: ctx.tipo, chave: item.chave, conteudoBase64: base64 }],
         onSuccess: function() { item.enviado = true; item.status = 'Anexado.'; feitos++; proximo(i + 1); },
         onFailure: function(e) { item.status = 'Erro: ' + appErrorMessage(e); falhas++; proximo(i + 1); }
       });
@@ -319,9 +365,16 @@ function medNfAnexarArquivos() {
   proximo(0);
 }
 
-function medNfAbrirEmail() {
-  var selecionadas = medNfSelecionadasLista();
+function medNfAbrirEmail(tipo) {
+  var ctx = medNfCtx(tipo);
+  var selecionadas = medNfSelecionadasLista(ctx);
   if (!selecionadas.length || !selecionadas.every(medNfProntaParaEmail)) return;
+  _medNfEmailCtx = ctx;
+  // Cada cadastro lembra os próprios destinatários; ao trocar de cadastro, o campo recomeça.
+  var para = document.getElementById('medNfEmailPara');
+  if (_medNfEmailParaTipo !== ctx.tipo) para.value = ctx.ultimosDestinatarios || '';
+  else if (!para.value) para.value = ctx.ultimosDestinatarios || '';
+  _medNfEmailParaTipo = ctx.tipo;
   var jaPreparadas = selecionadas.filter(function(n) { return n.situacao === 'concluida'; }).length;
   document.getElementById('medNfEmailSub').textContent = selecionadas.length + (selecionadas.length === 1 ? ' nota fiscal' : ' notas fiscais') +
     (jaPreparadas ? ' · ' + jaPreparadas + ' já enviada(s) antes' : '');
@@ -334,7 +387,8 @@ function medNfAbrirEmail() {
 }
 
 function medNfPrepararEmail() {
-  var selecionadas = medNfSelecionadasLista();
+  var ctx = _medNfEmailCtx || MED_NF_CONTEXTOS.medicamentos;
+  var selecionadas = medNfSelecionadasLista(ctx);
   var para = document.getElementById('medNfEmailPara').value.trim();
   if (!para) {
     appSetStatus('statusMedNfEmail', 'Informe ao menos um destinatário.', '#e53935');
@@ -346,15 +400,15 @@ function medNfPrepararEmail() {
   appSetStatus('statusMedNfEmail', 'Criando rascunho no Gmail...');
   appServerRun({
     method: 'prepararEmailNotasFiscais',
-    args: [{ chaves: selecionadas.map(function(n) { return n.chave; }), destinatarios: para }],
+    args: [{ tipo: ctx.tipo, chaves: selecionadas.map(function(n) { return n.chave; }), destinatarios: para }],
     onSuccess: function(r) {
       appSetButtonBusy(btn, false);
       appSetStatus('statusMedNfEmail', '');
       fecharOverlay('modalMedNfEmail');
-      _medNfSelecionadas = {};
-      medNfRender();
+      ctx.selecionadas = {};
+      medNfRender(ctx.tipo);
       snack((r && r.message) || 'Rascunho criado no Gmail.');
-      medNfCarregar();
+      medNfCarregar(ctx.tipo);
     },
     onFailure: function(e) {
       appSetButtonBusy(btn, false);
@@ -363,8 +417,9 @@ function medNfPrepararEmail() {
   });
 }
 
-function medNfConfirmarMarcarEnviadas() {
-  var selecionadas = medNfSelecionadasLista();
+function medNfConfirmarMarcarEnviadas(tipo) {
+  var ctx = medNfCtx(tipo);
+  var selecionadas = medNfSelecionadasLista(ctx);
   if (!selecionadas.length) return;
   abrirConfirmacaoDestrutiva({
     titulo: 'Marcar como enviadas',
@@ -374,12 +429,12 @@ function medNfConfirmarMarcarEnviadas() {
     onConfirm: function() {
       appServerRun({
         method: 'marcarNotasFiscaisEnviadas',
-        args: [{ chaves: selecionadas.map(function(n) { return n.chave; }) }],
+        args: [{ tipo: ctx.tipo, chaves: selecionadas.map(function(n) { return n.chave; }) }],
         onSuccess: function(r) {
-          _medNfSelecionadas = {};
-          medNfRender();
+          ctx.selecionadas = {};
+          medNfRender(ctx.tipo);
           snack((r && r.message) || 'Notas marcadas como enviadas.');
-          medNfCarregar();
+          medNfCarregar(ctx.tipo);
         },
         onFailure: function(e) { snackErro(e); }
       });
