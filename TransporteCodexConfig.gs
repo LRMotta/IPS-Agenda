@@ -266,19 +266,23 @@ function testarUrlWebAppTransporteCodex() {
 
 function montarContextoTransporteParaTransp_(idAgenda, slot) {
   slot = normalizarSlotTransporteCodex_(slot, true);
-  var evento = buscarAgendaEventoPorIdTransp_(idAgenda, slot);
+  // agendaLeitura: aba e linha desta mesma leitura, para quem so precisa ler a celula do transporte.
+  var agendaLeitura = {};
+  var evento = buscarAgendaEventoPorIdTransp_(idAgenda, slot, agendaLeitura);
   // Leitura privada desta abertura; nao reutilizar entre requisicoes.
   var leituraParticipantes = {};
   return {
     evento: evento,
     payload: montarPayloadTransporteParaTransp_(idAgenda, slot, evento, leituraParticipantes),
-    leituraParticipantes: leituraParticipantes
+    leituraParticipantes: leituraParticipantes,
+    agendaLeitura: agendaLeitura
   };
 }
 
 function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado, leituraParticipantes) {
   slot = normalizarSlotTransporteCodex_(slot, true);
   var evento = eventoPrecarregado || buscarAgendaEventoPorIdTransp_(idAgenda, slot);
+  var lap = transporteLapStart_('getTransporteEnvio');
   var participanteInfo;
   try {
     participanteInfo = agendaInfoParticipanteParaSalvar_({
@@ -290,9 +294,14 @@ function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado, 
   } catch (e) {
     participanteInfo = {};
   }
+  lap('mp_participante');
   var slotNormalizado = normalizarSlotTransporteCodex_(slot, true);
   var courier = transporteAgendaCourierFromEvento_(evento, slotNormalizado);
   var courierNome = transporteNormalizeCourierFromCodex_(courier.nome || courier.courier || '');
+  var horaEnvio = transporteJanelaEnvioPadrao_();
+  lap('mp_janela');
+  var agendadoPor = transporteAgendadorPadrao_();
+  lap('mp_agendador');
 
   return {
     slot: slotNormalizado,
@@ -306,8 +315,8 @@ function montarPayloadTransporteParaTransp_(idAgenda, slot, eventoPrecarregado, 
     identificacaoParticipante: participanteInfo.numId || evento.idParticipante || '',
     projeto: evento.projeto || '',
     medico: evento.medico || '',
-    horaEnvio: transporteJanelaEnvioPadrao_(),
-    agendadoPor: transporteAgendadorPadrao_(),
+    horaEnvio: horaEnvio,
+    agendadoPor: agendadoPor,
     pinexAgendadoPor: '',
     responsavelEntrega: '',
     solicitarCaixa: transporteDefaultSolicitarCaixa_(courierNome),
@@ -456,7 +465,8 @@ function transporteEventoComOrigens_(rows, row, linha, slot) {
   return evento;
 }
 
-function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
+// leitura (opcional) recebe { sheet, linha } da linha encontrada.
+function buscarAgendaEventoPorIdTransp_(idAgenda, slot, leitura) {
   if (!idAgenda) throw new Error('ID da Agenda nao informado.');
   var lap = typeof transporteLapStart_ === 'function' ? transporteLapStart_('salvarTransporte') : function() {};
   var sh = typeof getAgendaSheetForRead_ === 'function' ? getAgendaSheetForRead_() : getAgendaSheet_();
@@ -474,7 +484,10 @@ function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   var proprio = locais.filter(function(local) { return String(local.valores[AGENDA_CFG.idx.id] || '').trim() === String(idAgenda).trim(); })[0];
   if (proprio) {
     if (typeof codexLinhaPorIdLembrar_ === 'function' && String(proprio.valores[AGENDA_CFG.idx.id]) === String(idAgenda)) codexLinhaPorIdLembrar_(sh, idAgenda, proprio.linha);
-    return transporteEventoComOrigens_(locais.map(function(local) { return local.valores; }), proprio.valores, proprio.linha, slot);
+    if (leitura) { leitura.sheet = sh; leitura.linha = proprio.linha; }
+    var eventoProprio = transporteEventoComOrigens_(locais.map(function(local) { return local.valores; }), proprio.valores, proprio.linha, slot);
+    lap('rar_origens');
+    return eventoProprio;
   }
   // Sem a linha pela busca, a leitura completa confirma se o evento existe.
   var rows = sh.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol).getValues();
@@ -484,6 +497,7 @@ function buscarAgendaEventoPorIdTransp_(idAgenda, slot) {
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i][AGENDA_CFG.idx.id] || '').trim() !== String(idAgenda).trim()) continue;
     if (typeof codexLinhaPorIdLembrar_ === 'function' && String(rows[i][AGENDA_CFG.idx.id]) === String(idAgenda)) codexLinhaPorIdLembrar_(sh, idAgenda, i + 2);
+    if (leitura) { leitura.sheet = sh; leitura.linha = i + 2; }
     return transporteEventoComOrigens_(rows, rows[i], i + 2, slot);
   }
   throw new Error('Evento da Agenda nao encontrado: ' + idAgenda);
@@ -7356,12 +7370,15 @@ function transporteCaixaCompativel_(snapshot, payload) {
   return snapshot && JSON.stringify(snapshot.contexto) === JSON.stringify(transporteCaixaContexto_(payload));
 }
 
-function transporteCaixaAgendaRange_(payload) {
+// agendaLeitura (opcional, so leitura): { sheet, linha } da Agenda ja lida nesta execucao; evita reabrir a aba
+// pelo caminho de escrita (que confere o esquema) e procurar a linha de novo.
+function transporteCaixaAgendaRange_(payload, agendaLeitura) {
   if (!payload.idAgenda || !(payload.agendaSlot || payload.slot) || typeof getAgendaSheet_ !== 'function') return null;
   var slot = normalizarSlotTransporteCodex_(payload.agendaSlot || payload.slot, true);
   var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4, backup: AGENDA_CFG.idx.cb }[slot];
-  var sheet = getAgendaSheet_();
-  var row = encontrarLinhaPorId(sheet, payload.idAgenda);
+  var lida = agendaLeitura && agendaLeitura.sheet && agendaLeitura.linha ? agendaLeitura : null;
+  var sheet = lida ? lida.sheet : getAgendaSheet_();
+  var row = lida ? lida.linha : encontrarLinhaPorId(sheet, payload.idAgenda);
   if (slot === 'backup2') {
     if (!row || !(AGENDA_CFG.idx.backup2Dados >= 0)) throw new Error('Não foi possível localizar o Backup II para registrar a caixa.');
     return sheet.getRange(row, AGENDA_CFG.idx.backup2Dados + 1);
@@ -7470,10 +7487,11 @@ function transporteCaixasAnotarPendencias_(pendencias) {
 }
 
 // reavaliar: ignora os snapshots do envio e resolve pela regra atual; a nota invalida nao impede.
-function transporteCaixaResolver_(ss, payload, reavaliar) {
+// agendaLeitura: so para leituras (ver transporteCaixaAgendaRange_); fluxos que gravam a nota nao passam.
+function transporteCaixaResolver_(ss, payload, reavaliar, agendaLeitura) {
   // Nunca confiar na caixa/valores enviados pelo cliente; recuperar somente snapshots do servidor.
   var lap = transporteLapStart_('salvarTransporte');
-  var range = transporteCaixaAgendaRange_(payload);
+  var range = transporteCaixaAgendaRange_(payload, reavaliar ? null : agendaLeitura);
   lap('cx_faixa_agenda');
   var notaAgenda = range && typeof range.getNote === 'function' ? range.getNote() : null;
   var anterior = reavaliar ? transporteCaixaAnterior_(ss, payload, notaAgenda) : null;

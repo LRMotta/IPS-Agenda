@@ -171,22 +171,35 @@ function transporteEnvioMesclarLocais_(novo, antigo) {
  * pela Agenda, sem gravar na planilha de Transporte).
  */
 function transporteEnvioMontarRegistro_(agendaId, slot) {
+  // Subetapas de montar_agenda no log ([CODEX_PERF] getTransporteEnvio).
+  var lap = transporteLapStart_('getTransporteEnvio');
   var contexto = montarContextoTransporteParaTransp_(agendaId, slot);
+  lap('m_contexto');
   var payload = montarPayloadTransporteCodex(contexto.payload);
+  lap('m_payload');
   var opcoes = { obrigatorio: false, participantes: [], adiarProjetoDisplay: true };
   try {
     opcoes.participantes = transporteReadParticipantesDireto_(contexto.leituraParticipantes);
   } catch (erro) {
     Logger.log('Cadastro de participantes indisponivel ao abrir o envio.');
   }
+  lap('m_participantes');
   payload = transporteAtualizarRegistroPorAgenda_(payload, contexto.evento, opcoes);
+  lap('m_atualizar');
   payload = transporteDerivarDadosParticipante_(payload, opcoes);
+  lap('m_derivar');
   payload.protocolo = transporteProjetoDisplay_(payload.protocolo || '');
-  payload.caixaTransporte = transporteCaixaResolver_(transporteEnvioSsVazio_(), payload, false);
+  lap('m_projeto');
+  // Mesma aba e linha da leitura acima: a celula do transporte so e lida (nota da caixa).
+  payload.caixaTransporte = transporteCaixaResolver_(transporteEnvioSsVazio_(), payload, false, contexto.agendaLeitura);
+  lap('m_caixa');
   if (transporteNormalizeCourierFromCodex_(payload.courier) === 'MARKEN') {
     payload.solicitarCaixa = transporteSolicitarCaixaMarken_(payload, payload.solicitarCaixa);
+    lap('m_caixa_marken');
   }
-  return transporteRegistroPreparado_(payload);
+  var preparado = transporteRegistroPreparado_(payload);
+  lap('m_preparado');
+  return preparado;
 }
 
 function transporteEnvioAvisos_(registro) {
