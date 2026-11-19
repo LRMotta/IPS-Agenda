@@ -158,7 +158,7 @@ function transporteEmailDoRegistro_(registro, opcoes) {
   } else if (courier === 'OCASA') {
     destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
     var ssOcasa = transporteEmailPlanilhaMemoria_({ 'Email (OCASA)': transporteEmailAbaOcasa_(registro, dataEnvio, opcoes) });
-    html = transporteCodexEmailHtml_(ssOcasa, 'emailOcasa', 'OCASA', saudacao);
+    html = transporteCodexEmailHtml_(ssOcasa, 'emailOcasa', 'OCASA', saudacao, undefined, transporteCaixaInstrucaoOcasa_(registro.caixaTransporte ? registro : null));
   } else if (courier === 'MARKEN') {
     caixaPayload = registro.caixaTransporte ? registro : null;
     destinatarios = transporteCaixaCredoCube_(caixaPayload) ? ['protocolos.credo@marken.com']
