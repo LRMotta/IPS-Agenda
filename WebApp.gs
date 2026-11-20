@@ -7487,6 +7487,50 @@ function participanteGravarCelulasIguais_(sh, rowNumbers, column, value) {
 }
 
 // Somente tempos e contagens, como nas demais etapas do salvamento.
+// Dados da pessoa (identidade, contato, endereço, banco e acompanhantes) valem para
+// todas as participações com o mesmo ID Pessoa. Protocolo, número, braço, status,
+// última visita, observações e marcos continuam próprios de cada participação.
+// Chamada sob o lock de salvarDadosParticipante, com as linhas lidas nele.
+function participanteSincronizarPessoaIrmas_(ss, sh, rows, editRowIndex, d, columns, dataNascimento) {
+  var resultado = { participacoes: 0, referencias: 0 };
+  var idPessoa = String(d.idPessoa || '').trim();
+  var personIdColumn = columns.idPessoa;
+  if (!idPessoa || personIdColumn === undefined) return resultado;
+  var editId = CadastroRules_.normalizeId(rows[editRowIndex] && rows[editRowIndex][0]);
+  var dadosPessoa = {
+    rua: d.rua, numero: d.numero, cidade: d.cidade, estado: d.estado, municipioCodigo: d.municipioCodigo, cep: d.cep,
+    banco: d.banco, agencia: d.agencia, contaCorrente: d.contaCorrente,
+    titularConta: d.titularConta, cpfTitular: d.cpfTitular, idPessoa: idPessoa,
+    tipoConta: d.tipoConta, sexoNascimento: d.sexoNascimento, acompanhantes: d.acompanhantes,
+    contatoEmergenciaNome: d.contatoEmergenciaNome, contatoEmergenciaGrau: d.contatoEmergenciaGrau,
+    contatoEmergenciaTelefone: d.contatoEmergenciaTelefone
+  };
+  for (var i = 1; i < rows.length; i++) {
+    if (i === editRowIndex) continue;
+    var row = rows[i] || [];
+    if (participantePessoaIdDaLinha_(row, personIdColumn) !== idPessoa) continue;
+    var rowNumber = i + 1;
+    var referenciaAnterior = participanteReferenciaCadastro_(row);
+    sh.getRange(rowNumber, 2, 1, 2).setValues([[d.nome, dataNascimento]]);
+    sh.getRange(rowNumber, 10, 1, 2).setValues([[d.telefone || '', d.cpf || '']]);
+    gravarParticipanteCamposNovos_(sh, rowNumber, dadosPessoa, columns, null);
+    resultado.participacoes++;
+    var referenciaAtual = participanteReferenciaCadastro_([row[0], d.nome, '', '', row[4], row[5]]);
+    if (participanteReferenciaAlterada_(referenciaAnterior, referenciaAtual)) {
+      var sincronizacao = sincronizarNomeParticipanteReferencias_(ss, referenciaAnterior, referenciaAtual) || {};
+      resultado.referencias += Number(sincronizacao.atualizadas) || 0;
+    }
+    if (typeof codexWriteAuditChanges_ === 'function') {
+      codexWriteAuditChanges_('Cadastros', 'sincronizarPessoaParticipacao', row[0], [
+        { field: 'Nome', oldValue: row[1], newValue: d.nome },
+        { field: 'Data de nascimento', oldValue: row[2], newValue: dataNascimento },
+        { field: 'Sexo no nascimento', oldValue: columns.sexoNascimento === undefined ? '' : row[columns.sexoNascimento], newValue: d.sexoNascimento }
+      ], 'Dados da pessoa atualizados a partir da participação ' + editId);
+    }
+  }
+  return resultado;
+}
+
 function codexLogSalvarParticipanteEtapa_(stage, startedAt, metadata) {
   var now = Date.now();
   codexLogPerformance_('salvarDadosParticipante', stage, now - startedAt, metadata, true);
@@ -7868,6 +7912,10 @@ function salvarDadosParticipante(d) {
     gravarParticipanteCamposNovos_(sh, editRowIndex + 1, d, participantColumns, marcosParticipacaoPreparados);
     if (editRowIndex + 1 > 2) sh.getRange(editRowIndex + 1, 4).clearContent();
     var stageStartedAt = codexLogSalvarParticipanteEtapa_('write_row', persistStartedAt, { rowCount: 1 });
+    var pessoaSincronizada = participanteSincronizarPessoaIrmas_(ss, sh, rows, editRowIndex, d, participantColumns, rowStart[2]);
+    if (pessoaSincronizada.participacoes) {
+      stageStartedAt = codexLogSalvarParticipanteEtapa_('sync_person', stageStartedAt, { rowCount: pessoaSincronizada.participacoes });
+    }
     var referenciaAtual = participanteReferenciaCadastro_([
       d.id, d.nome, parseDate(d.dataNascimento), '', d.idParticipante,
       projeto, d.braco || ''
@@ -7898,7 +7946,10 @@ function salvarDadosParticipante(d) {
     clearCodexRuntimeCaches_(['participantes'], 'participants');
     if (typeof clearTransporteOptionsCache_ === 'function') clearTransporteOptionsCache_();
     codexLogSalvarParticipanteEtapa_('cache_invalidate', stageStartedAt, { rowCount: 0 });
-    return concluirSalvarParticipante_('Participante atualizado com sucesso');
+    return concluirSalvarParticipante_(pessoaSincronizada.participacoes
+      ? 'Participante atualizado com sucesso. Dados pessoais atualizados também em ' + pessoaSincronizada.participacoes
+        + (pessoaSincronizada.participacoes === 1 ? ' outra participação.' : ' outras participações.')
+      : 'Participante atualizado com sucesso');
   } else {
     var maxId = 0;
     rows.slice(1).forEach(function(r) {

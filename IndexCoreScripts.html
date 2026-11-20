@@ -4696,6 +4696,15 @@ function renderParticipacoesPessoa_(participante, criandoNova) {
     hint.textContent = 'Esta pessoa possui acompanhamento de segurança em: ' + acompanhamentos.join(', ') + '. As visitas desses protocolos continuam disponíveis na Agenda. '
       + (possuiAtiva ? 'Existe outra participação ativa que impede iniciar uma nova pesquisa.' : 'A nova participação mantém identificação e histórico próprios. Confirme com a equipe responsável a possibilidade de iniciar o novo screening.');
   }
+  // O servidor grava os dados da pessoa em todas as participações com o mesmo ID Pessoa.
+  var idPessoa = String(participante.idPessoa || '').trim();
+  var outrasMesmaPessoa = criandoNova || !idPessoa ? 0 : participacoes.filter(function(item) {
+    return String(item.id || '') !== String(participante.id || '') && String(item.idPessoa || '').trim() === idPessoa;
+  }).length;
+  if (outrasMesmaPessoa) {
+    hint.textContent += ' Ao salvar, os dados pessoais (identificação, contato, endereço, banco e acompanhantes) também serão atualizados '
+      + (outrasMesmaPessoa === 1 ? 'na outra participação.' : 'nas outras ' + outrasMesmaPessoa + ' participações.');
+  }
   list.innerHTML = participacoes.map(function(item) {
     var atual = String(item.id || '') === String(participante.id || '');
     var titulo = esc(item.projeto || 'Protocolo não informado');
