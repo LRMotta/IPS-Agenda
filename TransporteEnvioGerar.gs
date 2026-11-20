@@ -129,7 +129,7 @@ function transporteEnvioIniciarGeracao_(token, dadosDoToken, usuario) {
  * repetir o mesmo token retoma sem duplicar PDF ou rascunho.
  */
 function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationRequestId) {
-  var access = codexAssertAdmin_();
+  var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
   var posse = transporteEnvioReivindicar_(agendaId, slot, usuario);
   if (!posse.ok) throw transporteRegistroErro_('TRANSPORTE_REGISTRO_EM_PREPARO', 'Este transporte está sendo preparado por outra pessoa agora.', { emPreparoPor: posse.emPreparoPor });
@@ -223,7 +223,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
 
 /** "Pronto, enviei": encerra o preparo do envio. O monitor existente reconhece o envio pelo Gmail. */
 function concluirEnvioTransporte(agendaId, slot, versao) {
-  var access = codexAssertAdmin_();
+  var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
   var lido = transporteRegistroLer_(agendaId, slot);
   // PINEX, fase 1: o Formulario foi enviado; agora o transporte aguarda a resposta da PINEX com os numeros.
@@ -246,7 +246,7 @@ function concluirEnvioTransporte(agendaId, slot, versao) {
 
 /** "Sair e continuar depois": guarda o passo e libera o preparo para a outra pessoa poder assumir. */
 function sairEnvioTransporte(agendaId, slot, versao, passo) {
-  var access = codexAssertAdmin_();
+  var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
   var resposta;
   try {

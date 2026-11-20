@@ -1,5 +1,5 @@
 /**
- * Preparo de um envio de Transporte para a tela passo a passo (admin no piloto).
+ * Preparo de um envio de Transporte para a tela passo a passo (perfis que editam).
  *
  * Fonte unica: o registro do envio em Transporte_Registros (TransporteRegistros.gs), montado a
  * partir da Agenda. Nenhuma funcao daqui abre a planilha de Transporte. As escritas na Agenda e
@@ -63,7 +63,7 @@ function transporteAwbUltimaDoEstudo_(projeto, courier, temperatura) {
 }
 
 function getTransporteAwbUltima(projeto, courier, temperatura) {
-  codexAssertAdmin_();
+  transporteAssertOperador_();
   return { ok: true, ultima: transporteAwbUltimaDoEstudo_(projeto, courier, temperatura) };
 }
 
@@ -250,6 +250,17 @@ function transporteEnvioAvisoLastCall_(registro, passo) {
   return aviso ? [aviso] : [];
 }
 
+// Acoes do Transporte: qualquer perfil que edita (admin ou user); somente leitura nao age.
+// Sem auditoria por chamada, como no piloto: o registro do envio ja guarda quem fez cada passo.
+function transporteAssertOperador_() {
+  var access = codexAuthorizeWebAppRequest_();
+  if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
+  if (access.role !== 'admin' && access.role !== 'user') {
+    throw new Error('Seu perfil é somente leitura. Esta ação do Transporte não está autorizada.');
+  }
+  return access;
+}
+
 // codexAuthorizeWebAppRequest_ entrega o e-mail em userEmail; email fica como fallback legado.
 function transporteEnvioUsuario_(access) {
   var email = String(access && (access.userEmail || access.email) || '').trim().toLowerCase();
@@ -270,7 +281,7 @@ function transporteEnvioRespostaOcupado_(preparo, nomes) {
 function getTransporteEnvio(agendaId, slot) {
   // Etapas no log ([CODEX_PERF] getTransporteEnvio) para medir a abertura em producao.
   var lap = transporteLapStart_('getTransporteEnvio');
-  var access = codexAssertAdmin_();
+  var access = transporteAssertOperador_();
   lap('acesso');
   var usuario = transporteEnvioUsuario_(access);
   // Leituras repetidas desta abertura (Projetos, agendador) uma vez so; descartadas ao sair.
@@ -353,7 +364,7 @@ function transporteEnvioAbrir_(agendaId, slot, usuario, lap) {
  * ninguem assumiu). Outra pessoa com o preparo ativo: { ok: false, comPessoa }.
  */
 function renovarPreparoTransporteEnvio(agendaId, slot) {
-  var usuario = transporteEnvioUsuario_(codexAssertAdmin_());
+  var usuario = transporteEnvioUsuario_(transporteAssertOperador_());
   var posse = transporteEnvioReivindicar_(agendaId, slot, usuario);
   if (!posse.ok) return transporteEnvioRespostaOcupado_({ emPreparoPor: posse.emPreparoPor }, transporteTarefasNomes_());
   return { ok: true, versao: posse.versao };
@@ -366,7 +377,7 @@ var TRANSPORTE_ENVIO_PASSOS_VALIDOS_ = ['conferir', 'awb', 'pinex_numeros', 'ger
  * recusa. campos: somente os de TRANSPORTE_ENVIO_CAMPOS_LOCAIS_ e a AWB (enquanto a Agenda nao tem).
  */
 function salvarTransporteEnvio(agendaId, slot, versao, campos, passo) {
-  var access = codexAssertAdmin_();
+  var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
   var salvo = transporteEnvioSalvar_(agendaId, slot, versao, campos, passo, usuario);
   return { ok: true, versao: salvo.versao, passo: salvo.passo, passos: salvo.passos, perdeuPreparo: salvo.perdeuPreparo };
@@ -407,7 +418,7 @@ function transporteEnvioSalvar_(agendaId, slot, versao, campos, passo, usuario, 
  * e conferida com a do envio.
  */
 function registrarRespostaPinexEnvio(agendaId, slot, versao, dados) {
-  var usuario = transporteEnvioUsuario_(codexAssertAdmin_());
+  var usuario = transporteEnvioUsuario_(transporteAssertOperador_());
   var objeto = !!dados && typeof dados === 'object';
   var coleta = String(objeto ? dados.coleta || '' : dados || '').trim();
   var awb = objeto ? String(dados.awb || '').trim() : '';

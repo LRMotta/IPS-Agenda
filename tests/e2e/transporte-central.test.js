@@ -22,7 +22,7 @@ async function abrir(browser, width) {
   await page.setContent('<!doctype html><html lang="pt-BR"><head><title>Transporte — teste local</title>' +
     readProjectFile('IndexStyles.html') + readProjectFile('IndexStylesAfterDashboard.html') + readProjectFile('IndexTransporteCentralStyles.html') +
     '<style>.material-symbols-outlined{display:inline-block;width:1em;overflow:hidden}</style></head><body>' +
-    '<div class="main"><div class="top-bar"><span class="page-title">Transporte (piloto)</span></div><div class="content">' +
+    '<div class="main"><div class="top-bar"><span class="page-title">Transporte</span></div><div class="content">' +
     readProjectFile('IndexTransporteCentralContent.html') + '</div></div></body></html>');
   await page.evaluate(() => {
     window.CURRENT_ACCESS = { ok: true, email: 'admin@example.invalid', role: 'admin' };
@@ -123,9 +123,11 @@ test('Transporte (piloto): vazio, erro e respostas fora de ordem', async () => {
     await page.evaluate(() => { window.CURRENT_ACCESS = { ok: true, email: 'admin@example.invalid', role: 'admin' }; transpCentralCarregar(true); });
     await page.evaluate(() => window.__pedidos[3].falha(new Error('Acesso permitido apenas para administradores.')));
     assert.deepEqual(await page.evaluate(() => window.__erros), ['Acesso permitido apenas para administradores.']);
-    // Perfil que não é admin nem chama a RPC.
+    // Disponível para todos os perfis: quem não é admin também carrega a lista.
     await page.evaluate(() => { window.CURRENT_ACCESS = { ok: true, email: 'u@example.invalid', role: 'user' }; transpCentralCarregar(true); });
-    assert.equal(await page.evaluate(() => window.__pedidos.length), 4);
+    assert.equal(await page.evaluate(() => window.__pedidos.length), 5);
+    await page.evaluate((resposta) => window.__pedidos[4].ok(resposta), RESPOSTA);
+    assert.doesNotMatch(await page.locator('#tcFazer').innerText(), /Carregando/);
     assert.deepEqual(erros, []);
   } finally { await browser.close(); }
 });

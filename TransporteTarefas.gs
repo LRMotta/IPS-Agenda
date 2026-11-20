@@ -1,5 +1,5 @@
 /**
- * Tarefas de Transporte para a tela nova (admin no piloto).
+ * Tarefas de Transporte para a tela nova (todos os perfis leem; agir exige perfil que edita).
  *
  * Unidade da tarefa: a visita (agendaId). Uma visita com varios transportes e uma tarefa, com a
  * lista de transportes. Um transporte entra na lista "Para fazer" ate 7 dias uteis antes da data (TRANSPORTE_TAREFAS_JANELA_DIAS_UTEIS_)
@@ -325,11 +325,11 @@ function transporteTarefasNomes_() {
 }
 
 /**
- * RPC da tela nova. Somente administradores no piloto; sem lock; uma leitura da Agenda, uma de
+ * RPC da tela nova. Qualquer perfil autorizado; sem lock; uma leitura da Agenda, uma de
  * Transporte_Operacoes e duas colunas de Transporte_Registros.
  */
 function getTransporteTarefas(request) {
-  var access = codexAssertAdmin_();
+  var access = codexAssertCanRead_();
   var traceId = codexBootstrapTraceId_(request);
   function medir(etapa, linhas, fn) {
     return codexMeasureReadPerformance_('getTransporteTarefas', etapa, { traceId: traceId, rowCount: linhas }, fn);

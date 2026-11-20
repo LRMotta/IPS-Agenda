@@ -553,7 +553,6 @@
     var alvo = document.getElementById('tcFazer');
     var status = document.getElementById('tcStatus');
     if (!alvo || !CURRENT_ACCESS.ok) return;
-    if (!CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'transporte-central')) return;
     var requestId = ++TRANSP_CENTRAL_REQUEST_ID;
     var email = CURRENT_ACCESS.email;
     if (!TRANSP_CENTRAL_STATE.dados || forcar) alvo.setAttribute('aria-busy', 'true');

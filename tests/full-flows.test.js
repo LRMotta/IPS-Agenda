@@ -1223,3 +1223,45 @@ test('sexo no nascimento é obrigatório antes de escrever, aceita as três opç
     assert.equal(sheet.writes, before);
   }
 });
+
+test('edição grava dados pessoais em todas as participações da mesma pessoa e preserva os dados de cada protocolo', () => {
+  const header = ['ID', 'Nome', 'Nascimento', 'Idade', 'ID Participante', 'Projeto', 'Braco', 'Ultima visita', 'Status', 'Telefone', 'CPF', 'Obs',
+    'Banco', 'Agência', 'Conta corrente', 'ID Pessoa', 'Sexo no nascimento'];
+  const participantes = new FakeSheet('Participantes', [
+    header,
+    [10, 'Pessoa Dois Estudos', '1954-05-03', '', 'ANT-1', 'Estudo Antigo', 'Braço X', '', 'Falha de Pré-Triagem', '', '', 'Obs antiga', '', '', '', 'PES-A', 'Masculino'],
+    [11, 'Pessoa Dois Estudos', '1994-05-03', '', 'NOV-1', 'Estudo Novo', '', '', 'Em Triagem', '', '', 'Obs nova', '', '', '', 'PES-A', 'Masculino'],
+    [12, 'Outra Pessoa', '', '', 'NOV-2', 'Estudo Novo', '', '', 'Ativo', '', '', '', 'Banco Alheio', '', '', 'PES-B', 'Feminino']
+  ]);
+  const agenda = new FakeSheet('Agenda', [
+    ['Participante', 'ID Participante', 'Projeto', 'ID Cadastro Participante'],
+    ['Pessoa Dois Estudos', 'ANT-1', 'Estudo Antigo', 10]
+  ]);
+  const { context } = cadastroContext(new FakeSpreadsheet({ Participantes: participantes, Agenda: agenda }),
+    [{ nome: 'Estudo Antigo' }, { nome: 'Estudo Novo' }]);
+  context.AGENDA_CFG = { idx: { participante: 0, idParticipante: 1, projeto: 2, participanteCadastroId: 3 }, lastCol: 4 };
+  context.getAgendaSheetForRead_ = () => agenda;
+
+  const resposta = context.salvarDadosParticipante({
+    id: 11, sexoNascimento: 'Masculino', nome: 'Pessoa Dois Estudos Corrigida', dataNascimento: '1994-05-03',
+    idParticipante: 'NOV-1', projeto: 'Estudo Novo', status: 'Em Triagem', telefone: '(54) 99999-0000',
+    cpf: '52998224725', banco: 'Banco de Teste', agencia: '0001', contaCorrente: '12345-6', observacoes: 'Obs nova'
+  });
+  assert.match(resposta, /também em 1 outra participação/);
+
+  const antiga = participantes.rows[1];
+  const col = name => header.indexOf(name);
+  assert.equal(antiga[1], 'Pessoa Dois Estudos Corrigida');
+  assert.equal(new Date(antiga[2]).getFullYear(), 1994);
+  assert.equal(antiga[9], '(54) 99999-0000');
+  assert.equal(antiga[10], '529.982.247-25');
+  assert.equal(antiga[col('Banco')], 'Banco de Teste');
+  assert.equal(antiga[col('Conta corrente')], '12345-6');
+  // Dados do protocolo antigo ficam como estavam.
+  assert.deepEqual([antiga[4], antiga[5], antiga[6], antiga[8], antiga[11]], ['ANT-1', 'Estudo Antigo', 'Braço X', 'Falha de Pré-Triagem', 'Obs antiga']);
+  // Referências da participação antiga acompanham o nome novo.
+  assert.equal(agenda.rows[1][0], 'Pessoa Dois Estudos Corrigida');
+  // Outra pessoa não é tocada.
+  assert.equal(participantes.rows[3][1], 'Outra Pessoa');
+  assert.equal(participantes.rows[3][col('Banco')], 'Banco Alheio');
+});

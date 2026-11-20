@@ -130,7 +130,7 @@ function transporteCancelamentoHoje_() {
 
 /** Previa da caixa de confirmacao. Somente leitura (sem lock). */
 function getTransporteCancelamento(agendaId, slot) {
-  codexAssertAdmin_();
+  transporteAssertOperador_();
   agendaId = String(agendaId || '').trim();
   var slotInfo = transporteCancelamentoSlot_(slot);
   if (!agendaId || !slotInfo) return { erro: 'Transporte não informado.' };
@@ -187,7 +187,7 @@ function transporteCancelamentoCorpo_(texto, dados, original) {
  * (transporteCancelamentoTextoPadrao_), montado aqui: nada do texto vem do navegador.
  */
 function cancelarTransporteConfirmado(agendaId, slot, mensagemId) {
-  codexAssertAdmin_();
+  transporteAssertOperador_();
   codexAssertCanWrite_('cancelarTransporteConfirmado', 'Agenda', agendaId);
   agendaId = String(agendaId || '').trim();
   mensagemId = String(mensagemId || '').trim();
@@ -238,7 +238,7 @@ function cancelarTransporteConfirmado(agendaId, slot, mensagemId) {
  * awb: a AWB mostrada na caixa de confirmacao; se mudou desde a leitura da lista, pede para atualizar.
  */
 function marcarTransporteConfirmadoEnviado(agendaId, slot, awb) {
-  codexAssertAdmin_();
+  transporteAssertOperador_();
   codexAssertCanWrite_('marcarTransporteConfirmadoEnviado', 'Agenda', agendaId);
   agendaId = String(agendaId || '').trim();
   awb = String(awb || '').trim();

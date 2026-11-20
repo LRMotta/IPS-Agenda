@@ -32,9 +32,9 @@ function transportePeticionamentoAutorizados_() {
   return lista;
 }
 
-// Piloto: so administrador E presente na lista (nenhum outro perfil usa estas acoes ainda); devolve { email }.
+// Perfil que edita E presente na lista de autorizados a peticionar; devolve { email }.
 function transportePeticionamentoAssertAutorizado_() {
-  var acesso = codexAssertAdmin_();
+  var acesso = transporteAssertOperador_();
   var email = transportePeticionamentoEmailNorm_(acesso && (acesso.userEmail || acesso.email));
   if (!email || transportePeticionamentoAutorizados_().indexOf(email) < 0) {
     throw new Error('Você não está autorizado a peticionar. Peça a inclusão em Configurações (Transporte: Autorizado a peticionar).');
@@ -227,9 +227,9 @@ function transportePeticionamentoLinhaAgenda_(agendaId) {
   return linha ? agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0] : null;
 }
 
-/** RPC do passo ANVISA (admin no piloto): formulario conferido, e-mail enviado e status em "Aguardando peticionamento". */
+/** RPC do passo ANVISA (perfis que editam): formulario conferido, e-mail enviado e status em "Aguardando peticionamento". */
 function concluirAnvisaTransporteEnvio(agendaId, slot, versao) {
-  var access = codexAssertAdmin_();
+  var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
   var resultado;
   try {
@@ -249,7 +249,7 @@ function concluirAnvisaTransporteEnvio(agendaId, slot, versao) {
 
 /** Pré-visualização do formulario para conferir e imprimir (HTML), sem efeito externo. */
 function getTransporteFormularioAnvisa(agendaId, slot) {
-  codexAssertAdmin_();
+  transporteAssertOperador_();
   var lido = transporteRegistroLer_(agendaId, slot);
   if (!lido.registro) throw new Error('Abra o envio antes de ver o formulário ANVISA.');
   var form = transportePeticaoGerar_(lido.registro);

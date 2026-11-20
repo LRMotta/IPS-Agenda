@@ -595,6 +595,33 @@
         </div>
       </div>
       <div class="form-section">
+        <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">emergency</span> Contato de emergência</div>
+        <div class="field-row cols-3">
+          <div>
+            <label class="field-label" for="ptEmergenciaNome">Nome do contato</label>
+            <input type="text" id="ptEmergenciaNome" class="f-input" maxlength="150" placeholder="Nome de quem avisar em emergência">
+          </div>
+          <div>
+            <label class="field-label" for="ptEmergenciaGrau">Grau de proximidade</label>
+            <input type="text" id="ptEmergenciaGrau" class="f-input" maxlength="150" list="ptEmergenciaGrauOpcoes" placeholder="Ex.: Cônjuge, filha, vizinho">
+            <datalist id="ptEmergenciaGrauOpcoes">
+              <option value="Cônjuge/companheiro(a)"></option>
+              <option value="Pai/Mãe"></option>
+              <option value="Filho(a)"></option>
+              <option value="Irmão/Irmã"></option>
+              <option value="Outro familiar"></option>
+              <option value="Amigo(a)"></option>
+              <option value="Vizinho(a)"></option>
+              <option value="Cuidador(a)"></option>
+            </datalist>
+          </div>
+          <div>
+            <label class="field-label" for="ptEmergenciaTelefone">Telefone do contato</label>
+            <input type="text" id="ptEmergenciaTelefone" class="f-input" inputmode="tel" maxlength="15" placeholder="(00) 00000 0000" oninput="this.value=formatarTelefoneBrasileiro(this.value)">
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
         <div class="section-label"><span class="material-symbols-outlined" aria-hidden="true">science</span> Protocolo</div>
         <div class="field-row cols-2" style="margin-bottom:14px;">
           <div>

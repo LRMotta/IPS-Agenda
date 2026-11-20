@@ -22,7 +22,7 @@ async function abrir(browser, width) {
   await page.setContent('<!doctype html><html lang="pt-BR"><head><title>Transporte — teste local</title>' +
     readProjectFile('IndexStyles.html') + readProjectFile('IndexStylesAfterDashboard.html') + readProjectFile('IndexTransporteCentralStyles.html') +
     '<style>.material-symbols-outlined{display:inline-block;width:1em;overflow:hidden}</style></head><body>' +
-    '<div class="main"><div class="top-bar"><span class="page-title">Transporte (piloto)</span></div><div class="content">' +
+    '<div class="main"><div class="top-bar"><span class="page-title">Transporte</span></div><div class="content">' +
     readProjectFile('IndexTransporteCentralContent.html') + '</div></div></body></html>');
   await page.evaluate(() => {
     window.CURRENT_ACCESS = { ok: true, email: 'admin@example.invalid', role: 'admin' };
