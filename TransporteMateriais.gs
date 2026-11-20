@@ -49,7 +49,7 @@ function transporteMateriaisItensDoJson_(json) {
  * Exige o preparo do envio, grava na Agenda com auditoria e atualiza o registro do envio.
  */
 function editarMateriaisTransporteEnvio(agendaId, slot, versao, materiais) {
-  var access = codexAssertAdmin_();
+  var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
   var alvo = transporteMateriaisSlotAgenda_(slot);
   return codexWithDocumentLock_('editarMateriaisTransporteEnvio', function() {

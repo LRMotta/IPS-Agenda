@@ -22,7 +22,7 @@ function servidor() {
   });
   s.getCodexSpreadsheet_ = () => book;
   s.getTransporteSpreadsheetCodex_ = () => { throw new Error('planilha de Transporte aberta'); };
-  s.codexAssertAdmin_ = () => ({ ok: true, role: 'admin', userEmail: s.usuarioAtual || A });
+  s.transporteAssertOperador_ = () => ({ ok: true, role: 'admin', userEmail: s.usuarioAtual || A });
   const idx = s.AGENDA_CFG.idx;
   s.getAgendaSheet_ = () => ({ getRange: (linha, coluna) => ({
     getValue: () => celulas[linha + ':' + coluna] || '',

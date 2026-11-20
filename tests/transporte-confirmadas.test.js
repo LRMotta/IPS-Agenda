@@ -57,7 +57,7 @@ function cenario(ajustar) {
   mensagens.push(mensagem('m1', { corpo: 'Pedido ' + ref, thread }));
   mensagens.push(mensagem('m2', { from: 'Marken <coleta@marken.example>', to: 'eu@ucs.example', cc: 'equipe@ucs.example', corpo: 'Confirmado AWB 123456', data: new Date(2026, 9, 1, 15), assunto: 'RE: Pedido de coleta', thread }));
   Object.assign(s, {
-    codexAssertAdmin_: () => ({ ok: true, role: 'admin', userEmail: 'eu@ucs.example' }),
+    transporteAssertOperador_: () => ({ ok: true, role: 'admin', userEmail: 'eu@ucs.example' }),
     codexAssertCanWrite_: () => ({ ok: true, role: 'admin' }),
     getAgendaSheetForRead_: () => sheet,
     getAgendaSheet_: () => sheet,
@@ -170,8 +170,8 @@ test('sem conversa com a courier no Gmail de quem cancela: orienta cancelar pelo
 
 test('contratos: RPCs públicas com admin no servidor, chamadas pela tela, botão vermelho e caixa de confirmação', () => {
   const fonte = readProjectFile('TransporteConfirmadas.gs');
-  assert.match(fonte, /^function getTransporteCancelamento\(agendaId, slot\) \{\n  codexAssertAdmin_\(\);/m);
-  assert.match(fonte, /^function cancelarTransporteConfirmado\(agendaId, slot, mensagemId\) \{\n  codexAssertAdmin_\(\);\n  codexAssertCanWrite_\(/m);
+  assert.match(fonte, /^function getTransporteCancelamento\(agendaId, slot\) \{\n  transporteAssertOperador_\(\);/m);
+  assert.match(fonte, /^function cancelarTransporteConfirmado\(agendaId, slot, mensagemId\) \{\n  transporteAssertOperador_\(\);\n  codexAssertCanWrite_\(/m);
   assert.doesNotMatch(fonte, /(?<!CodexExternalEffects_)\.replyAll\(/,'o envio passa pelo adaptador simulável');
   assert.match(fonte, /CodexExternalEffects_\.replyAll\(/);
   const tela = readProjectFile('IndexTransporteCentralScripts.html');
@@ -201,6 +201,6 @@ test('marcar como enviada: grava Enviado e audita; recusa antes da data, com sta
   assert.match(plano(futuro.s.marcarTransporteConfirmadoEnviado('ag1', '1', '123456')).erro, /a partir da data da visita/);
   assert.equal(futuro.row[i.c1.status], 'Confirmado');
   const fonte = readProjectFile('TransporteConfirmadas.gs');
-  assert.match(fonte, /^function marcarTransporteConfirmadoEnviado\(agendaId, slot, awb\) \{\n  codexAssertAdmin_\(\);\n  codexAssertCanWrite_\(/m);
+  assert.match(fonte, /^function marcarTransporteConfirmadoEnviado\(agendaId, slot, awb\) \{\n  transporteAssertOperador_\(\);\n  codexAssertCanWrite_\(/m);
   assert.ok(readProjectFile('IndexTransporteCentralScripts.html').includes('.marcarTransporteConfirmadoEnviado('));
 });

@@ -49,7 +49,7 @@ function servidor(opcoes) {
   s.lockAtivo = () => ativo;
   s.getCodexSpreadsheet_ = () => book;
   s.getTransporteSpreadsheetCodex_ = () => { throw new Error('planilha de Transporte aberta'); };
-  s.codexAssertAdmin_ = () => ({ ok: true, role: 'admin', userEmail: s.usuarioAtual || A });
+  s.transporteAssertOperador_ = () => ({ ok: true, role: 'admin', userEmail: s.usuarioAtual || A });
   s.codexGetAllowedUsers_ = () => ({ [A]: { firstName: 'Ana' }, [B]: { firstName: 'Bia' } });
   s.codexCourierRequiresAwb_ = () => true;
   // Validações de cadastro e serviços externos: simulados na fronteira.

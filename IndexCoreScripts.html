@@ -18,7 +18,7 @@ var TITULOS = {
   requisicao:    { label:'Requisição de Exames', icon:'assignment' },
   estoque:       { label:'Estoque',              icon:'inventory_2' },
   farmacia:      { label:'Farmácia',             icon:'local_pharmacy' },
-  'transporte-central': { label:'Transporte (piloto)', icon:'checklist' },
+  'transporte-central': { label:'Transporte', icon:'flight_takeoff' },
   usuarios:      { label:'Usuários',             icon:'admin_panel_settings' },
   'audit-log':   { label:'Trilha de Auditoria',  icon:'manage_search' },
   diagnostico:   { label:'Diagnostico de Implantacao', icon:'monitor_heart' },
@@ -271,8 +271,7 @@ function applyAppBootstrapData(data) {
   document.querySelectorAll('.admin-only').forEach(function(el) {
     var moduleName = String(el.id || '') === 'navUsersAdmin' ? 'usuarios'
       : (String(el.id || '') === 'navAuditLog' ? 'audit-log'
-      : (String(el.id || '') === 'navDiagnostico' ? 'diagnostico'
-      : (String(el.id || '') === 'navTransporteCentral' ? 'transporte-central' : '')));
+      : (String(el.id || '') === 'navDiagnostico' ? 'diagnostico' : ''));
     el.style.display = CodexAccessRules.isModuleVisible(CURRENT_ACCESS, moduleName) ? '' : 'none';
   });
   updateFloatingAddButton();
@@ -1238,11 +1237,6 @@ window.addEventListener('resize', function() {
 document.addEventListener('DOMContentLoaded', function() { appSyncNavAccessibility(); setMobileNav(false); });
 
 function irPara(pagina, options) {
-  if (pagina === 'transporte-central' && !CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'transporte-central')) {
-    snack('O Transporte (piloto) está disponível apenas para administradores.');
-    if (options && options.initial) pagina = 'agenda';
-    else return;
-  }
   if (pagina === 'farmacia' && !CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia')) {
     snack('Seu usuário não tem acesso à Farmácia.');
     if (options && options.initial) pagina = 'agenda';

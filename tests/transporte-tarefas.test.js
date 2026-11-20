@@ -122,7 +122,7 @@ test('prazo reaproveita o cálculo das Pendências e as etiquetas de preparo vê
   assert.equal(r.tarefas.find((t) => t.agendaId === 'e2').comPessoa, '');
 });
 
-test('RPC: só administrador, sem lock, sem escrita, e uma leitura de cada fonte', () => {
+test('RPC: qualquer perfil autorizado, sem lock, sem escrita, e uma leitura de cada fonte', () => {
   const s = servidor();
   const chamadas = [];
   s.codexBootstrapTraceId_ = () => 'trace';
@@ -134,13 +134,13 @@ test('RPC: só administrador, sem lock, sem escrita, e uma leitura de cada fonte
   s.transporteOperacoesRows_ = () => { chamadas.push('operacoes'); return []; };
   s.transporteRegistrosResumo_ = () => { chamadas.push('registros'); return {}; };
   s.codexGetAllowedUsers_ = () => ({});
-  s.codexAssertAdmin_ = () => { chamadas.push('admin'); throw new Error('Acesso permitido apenas para administradores.'); };
-  assert.throws(() => s.getTransporteTarefas({}), /apenas para administradores/);
-  assert.deepEqual(chamadas, ['admin']);
+  s.codexAssertCanRead_ = () => { chamadas.push('acesso'); throw new Error('Acesso negado.'); };
+  assert.throws(() => s.getTransporteTarefas({}), /Acesso negado/);
+  assert.deepEqual(chamadas, ['acesso']);
   chamadas.length = 0;
-  s.codexAssertAdmin_ = () => { chamadas.push('admin'); return { ok: true, role: 'admin', userEmail: 'Admin@Example.Invalid' }; };
+  s.codexAssertCanRead_ = () => { chamadas.push('acesso'); return { ok: true, role: 'admin', userEmail: 'Admin@Example.Invalid' }; };
   const resposta = plano(s.getTransporteTarefas({}));
-  assert.deepEqual(chamadas, ['admin', 'agenda', 'linhas', 'feriados', 'operacoes', 'registros']);
+  assert.deepEqual(chamadas, ['acesso', 'agenda', 'linhas', 'feriados', 'operacoes', 'registros']);
   assert.equal(resposta.ok, true);
   assert.equal(resposta.usuario, 'admin@example.invalid');
   assert.equal(resposta.janelaDiasUteis, 7);
@@ -237,7 +237,7 @@ test('RPC devolve acompanhar, mais adiante e backups da mesma leitura da Agenda'
   let leituras = 0;
   s.codexBootstrapTraceId_ = () => 't';
   s.codexMeasureReadPerformance_ = (_a, _b, _c, fn) => fn();
-  s.codexAssertAdmin_ = () => ({ ok: true, userEmail: 'a@example.invalid' });
+  s.codexAssertCanRead_ = () => ({ ok: true, userEmail: 'a@example.invalid' });
   s.getDashboardAgendaSheetForRead_ = () => ({});
   s.getDashboardAgendaDisplayRows_ = () => { leituras++; return [linha(s, 'r1', '30/11/2026', [{ nome: 'OCASA' }])]; };
   s.getAgendaFeriadosPendenciasMap_ = () => ({});

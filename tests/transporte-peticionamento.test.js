@@ -30,9 +30,9 @@ function servidor(opcoes) {
   s.getCodexSpreadsheet_ = () => book;
   s.getTransporteSpreadsheetCodex_ = () => { throw new Error('planilha de Transporte aberta'); };
   s.usuario = ADMIN;
-  // Piloto: todas as acoes exigem admin; a lista de peticionamento restringe ainda mais.
+  // As acoes exigem perfil que edita (admin ou user); a lista de peticionamento restringe ainda mais.
   s.papel = 'admin';
-  s.codexAssertAdmin_ = () => { if (s.papel !== 'admin') throw new Error('Acesso permitido apenas para administradores.'); return { ok: true, role: s.papel, userEmail: s.usuario }; };
+  s.transporteAssertOperador_ = () => { if (s.papel !== 'admin' && s.papel !== 'user') throw new Error('Seu perfil é somente leitura. Esta ação do Transporte não está autorizada.'); return { ok: true, role: s.papel, userEmail: s.usuario }; };
   s.getConfigAppValuesByKeys_ = () => (s.autorizados || [ALINE, LUIZ]);
   const idx = s.AGENDA_CFG.idx;
   s.getAgendaSheet_ = () => ({ getRange: (linha, coluna, n, w) => (n ? { getValues: () => [Array.from({ length: w }, (_v, c) => celulas[linha + ':' + (coluna + c)] || '')] }
@@ -223,12 +223,12 @@ test('"GRU e extrato prontos": só autorizado pela lista; devolve o status e mar
   s.usuario = 'estranho@example.invalid';
   assert.throws(() => s.marcarGruExtratoProntosTransporte('ab12cd34', '1'), /não está autorizado a peticionar/);
   assert.equal(s.statusCelula(), 'Aguardando peticionamento');
-  // Piloto: quem está na lista mas não é admin também não usa a ação.
-  s.papel = 'user';
+  // Somente leitura não usa a ação, mesmo estando na lista.
+  s.papel = 'readonly';
   s.usuario = ALINE;
-  assert.throws(() => s.marcarGruExtratoProntosTransporte('ab12cd34', '1'), /apenas para administradores/);
-  s.papel = 'admin';
-  // Admin que está na lista usa; o e-mail é comparado normalizado.
+  assert.throws(() => s.marcarGruExtratoProntosTransporte('ab12cd34', '1'), /somente leitura/);
+  s.papel = 'user';
+  // Quem está na lista usa (admin ou user); o e-mail é comparado normalizado.
   s.usuario = 'ALINE@Example.Invalid';
   const r = plano(s.marcarGruExtratoProntosTransporte('ab12cd34', '1'));
   assert.equal(r.ok, true);
