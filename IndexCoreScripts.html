@@ -4533,7 +4533,7 @@ function abrirFormPartPreenchido_(p) {
     delete modalPart.dataset.participacaoProjetoOriginal;
   }
   participanteDefinirPessoaSomenteLeitura_(false);
-  ['ptNome','ptSexoNascimento','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptEstado','ptCep','ptTipoConta','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular']
+  ['ptNome','ptSexoNascimento','ptId','ptNasc','ptCpf','ptProjeto','ptBraco','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptEstado','ptCep','ptTipoConta','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular','ptEmergenciaNome','ptEmergenciaGrau','ptEmergenciaTelefone']
     .forEach(function(id){ document.getElementById(id).value=''; });
   participanteInicializarLocalidade_('ptCidade', '', '', '');
   fillSelectOptions('ptBanco', BANCOS_PART, '', '— Selecione —');
@@ -4580,6 +4580,9 @@ function abrirFormPartPreenchido_(p) {
     document.getElementById('ptContaCorrente').value    = p.contaCorrente||'';
     document.getElementById('ptTitularConta').value     = p.titularConta||'';
     document.getElementById('ptCpfTitular').value       = p.cpfTitular||'';
+    document.getElementById('ptEmergenciaNome').value     = p.contatoEmergenciaNome||'';
+    document.getElementById('ptEmergenciaGrau').value     = p.contatoEmergenciaGrau||'';
+    document.getElementById('ptEmergenciaTelefone').value = formatarTelefoneBrasileiro(p.contatoEmergenciaTelefone||'');
     if (modalPart && p.id) {
       // O autocomplete do protocolo é assíncrono. Em uma edição complementar,
       // nunca deixe uma atualização interna do campo trocar a participação.
@@ -4706,7 +4709,7 @@ function renderParticipacoesPessoa_(participante, criandoNova) {
 }
 
 function participanteDefinirPessoaSomenteLeitura_(locked) {
-  ['ptNome','ptNasc','ptCpf','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptCep','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular'].forEach(function(id) {
+  ['ptNome','ptNasc','ptCpf','ptTelefone','ptObs','ptRua','ptNumero','ptCidade','ptCep','ptAgencia','ptContaCorrente','ptTitularConta','ptCpfTitular','ptEmergenciaNome','ptEmergenciaGrau','ptEmergenciaTelefone'].forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     el.readOnly = !!locked;
@@ -4756,6 +4759,9 @@ function prepararNovaParticipacaoPessoa_(participante) {
   document.getElementById('ptContaCorrente').value=participante.contaCorrente||'';
   document.getElementById('ptTitularConta').value=participante.titularConta||'';
   document.getElementById('ptCpfTitular').value=participante.cpfTitular||'';
+  document.getElementById('ptEmergenciaNome').value=participante.contatoEmergenciaNome||'';
+  document.getElementById('ptEmergenciaGrau').value=participante.contatoEmergenciaGrau||'';
+  document.getElementById('ptEmergenciaTelefone').value=formatarTelefoneBrasileiro(participante.contatoEmergenciaTelefone||'');
   document.getElementById('btnSalvarPart').innerHTML='<span class="material-symbols-outlined">add_circle</span> CRIAR PARTICIPAÇÃO';
   participanteDefinirPessoaSomenteLeitura_(true);
   renderParticipacoesPessoa_(participante, true);
@@ -4905,6 +4911,9 @@ function salvarPartApp(opts) {
     contaCorrente: document.getElementById('ptContaCorrente').value.trim(),
     titularConta: document.getElementById('ptTitularConta').value.trim(),
     cpfTitular: document.getElementById('ptCpfTitular').value.trim(),
+    contatoEmergenciaNome: document.getElementById('ptEmergenciaNome').value.trim(),
+    contatoEmergenciaGrau: document.getElementById('ptEmergenciaGrau').value.trim(),
+    contatoEmergenciaTelefone: document.getElementById('ptEmergenciaTelefone').value.trim(),
     acompanhantes: lerAcompanhantesPart_(),
     novaParticipacaoDireta: !!document.getElementById('ptPessoaBaseCadastroId').value,
     confirmarNomeDuplicado: opts.confirmarNomeDuplicado === true,

@@ -6771,7 +6771,9 @@ function participanteColumnMap_(sh, createMissing) {
     ['rua', 'Rua'], ['numero', 'Número'], ['cidade', 'Cidade'], ['estado', 'Estado'], ['municipioCodigo', 'Código IBGE do Município'], ['cep', 'CEP'],
     ['banco', 'Banco'], ['tipoConta', 'Tipo de conta'], ['agencia', 'Agência'], ['contaCorrente', 'Conta corrente'],
     ['titularConta', 'Titular da Conta Corrente'], ['cpfTitular', 'CPF do Titular'],
-    ['idPessoa', 'ID Pessoa'], ['acompanhantesJson', 'Acompanhantes (JSON)'], ['sexoNascimento', 'Sexo no nascimento']
+    ['idPessoa', 'ID Pessoa'], ['acompanhantesJson', 'Acompanhantes (JSON)'], ['sexoNascimento', 'Sexo no nascimento'],
+    ['contatoEmergenciaNome', 'Contato de emergência'], ['contatoEmergenciaGrau', 'Grau de proximidade do contato de emergência'],
+    ['contatoEmergenciaTelefone', 'Telefone do contato de emergência']
   ];
   var aliases = {
     rua: ['rua', 'endereco'], numero: ['numero', 'n'], cidade: ['cidade'], estado: ['estado', 'uf'], municipioCodigo: ['codigoibgedomunicipio', 'codigoibgemunicipio', 'municipiocodigo'], cep: ['cep'],
@@ -6827,6 +6829,10 @@ function gravarParticipanteCamposNovos_(sh, rowNumber, d, columns, marcosPrepara
   };
   if (d.tipoConta !== undefined) values.tipoConta = d.tipoConta || '';
   if (d.sexoNascimento !== undefined) values.sexoNascimento = d.sexoNascimento;
+  // Contato de emergência é opcional; clientes que omitem o campo preservam o valor gravado.
+  if (d.contatoEmergenciaNome !== undefined) values.contatoEmergenciaNome = d.contatoEmergenciaNome || '';
+  if (d.contatoEmergenciaGrau !== undefined) values.contatoEmergenciaGrau = d.contatoEmergenciaGrau || '';
+  if (d.contatoEmergenciaTelefone !== undefined) values.contatoEmergenciaTelefone = d.contatoEmergenciaTelefone || '';
   // Clientes antigos que omitem a coleção não apagam acompanhantes existentes.
   if (d.acompanhantes !== undefined) values.acompanhantesJson = JSON.stringify(d.acompanhantes);
   var cells = Object.keys(values).filter(function(key) {
@@ -7278,6 +7284,9 @@ function participanteDadosDaLinha_(r, header, ultimaVisita, somenteListagem, dto
       contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
       titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
       cpfTitular:     String(valueFor(r, ['cpfdotitular']) || ''),
+      contatoEmergenciaNome:     String(valueFor(r, ['contatodeemergencia']) || ''),
+      contatoEmergenciaGrau:     String(valueFor(r, ['graudeproximidadedocontatodeemergencia']) || ''),
+      contatoEmergenciaTelefone: String(valueFor(r, ['telefonedocontatodeemergencia']) || ''),
       acompanhantes: participanteLerAcompanhantes_(valueFor(r, ['acompanhantesjson']))
     };
     var ctmsColumns = participanteCtmsColumnMapFromHeaders_(header);
@@ -7689,6 +7698,9 @@ function salvarDadosParticipante(d) {
   }
   d.cpf = participanteNormalizarCpf_(d.cpf, 'do participante');
   d.cpfTitular = participanteNormalizarCpf_(d.cpfTitular, 'do titular da conta');
+  ['contatoEmergenciaNome', 'contatoEmergenciaGrau', 'contatoEmergenciaTelefone'].forEach(function(campo) {
+    if (d[campo] !== undefined) d[campo] = String(d[campo] === null ? '' : d[campo]).trim().slice(0, 150);
+  });
   if (!participantePreservarLocalidadeLegada_(d, existing || (d.novaParticipacaoDireta === true ? directOrigin : null), participantColumnsRead)) {
     brasilNormalizarLocalidade_(d, 'do participante');
   }
