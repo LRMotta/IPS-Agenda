@@ -149,9 +149,12 @@ function farmaciaSamePosition_(a, b) {
     (a.productId === b.productId && a.lot === b.lot && a.kit === b.kit && a.location === b.location);
 }
 
-function farmaciaReceiptData_(value, product) {
+// Recebimento: produto do patrocinador no estoque do estudo, ou produto próprio do IPS no estoque Geral.
+// O do patrocinador entra aguardando avaliação; o do Geral entra disponível (pending: 0), como no inventário inicial.
+function farmaciaReceiptData_(value, product, common) {
   value = value || {};
-  if (!product || product.data.supplySource !== 'sponsor') throw new Error('Recebimentos são exclusivos de produtos do patrocinador identificados neste estudo.');
+  var sponsor = !!product && product.data.supplySource === 'sponsor';
+  if (!product || (common ? sponsor : !sponsor)) throw new Error(common ? 'Recebimentos do estoque Geral são de produtos próprios do IPS.' : 'Recebimentos do estudo são exclusivos de produtos do patrocinador identificados neste estudo.');
   var receivedOn = farmaciaDate_(value.receivedOn, 'a data do recebimento');
   if (receivedOn > farmaciaToday_()) throw new Error('A data do recebimento não pode ser futura.');
   var initial = farmaciaInitialData_(Object.assign({}, value, { blocked: 0, countedOn: receivedOn, confirmed: true }), product, true);
@@ -159,7 +162,24 @@ function farmaciaReceiptData_(value, product) {
     kit: initial.kit, physical: initial.physical, receivedOn: receivedOn,
     document: farmaciaText_(value.document, 'a referência documental do recebimento', 200), note: initial.note };
   if (initial.locationRef) result.locationRef = initial.locationRef;
+  if (common) result.pending = 0;
+  // Registros anteriores não têm a chave "invoice"; o replay os normaliza sem ela.
+  if (Object.prototype.hasOwnProperty.call(value, 'invoice')) result.invoice = farmaciaReceiptInvoice_(value.invoice);
   return result;
+}
+
+// Nota fiscal do recebimento. Número em branco = nota ainda não recebida; com número, remetente e
+// valor unitário (por item, como o RM pede) são obrigatórios.
+function farmaciaReceiptInvoice_(value) {
+  value = value || {};
+  var number = farmaciaText_(value.number, 'o número da nota fiscal', 30, true);
+  if (number && !/\d/.test(number)) throw new Error('Informe um número de nota fiscal válido.');
+  var sender = farmaciaText_(value.sender, 'o remetente da nota fiscal', 120, !number);
+  var unitValue = value.unitValue === undefined || value.unitValue === null || value.unitValue === '' ? null : value.unitValue;
+  if (unitValue !== null && (typeof unitValue !== 'number' || !Number.isFinite(unitValue) || unitValue < 0 || unitValue > 1000000000 ||
+      Math.abs(unitValue * 100 - Math.round(unitValue * 100)) > 0.000001)) throw new Error('Informe o valor unitário em reais, com até duas casas decimais.');
+  if (number && unitValue === null) throw new Error('Informe o valor unitário do item na nota fiscal.');
+  return { number: number, sender: sender, unitValue: unitValue === null ? null : Math.round(unitValue * 100) / 100 };
 }
 
 function farmaciaMovementData_(value) {
@@ -185,7 +205,8 @@ function farmaciaMovementData_(value) {
 function farmaciaEntryState_(record) {
   var data = record.data, receipt = record.type === 'RECEIPT';
   var blocked = receipt ? (data.expiry < data.receivedOn ? data.physical : 0) : data.blocked;
-  var pending = receipt ? data.physical - blocked : data.pending || 0;
+  // Recebimento do Geral grava pending: 0 (entra disponível); o do patrocinador aguarda avaliação.
+  var pending = receipt ? (data.pending === 0 ? 0 : data.physical - blocked) : data.pending || 0;
   return Object.assign({}, data, { id: record.id, revision: record.id, registeredAt: record.registeredAt,
     author: record.author, origin: receipt ? 'receipt' : 'initial', initialBlocked: blocked, blocked: blocked, pending: pending,
     available: Math.round((data.physical - blocked - pending) * 1000) / 1000 });
@@ -274,12 +295,12 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
         products.push(record);
       } else if (record.type === 'INITIAL' || record.type === 'RECEIPT') {
         var product = products.find(function(item) { return item.id === data.productId; });
-        var normalized = record.type === 'INITIAL' ? farmaciaInitialData_(data, product, true) : farmaciaReceiptData_(data, product);
+        var normalized = record.type === 'INITIAL' ? farmaciaInitialData_(data, product, true) : farmaciaReceiptData_(data, product, context.studyId === FARMACIA_COMMON_SCOPE_);
         if (JSON.stringify(normalized) !== record.dataJson || (data.kit && kits.has(data.kit)) ||
             (record.type === 'INITIAL' && (positions.some(function(item) { return farmaciaSamePosition_(item, data); }) || records.some(function(item, index) {
               return index < records.length - 1 && (item.type === 'INITIAL' || item.type === 'RECEIPT') && farmaciaSamePosition_(item.data, data);
             }))) ||
-            (record.type === 'RECEIPT' && (context.studyId === FARMACIA_COMMON_SCOPE_ || receipts.has(farmaciaReceiptKey_(data))))) throw new Error('Entrada duplicada ou inválida.');
+            (record.type === 'RECEIPT' && receipts.has(farmaciaReceiptKey_(data)))) throw new Error('Entrada duplicada ou inválida.');
         if (data.kit) kits.add(data.kit);
         if (record.type === 'INITIAL') initial.push(record);
         else receipts.add(farmaciaReceiptKey_(data));
@@ -408,7 +429,7 @@ function farmaciaWrite_(payload, type) {
     var ledger = farmaciaReadLedger_(context);
     var product = ledger.products.find(function(record) { return record.id === (payload.data || {}).productId; });
     var data = type === 'PRODUCT' ? farmaciaProductData_(payload.data) : type === 'MOVEMENT' ? farmaciaMovementData_(payload.data) :
-      type === 'RECEIPT' ? farmaciaReceiptData_(payload.data, product) : farmaciaInitialData_(payload.data, product, true);
+      type === 'RECEIPT' ? farmaciaReceiptData_(payload.data, product, context.studyId === FARMACIA_COMMON_SCOPE_) : farmaciaInitialData_(payload.data, product, true);
     var dataJson = JSON.stringify(data);
     var previous = ledger.records.find(function(record) { return record.requestId === requestId; });
     if (previous) {
@@ -440,9 +461,9 @@ function farmaciaWrite_(payload, type) {
         ((type === 'INITIAL' && farmaciaSamePosition_(record.data, data)) || (data.kit && record.data.kit === data.kit));
     })) throw new Error('Esta posição ou kit já possui inventário inicial. Não repita a contagem como nova entrada.');
     if (type === 'INITIAL' && ledger.positions.some(function(position) { return farmaciaSamePosition_(position, data); })) throw new Error('Esta posição já possui saldo. Não repita a contagem como nova entrada.');
-    if (type === 'RECEIPT' && (context.studyId === FARMACIA_COMMON_SCOPE_ || ledger.records.some(function(record) {
+    if (type === 'RECEIPT' && ledger.records.some(function(record) {
       return record.type === 'RECEIPT' && farmaciaReceiptKey_(record.data) === farmaciaReceiptKey_(data);
-    }))) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
+    })) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
     var id = ({ PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-' })[type] + Utilities.getUuid();
     if (ledger.records.some(function(record) { return record.id === id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
     if (type === 'MOVEMENT') {

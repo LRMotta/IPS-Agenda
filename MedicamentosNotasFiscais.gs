@@ -6,8 +6,11 @@
 var MED_NF_SHEET_NAME_ = 'Medicamentos_NF';
 var MED_NF_HEADERS_ = [
   'Chave_NF', 'Nota_Fiscal', 'Remetente', 'PDF_ID', 'PDF_Nome', 'PDF_Anexado_Em', 'PDF_Anexado_Por',
-  'Email_Preparado_Em', 'Email_Preparado_Por', 'Rascunho_ID', 'Enviada_Manual_Em', 'Enviada_Manual_Por'
+  'Email_Preparado_Em', 'Email_Preparado_Por', 'Rascunho_ID', 'Enviada_Manual_Em', 'Enviada_Manual_Por',
+  // Movimento RM dos itens recebidos pela Farmácia (os do Cadastro guardam o movimento na própria linha).
+  'Movimento_RM'
 ];
+var MED_NF_COL_MOVIMENTO_ = 12;
 var MED_NF_CC_FIXO_ = 'ips@ucs.br';
 var MED_NF_ASSUNTO_ = 'IPS - NOTAS FISCAIS - REMESSA MEDICAMENTOS';
 var MED_NF_PASTA_PADRAO_ = 'IPS - Notas fiscais de medicamentos';
@@ -26,6 +29,7 @@ var EQP_NF_DESTINATARIOS_PROP_ = 'EQP_NF_ULTIMOS_DESTINATARIOS';
 // Colunas (base 0) de cada aba de origem. "identificador" é o lote (medicamentos) ou o n° de série (equipamentos).
 var MED_NF_TIPOS_ = {
   medicamentos: {
+    tipo: 'medicamentos',
     lerAba: function(ss) { return getMedicamentosSheet_(ss, true); },
     totalColunas: 16,
     col: { data: 1, projeto: 2, registroRm: 3, notaFiscal: 4, remetente: 5, movimento: 6, descricao: 7, quantidade: 8, identificador: 9 },
@@ -39,6 +43,7 @@ var MED_NF_TIPOS_ = {
     destinatariosProp: MED_NF_DESTINATARIOS_PROP_
   },
   equipamentos: {
+    tipo: 'equipamentos',
     lerAba: function(ss) { return getEquipamentosSheet_(ss, true); },
     totalColunas: 18,
     col: { data: 1, projeto: 2, registroRm: 4, notaFiscal: 5, remetente: 6, movimento: 7, descricao: 9, quantidade: 10, identificador: 11 },
@@ -181,8 +186,123 @@ function medNfLerMeta_(ss, cfg) {
   return { sheet: sh, rows: sh.getRange(2, 1, sh.getLastRow() - 1, MED_NF_HEADERS_.length).getValues() };
 }
 
-function medNfLerNotas_(ss, cfg) {
+// Medicamentos: notas do Cadastro (histórico) + notas dos recebimentos da Farmácia, conforme o acesso de quem consulta.
+function medNfLerNotas_(ss, cfg, access) {
+  if (cfg.tipo === 'medicamentos') return medNfNotasFarmacia_(ss, access);
   return medNfAgrupar_(medNfLerItens_(ss, cfg).rows, medNfLerMeta_(ss, cfg).rows, cfg);
+}
+
+// As notas de medicamentos ficam na Farmácia: só quem tem acesso à Farmácia (estudos ou Geral) as vê ou altera.
+function medNfAcessoFarmacia_(nivel) {
+  var access = codexAssertCanRead_();
+  var levels = ['none', 'read', 'operate', 'manage'];
+  var atual = Math.max(levels.indexOf(codexNormalizeFarmaciaAccess_(access.farmaciaAccess)), levels.indexOf(codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess)));
+  if (atual < Math.max(1, levels.indexOf(nivel))) throw new Error('Seu usuário não tem permissão para esta ação nas notas fiscais da Farmácia.');
+  return access;
+}
+
+// Sem ação: leitura. Com ação: escrita registrada na trilha de auditoria.
+function medNfAutorizar_(cfg, acao, id) {
+  if (cfg.tipo === 'medicamentos') {
+    var access = medNfAcessoFarmacia_(acao ? 'operate' : 'read');
+    if (acao) codexWriteAuditLog_(acao, 'Farmácia', id || '');
+    return access;
+  }
+  return acao ? codexAssertCanWrite_(acao, 'Cadastros', id) : codexAssertCanRead_();
+}
+
+function medNfPodeVerEscopo_(access, studyId, restricted) {
+  if (studyId === FARMACIA_COMMON_SCOPE_) return !restricted && codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess) !== 'none';
+  if (codexNormalizeFarmaciaAccess_(access.farmaciaAccess) === 'none') return false;
+  var grant = codexFarmaciaGrantFor_(access, studyId);
+  return !!grant && (!restricted || grant.restricted === true);
+}
+
+function medNfDataBr_(iso) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '';
+}
+
+// Itens com nota fiscal nos recebimentos da Farmácia, de todos os estudos e classes. Lê cada aba do ledger uma vez;
+// a visibilidade é aplicada depois, por nota. Registros ilegíveis ficam de fora sem impedir a lista.
+function medNfItensFarmacia_(ss) {
+  var escopos = {};
+  escopos[farmaciaLedgerSheetName_(FARMACIA_COMMON_SCOPE_)] = { id: FARMACIA_COMMON_SCOPE_, nome: 'Geral (Farmácia)' };
+  codexFarmaciaStudyCatalog_().forEach(function(study) { escopos[farmaciaLedgerSheetName_(study.id)] = study; });
+  var itens = [];
+  ss.getSheets().forEach(function(sheet) {
+    var study = escopos[sheet.getName()];
+    if (!study || sheet.getLastRow() < 2) return;
+    var rows = sheet.getDataRange().getValues();
+    if (FARMACIA_LEDGER_HEADERS_.some(function(header, i) { return rows[0][i] !== header; })) return;
+    var escopo = JSON.stringify(study.id), registros = [], produtos = {};
+    rows.slice(1).forEach(function(row) {
+      if (row[2] !== escopo || typeof row[3] !== 'boolean') return;
+      try { registros.push({ id: row[0], type: row[1], restricted: row[3], data: JSON.parse(row[7]) }); } catch (e) { /* registro ilegível: fora da lista */ }
+    });
+    registros.forEach(function(r) {
+      if (r.type === 'PRODUCT' && r.data) produtos[r.id] = r.data;
+      else if (r.type === 'PRODUCT_EDIT' && r.data && r.data.data && produtos[r.data.entityId]) produtos[r.data.entityId] = r.data.data;
+    });
+    registros.forEach(function(r) {
+      var d = r.data, nf = r.type === 'RECEIPT' && d && d.invoice;
+      if (!nf || !medNfNumero_(nf.number)) return;
+      var produto = produtos[d.productId] || {};
+      itens.push({ studyId: study.id, estudo: study.nome || study.codigo || study.id, restricted: r.restricted, receiptId: r.id,
+        notaFiscal: medNfTexto_(nf.number), remetente: medNfTexto_(nf.sender),
+        descricao: [produto.name, produto.presentation].filter(Boolean).join(' · ') || 'Produto da Farmácia',
+        quantidade: d.physical, unidade: produto.unit || '', lote: medNfTexto_(d.lot), valorUnitario: nf.unitValue,
+        dataRecebimentoISO: medNfTexto_(d.receivedOn) });
+    });
+  });
+  return itens;
+}
+
+function medNfCamposMeta_(m) {
+  return { pdfId: medNfTexto_(m[3]), pdfNome: medNfTexto_(m[4]), pdfAnexadoEm: fmtEquipDate_(m[5], 'dd/MM/yyyy HH:mm'), pdfAnexadoPor: medNfTexto_(m[6]),
+    emailPreparadoEm: fmtEquipDate_(m[7], 'dd/MM/yyyy HH:mm'), emailPreparadoPor: medNfTexto_(m[8]),
+    enviadaManualEm: fmtEquipDate_(m[10], 'dd/MM/yyyy HH:mm'), enviadaManualPor: medNfTexto_(m[11]) };
+}
+
+// Uma nota aparece só para quem vê todos os itens dela. Item de classe restrita torna a nota restrita.
+// O movimento RM dos itens da Farmácia fica na aba de controle; o dos itens do Cadastro, nas próprias linhas.
+function medNfNotasFarmacia_(ss, access) {
+  var cfg = medNfTipo_('medicamentos');
+  var metaRows = medNfLerMeta_(ss, cfg).rows, meta = medNfMetaPorChave_(metaRows);
+  var porChave = {}, ocultas = {};
+  medNfAgrupar_(medNfLerItens_(ss, cfg).rows, metaRows, cfg).forEach(function(nota) {
+    nota.itensCadastro = nota.itens.length; nota.itensFarmacia = 0; nota.restrita = false;
+    porChave[nota.chave] = nota;
+  });
+  medNfItensFarmacia_(ss).forEach(function(item) {
+    var chave = medNfChave_(item.notaFiscal, item.remetente);
+    if (!medNfPodeVerEscopo_(access, item.studyId, item.restricted)) { ocultas[chave] = true; return; }
+    var nota = porChave[chave];
+    if (!nota) {
+      nota = porChave[chave] = Object.assign({ chave: chave, notaFiscal: item.notaFiscal, remetente: item.remetente, projetos: [],
+        dataRecebimento: '', dataRecebimentoISO: '', itens: [], movimentos: [], rmPendente: false, itensCadastro: 0, itensFarmacia: 0, restrita: false },
+        medNfCamposMeta_(meta[chave] ? meta[chave].values : []));
+    }
+    nota.itensFarmacia++;
+    if (item.restricted) nota.restrita = true;
+    if (nota.projetos.indexOf(item.estudo) < 0) nota.projetos.push(item.estudo);
+    if (item.dataRecebimentoISO > (nota.dataRecebimentoISO || '')) { nota.dataRecebimentoISO = item.dataRecebimentoISO; nota.dataRecebimento = medNfDataBr_(item.dataRecebimentoISO); }
+    nota.itens.push({ descricao: item.descricao, quantidade: item.quantidade, unidade: item.unidade, lote: item.lote, valorUnitario: item.valorUnitario, estudo: item.estudo, origem: 'farmacia' });
+  });
+  return Object.keys(porChave).filter(function(chave) { return !ocultas[chave]; }).map(function(chave) {
+    var nota = porChave[chave];
+    if (nota.itensFarmacia) {
+      var movimento = medNfTexto_((meta[chave] ? meta[chave].values : [])[MED_NF_COL_MOVIMENTO_]);
+      if (!movimento) nota.rmPendente = true;
+      else if (nota.movimentos.indexOf(movimento) < 0) nota.movimentos.push(movimento);
+    }
+    nota.movimentosDivergentes = nota.movimentos.length > 1;
+    nota.movimentoRm = nota.movimentos.length === 1 && !nota.rmPendente ? nota.movimentos[0] : '';
+    nota.situacao = medNfSituacao_(nota);
+    return nota;
+  }).sort(function(a, b) {
+    return String(b.dataRecebimentoISO || '').localeCompare(String(a.dataRecebimentoISO || '')) ||
+      String(a.notaFiscal).localeCompare(String(b.notaFiscal));
+  });
 }
 
 function medNfUltimosDestinatarios_(cfg) {
@@ -194,9 +314,9 @@ function medNfUltimosDestinatarios_(cfg) {
 }
 
 function medNfListar_(cfg) {
-  codexAssertCanRead_();
+  var access = medNfAutorizar_(cfg);
   return {
-    notas: medNfLerNotas_(getCodexSpreadsheet_(), cfg),
+    notas: medNfLerNotas_(getCodexSpreadsheet_(), cfg, access),
     copiaFixa: MED_NF_CC_FIXO_,
     ultimosDestinatarios: medNfUltimosDestinatarios_(cfg)
   };
@@ -208,6 +328,25 @@ function getMedicamentosNotasFiscais() {
 
 function getEquipamentosNotasFiscais() {
   return medNfListar_(medNfTipo_('equipamentos'));
+}
+
+// Sugestões de remetente para o recebimento da Farmácia: nomes já usados no Cadastro de Medicamentos.
+// Lê só a coluna do remetente; quem não tem acesso à Farmácia não recebe a lista.
+function getFarmaciaRemetentesNotas() {
+  var access = codexAssertCanRead_();
+  if (codexNormalizeFarmaciaAccess_(access.farmaciaAccess) === 'none' && codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess) === 'none') {
+    throw new Error('Seu usuário não tem permissão para esta ação na Farmácia.');
+  }
+  var cfg = medNfTipo_('medicamentos');
+  var sh = cfg.lerAba(getCodexSpreadsheet_());
+  var valores = sh && sh.getLastRow() > 1 ? sh.getRange(2, cfg.col.remetente + 1, sh.getLastRow() - 1, 1).getValues() : [];
+  var vistos = {}, remetentes = [];
+  valores.forEach(function(row) {
+    var nome = medNfTexto_(row[0]).replace(/\s+/g, ' '), chave = nome.toLowerCase();
+    if (nome && nome.length <= 120 && !vistos[chave]) { vistos[chave] = true; remetentes.push(nome); }
+  });
+  remetentes.sort(function(a, b) { return a.localeCompare(b, 'pt-BR'); });
+  return { remetentes: remetentes };
 }
 
 function medNfChavesPayload_(payload) {
@@ -243,7 +382,8 @@ function medNfGravarMeta_(ss, notas, campos, cfg) {
     sh = ss.insertSheet(cfg.abaControle);
     sh.getRange(1, 1, 1, MED_NF_HEADERS_.length).setValues([MED_NF_HEADERS_.slice()]);
     sh.setFrozenRows(1);
-  } else if (sh.getLastRow() === 0) {
+  } else if (sh.getLastRow() === 0 || sh.getLastColumn() < MED_NF_HEADERS_.length) {
+    // Abas criadas antes da coluna Movimento_RM ganham o cabeçalho novo na primeira gravação.
     sh.getRange(1, 1, 1, MED_NF_HEADERS_.length).setValues([MED_NF_HEADERS_.slice()]);
   }
   var lidos = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, MED_NF_HEADERS_.length).getValues() : [];
@@ -276,7 +416,7 @@ function salvarMovimentoRmNotaFiscal(payload) {
   payload = payload || {};
   var cfg = medNfTipo_(payload.tipo);
   var chave = medNfChavesPayload_({ chaves: [payload.chave] })[0];
-  codexAssertCanWrite_('salvarMovimentoRmNotaFiscal', 'Cadastros', chave);
+  var access = medNfAutorizar_(cfg, 'salvarMovimentoRmNotaFiscal', chave);
   var movimento = medNfTexto_(payload.movimentoRm);
   if (!movimento) throw new Error('Informe o número do movimento no RM.');
   if (movimento.length > 40) throw new Error('O número do movimento deve ter no máximo 40 caracteres.');
@@ -284,17 +424,21 @@ function salvarMovimentoRmNotaFiscal(payload) {
   return codexWithDocumentLock_('salvarMovimentoRmNotaFiscal', function() {
     var ss = getCodexSpreadsheet_();
     var lidos = medNfLerItens_(ss, cfg);
-    var nota = medNfNotasSelecionadas_(medNfAgrupar_(lidos.rows, [], cfg), [chave])[0];
+    var nota = medNfNotasSelecionadas_(cfg.tipo === 'medicamentos' ? medNfLerNotas_(ss, cfg, access) : medNfAgrupar_(lidos.rows, [], cfg), [chave])[0];
     // Outra pessoa pode ter informado o movimento depois que a lista foi carregada.
     if (nota.movimentos.join(' / ') !== esperado) throw new Error('O movimento desta nota mudou. Atualize a lista antes de salvar.');
+    // Itens recebidos pela Farmácia: o movimento fica na aba de controle da nota.
+    if (nota.itensFarmacia) medNfGravarMeta_(ss, [nota], { Movimento_RM: movimento }, cfg);
     var linhas = [];
     lidos.rows.forEach(function(r, idx) { if (medNfChaveLinha_(r, cfg) === chave) linhas.push(idx + 2); });
     var colRm = medNfLetraColuna_(cfg.col.registroRm);
     var colMov = medNfLetraColuna_(cfg.col.movimento);
     // Duas RangeLists: os itens de uma NF não são contíguos na aba.
-    lidos.sheet.getRangeList(linhas.map(function(row) { return colRm + row; })).setValue('Sim');
-    lidos.sheet.getRangeList(linhas.map(function(row) { return colMov + row; })).setValue(movimento);
-    return { ok: true, itens: linhas.length, message: 'Movimento ' + movimento + ' registrado na NF ' + nota.notaFiscal + '.' };
+    if (linhas.length) {
+      lidos.sheet.getRangeList(linhas.map(function(row) { return colRm + row; })).setValue('Sim');
+      lidos.sheet.getRangeList(linhas.map(function(row) { return colMov + row; })).setValue(movimento);
+    }
+    return { ok: true, itens: linhas.length + (nota.itensFarmacia || 0), message: 'Movimento ' + movimento + ' registrado na NF ' + nota.notaFiscal + '.' };
   });
 }
 
@@ -328,7 +472,7 @@ function anexarPdfNotaFiscal(payload) {
   payload = payload || {};
   var cfg = medNfTipo_(payload.tipo);
   var chave = medNfChavesPayload_({ chaves: [payload.chave] })[0];
-  codexAssertCanWrite_('anexarPdfNotaFiscal', 'Cadastros', chave);
+  var access = medNfAutorizar_(cfg, 'anexarPdfNotaFiscal', chave);
   var conteudo = String(payload.conteudoBase64 || '');
   if (!conteudo) throw new Error('Selecione o arquivo PDF da nota fiscal.');
   if (conteudo.length > Math.ceil(MED_NF_PDF_MAX_BYTES_ / 3) * 4 + 4) throw new Error('O PDF deve ter no máximo 10 MB.');
@@ -336,7 +480,7 @@ function anexarPdfNotaFiscal(payload) {
   if (!bytes.length || bytes.length > MED_NF_PDF_MAX_BYTES_) throw new Error('O PDF deve ter no máximo 10 MB.');
   if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== '%PDF') throw new Error('O arquivo selecionado não é um PDF.');
   var ss = getCodexSpreadsheet_();
-  var nota = medNfNotasSelecionadas_(medNfLerNotas_(ss, cfg), [chave])[0];
+  var nota = medNfNotasSelecionadas_(medNfLerNotas_(ss, cfg, access), [chave])[0];
   var arquivo = medNfPastaDestino_(cfg).createFile(Utilities.newBlob(bytes, 'application/pdf', medNfNomeArquivo_(nota)));
   var usuario = getUsuarioEmail();
   return codexWithDocumentLock_('anexarPdfNotaFiscal', function() {
@@ -353,11 +497,11 @@ function anexarPdfNotaFiscal(payload) {
 function marcarNotasFiscaisEnviadas(payload) {
   var cfg = medNfTipo_(payload && payload.tipo);
   var chaves = medNfChavesPayload_(payload);
-  codexAssertCanWrite_('marcarNotasFiscaisEnviadas', 'Cadastros', chaves.join(','));
+  var access = medNfAutorizar_(cfg, 'marcarNotasFiscaisEnviadas', chaves.join(','));
   var usuario = getUsuarioEmail();
   return codexWithDocumentLock_('marcarNotasFiscaisEnviadas', function() {
     var ss = getCodexSpreadsheet_();
-    var notas = medNfNotasSelecionadas_(medNfLerNotas_(ss, cfg), chaves);
+    var notas = medNfNotasSelecionadas_(medNfLerNotas_(ss, cfg, access), chaves);
     var semMovimento = notas.filter(function(nota) { return nota.rmPendente; });
     if (semMovimento.length) throw new Error('Informe o movimento RM antes de marcar como enviada: NF ' + semMovimento.map(function(n) { return n.notaFiscal; }).join(', ') + '.');
     medNfGravarMeta_(ss, notas, { Enviada_Manual_Em: new Date(), Enviada_Manual_Por: usuario }, cfg);
@@ -407,10 +551,10 @@ function prepararEmailNotasFiscais(payload) {
   payload = payload || {};
   var cfg = medNfTipo_(payload.tipo);
   var chaves = medNfChavesPayload_(payload);
-  codexAssertCanWrite_('prepararEmailNotasFiscais', 'Cadastros', chaves.join(','));
+  var access = medNfAutorizar_(cfg, 'prepararEmailNotasFiscais', chaves.join(','));
   var destinatarios = medNfDestinatarios_(payload.destinatarios);
   var ss = getCodexSpreadsheet_();
-  var notas = medNfNotasSelecionadas_(medNfLerNotas_(ss, cfg), chaves);
+  var notas = medNfNotasSelecionadas_(medNfLerNotas_(ss, cfg, access), chaves);
   var incompletas = notas.filter(function(nota) { return nota.rmPendente || nota.movimentosDivergentes || !nota.pdfId; });
   if (incompletas.length) {
     throw new Error('Estas notas ainda precisam de movimento RM único e PDF: NF ' + incompletas.map(function(n) { return n.notaFiscal; }).join(', ') + '.');

@@ -1,15 +1,16 @@
 <script>
 // Notas fiscais de Medicamentos e de Equipamentos: movimento RM por nota, PDF digitalizado e rascunho do e-mail.
-// Cada cadastro tem a própria lista (contexto); os modais de movimento, PDFs e e-mail são compartilhados e
-// operam sobre o contexto que os abriu.
+// Medicamentos ficam na página Farmácia › Notas fiscais (recebimentos da Farmácia + histórico do Cadastro);
+// Equipamentos continuam no Cadastro, com a alternância Itens / Notas. Os modais de movimento, PDFs e e-mail são
+// compartilhados e operam sobre o contexto que os abriu.
 var MED_NF_CONTEXTOS = {
   medicamentos: {
     tipo: 'medicamentos', attr: 'med',
-    viewItens: 'medItensView', viewNotas: 'medNotasView', btnItens: 'medViewItens', btnNotas: 'medViewNotas',
-    body: 'bodyMedNotas', busca: 'searchMedNotas', countPrefixo: 'medNfCount_', pendentes: 'medNfPendentesCount',
+    body: 'bodyMedNotas', busca: 'searchMedNotas', countPrefixo: 'medNfCount_', pendentes: '',
     selecaoInfo: 'medNfSelecaoInfo', btnEmail: 'btnMedNfPrepararEmail', btnMarcar: 'btnMedNfMarcarEnviadas',
     selecionarTodas: 'medNfSelecionarTodas', campoIdentificador: 'lote', rotuloIdentificador: 'lote',
-    recarregarItens: function() { if (typeof carregarMedicamentos === 'function') carregarMedicamentos(true); },
+    // O Cadastro de Medicamentos é só histórico: a nota não altera itens exibidos em outra página.
+    recarregarItens: function() {},
     notas: [], filtro: 'rm_pendente', selecionadas: {}, carregamento: 0, ultimosDestinatarios: ''
   },
   equipamentos: {
@@ -53,7 +54,6 @@ function medNfSetViewCtx(ctx, view) {
   if (notas) medNfCarregar(ctx.tipo);
 }
 
-function medSetView(view) { medNfSetViewCtx(MED_NF_CONTEXTOS.medicamentos, view); }
 function eqSetView(view) { medNfSetViewCtx(MED_NF_CONTEXTOS.equipamentos, view); }
 
 function medNfCarregar(tipo) {
@@ -103,7 +103,15 @@ function medNfItemIdentificador(ctx, item) {
 
 function medNfBusca(ctx, nota) {
   return [nota.notaFiscal, nota.remetente, (nota.projetos || []).join(' '), (nota.movimentos || []).join(' '),
-    (nota.itens || []).map(function(i) { return i.descricao + ' ' + medNfItemIdentificador(ctx, i); }).join(' ')].join(' ').toLowerCase();
+    (nota.itens || []).map(function(i) { return i.descricao + ' ' + medNfItemIdentificador(ctx, i) + ' ' + (i.estudo || ''); }).join(' ')].join(' ').toLowerCase();
+}
+
+// Item recebido pela Farmácia: estudo e valor unitário informados no recebimento.
+function medNfItemTexto(ctx, i) {
+  var identificador = medNfItemIdentificador(ctx, i);
+  var valor = typeof i.valorUnitario === 'number' ? 'R$ ' + i.valorUnitario.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' / un.' : '';
+  return [i.descricao || '—', i.quantidade !== '' && i.quantidade != null ? String(i.quantidade) + (i.unidade ? ' ' + i.unidade : '') : '',
+    identificador ? ctx.rotuloIdentificador + ' ' + identificador : '', i.estudo || '', valor].filter(Boolean).join(' · ');
 }
 
 function medNfVisiveis(ctx) {
@@ -122,7 +130,7 @@ function medNfRender(tipo) {
     var el = document.getElementById(ctx.countPrefixo + k);
     if (el) el.textContent = contagem[k] ? String(contagem[k]) : '';
   });
-  var pend = document.getElementById(ctx.pendentes);
+  var pend = ctx.pendentes ? document.getElementById(ctx.pendentes) : null;
   if (pend) pend.textContent = contagem.rm_pendente ? String(contagem.rm_pendente) : '';
   var tb = document.getElementById(ctx.body);
   if (!tb) return;
@@ -138,9 +146,9 @@ function medNfRender(tipo) {
       var aviso = n.movimentosDivergentes ? 'Movimentos diferentes entre os itens' : (n.rmPendente && n.movimentos.length ? 'Há itens sem movimento' : '');
       return '<tr>'
         + '<td><input type="checkbox" ' + checkAttr + '="' + index + '"' + (ctx.selecionadas[n.chave] ? ' checked' : '') + ' aria-label="Selecionar NF ' + esc(n.notaFiscal) + '"></td>'
-        + '<td><div class="row-name">NF ' + esc(n.notaFiscal) + '</div><div class="med-nf-sub">' + esc(n.remetente || '—') + '</div></td>'
+        + '<td><div class="row-name">NF ' + esc(n.notaFiscal) + '</div><div class="med-nf-sub">' + esc(n.remetente || '—') + '</div>' + (n.restrita ? '<span class="chip chip-yellow med-nf-restrita" title="Contém itens de acesso restrito (não cego)">Acesso restrito</span>' : '') + '</td>'
         + '<td>' + (n.projetos || []).map(function(p) { return projetoChip(p); }).join(' ') + '</td>'
-        + '<td title="' + esc((n.itens || []).map(function(i) { return i.descricao + (i.quantidade !== '' ? ' (' + i.quantidade + ')' : ''); }).join('\n')) + '">' + (n.itens || []).length + '</td>'
+        + '<td title="' + esc((n.itens || []).map(function(i) { return medNfItemTexto(ctx, i); }).join('\n')) + '">' + (n.itens || []).length + '</td>'
         + '<td>' + esc(n.dataRecebimento || '—') + '</td>'
         + '<td><div style="font-weight:600">' + esc(movimento) + '</div>' + (aviso ? '<div class="med-nf-alerta">' + esc(aviso) + '</div>' : '') + '</td>'
         + '<td>' + (n.pdfId ? '<a href="https://drive.google.com/file/d/' + encodeURIComponent(n.pdfId) + '/view" target="_blank" rel="noopener" title="' + esc(n.pdfNome || 'PDF') + '">Abrir</a>' : '<span style="color:#9aa3b0">—</span>') + '</td>'
@@ -206,8 +214,7 @@ function medNfAbrirMovimento(nota, tipo) {
   _medNfMovCtx = ctx;
   document.getElementById('medNfMovSub').textContent = 'NF ' + nota.notaFiscal + ' · ' + (nota.remetente || 'sem remetente');
   document.getElementById('medNfMovItens').innerHTML = (nota.itens || []).map(function(i) {
-    var identificador = medNfItemIdentificador(ctx, i);
-    return '<li>' + esc(i.descricao || '—') + (i.quantidade !== '' ? ' · ' + esc(i.quantidade) : '') + (identificador ? ' · ' + ctx.rotuloIdentificador + ' ' + esc(identificador) : '') + '</li>';
+    return '<li>' + esc(medNfItemTexto(ctx, i)) + '</li>';
   }).join('');
   document.getElementById('medNfMovAviso').textContent = nota.movimentosDivergentes
     ? 'Os itens têm movimentos diferentes (' + nota.movimentos.join(' / ') + '). O valor salvo substituirá todos.' : '';

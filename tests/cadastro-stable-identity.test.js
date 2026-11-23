@@ -191,7 +191,15 @@ for (const config of [
     });
   }
 
-  test(config.kind + ': criação sem identidade continua gerando ID e autoria próprios', () => {
+  // Medicamentos: o Cadastro virou histórico; novos recebimentos são registrados na Farmácia.
+  if (config.kind === 'medicamento') test('medicamento: criação pelo Cadastro é recusada sem gravar', () => {
+    const f = receiptFixture();
+    const before = JSON.stringify(f.sheet.rows);
+    assert.throws(() => f.server[config.save](payload({ rowIndex: '', [config.idKey]: '' })), /Farmácia › Estoque/);
+    assert.equal(JSON.stringify(f.sheet.rows), before);
+    assert.equal(f.sheet.writes, 0);
+  });
+  else test(config.kind + ': criação sem identidade continua gerando ID e autoria próprios', () => {
     const f = receiptFixture();
     f.server[config.save](payload({ rowIndex: '', [config.idKey]: '' }));
     assert.deepEqual(f.locks, [config.save]);

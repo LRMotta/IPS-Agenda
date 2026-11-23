@@ -602,21 +602,13 @@
           <div class="stat-icon"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span></div>
         </div>
       </div>
-      <div class="med-view-bar">
-        <div class="proj-seg" role="group" aria-label="Visualização de medicamentos">
-          <button type="button" class="proj-seg-btn active" id="medViewItens" aria-pressed="true" onclick="medSetView('itens')">Itens recebidos</button>
-          <button type="button" class="proj-seg-btn" id="medViewNotas" aria-pressed="false" onclick="medSetView('notas')">Notas fiscais<span class="proj-seg-count" id="medNfPendentesCount"></span></button>
-        </div>
-      </div>
+      <div class="med-historico-aviso" role="note"><span class="material-symbols-outlined" aria-hidden="true">history</span><div>Histórico dos medicamentos cadastrados antes da Farmácia. Novos recebimentos são registrados em <b>Farmácia › Estoque</b>, e as notas fiscais ficam em <b>Farmácia › Notas fiscais</b>.</div></div>
       <div id="medItensView">
       <div class="toolbar-card">
         <div class="search-wrap">
           <span class="material-symbols-outlined" aria-hidden="true">search</span>
           <input type="text" id="searchMedicamentos" placeholder="Buscar por projeto, descrição, lote, nota fiscal ou responsável..." oninput="filtrarMedicamentos()" aria-label="Buscar medicamentos">
         </div>
-        <button class="btn-new" onclick="abrirFormMedicamento(null)">
-          <span class="material-symbols-outlined" aria-hidden="true">add</span> Novo Medicamento
-        </button>
       </div>
       <div class="table-card">
         <table class="data-table">
@@ -637,11 +629,16 @@
         </table>
       </div>
       </div>
-      <div id="medNotasView" hidden>
+    </div>
+
+    <!-- ═══ FARMÁCIA · NOTAS FISCAIS DE MEDICAMENTOS ═══ -->
+    <div class="page" id="page-farmacia-notas">
+      <p class="med-nf-intro">Notas dos recebimentos registrados na Farmácia › Estoque e notas antigas do Cadastro de Medicamentos. Notas com itens de acesso restrito aparecem só para quem tem a liberação restrita do estudo.</p>
+      <div id="medNotasView">
         <div class="toolbar-card med-nf-toolbar">
           <div class="search-wrap">
             <span class="material-symbols-outlined" aria-hidden="true">search</span>
-            <input type="text" id="searchMedNotas" placeholder="Buscar por NF, remetente, projeto ou movimento..." oninput="medNfRender()" aria-label="Buscar notas fiscais">
+            <input type="text" id="searchMedNotas" placeholder="Buscar por NF, remetente, estudo, item ou movimento..." oninput="medNfRender()" aria-label="Buscar notas fiscais">
           </div>
           <div class="proj-seg" role="group" aria-label="Filtrar notas fiscais por situação">
             <button type="button" class="proj-seg-btn active" data-med-nf-filtro="rm_pendente" aria-pressed="true" onclick="medNfSetFiltro('rm_pendente')">RM pendente<span class="proj-seg-count" id="medNfCount_rm_pendente"></span></button>

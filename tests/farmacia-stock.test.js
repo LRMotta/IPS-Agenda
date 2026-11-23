@@ -16,7 +16,7 @@ function fixture(realLocations = false) {
   const stores = { [STANDARD]:new FakeSpreadsheet({}), [RESTRICTED]:new FakeSpreadsheet({}) };
   const lock = fakeDocumentLock();
   const state = { config:'', opened:[], today:'2026-10-21', uuid:0 };
-  const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'FarmaciaLocais.gs', 'FarmaciaLocationActions.gs'], {
+  const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'FarmaciaLocais.gs', 'FarmaciaLocationActions.gs', 'MedicamentosNotasFiscais.gs'], {
     LockService:lock.LockService,
     PropertiesService:{ getScriptProperties:() => ({ getProperty:() => state.config }) },
     SpreadsheetApp:{ openById:id => { state.opened.push(id); if (!stores[id]) throw new Error('Arquivo desconhecido'); return stores[id]; } },
@@ -998,4 +998,56 @@ test('formas farmacêuticas Spray e Ampola são aceitas e as listas do servidor,
   assert.deepEqual(client, server);
   assert.deepEqual(html, server);
   for (const item of ['Spray', 'Spray nasal', 'Ampola']) assert.ok(server.includes(item), item);
+});
+
+test('recebimento guarda nota fiscal, remetente e valor unitário; registros antigos continuam sem nota',()=>{
+  const f=lifecycleFixture();
+  const old=f.server.registrarRecebimentoFarmacia(f.receipt()).id;
+  const invoice={number:'000123',sender:'Marken Ltda',unitValue:12.5};
+  const withInvoice=f.server.registrarRecebimentoFarmacia({...f.receipt({document:'REMESSA-002',invoice}),requestId:'receipt-request-0002'}).id;
+  const pendingNote=f.server.registrarRecebimentoFarmacia({...f.receipt({document:'REMESSA-003',invoice:{number:'',sender:'',unitValue:null}}),requestId:'receipt-request-0003'}).id;
+  const positions=f.stock().positions;
+  assert.equal(Object.hasOwn(positions.find(p=>p.id===old),'invoice'),false);
+  assert.equal(JSON.stringify(positions.find(p=>p.id===withInvoice).invoice),JSON.stringify(invoice));
+  assert.equal(JSON.stringify(positions.find(p=>p.id===pendingNote).invoice),JSON.stringify({number:'',sender:'',unitValue:null}));
+  assert.equal(f.server.registrarRecebimentoFarmacia({...f.receipt({document:'REMESSA-002',invoice}),requestId:'receipt-request-0002'}).repeated,true);
+});
+
+test('com número da nota, remetente e valor unitário são obrigatórios e validados antes de gravar',()=>{
+  const f=lifecycleFixture(); f.server.registrarRecebimentoFarmacia(f.receipt());
+  const writes=f.sheet().writes;
+  const attempt=(invoice,n)=>()=>f.server.registrarRecebimentoFarmacia({...f.receipt({document:'NF-'+n,invoice}),requestId:'receipt-invalid-000'+n});
+  assert.throws(attempt({number:'123',sender:'',unitValue:1},1),/remetente/);
+  assert.throws(attempt({number:'123',sender:'Marken',unitValue:null},2),/valor unitário/);
+  assert.throws(attempt({number:'123',sender:'Marken',unitValue:1.005},3),/duas casas/);
+  assert.throws(attempt({number:'123',sender:'Marken',unitValue:-1},4),/duas casas/);
+  assert.throws(attempt({number:'sem número',sender:'Marken',unitValue:1},5),/número de nota/);
+  assert.equal(f.sheet().writes,writes);
+  assert.equal(f.server.registrarRecebimentoFarmacia({...f.receipt({document:'NF-6',invoice:{number:'123',sender:'Marken',unitValue:0}}),requestId:'receipt-valid-0006'}).repeated,false);
+});
+
+test('estoque Geral recebe produto próprio do IPS já disponível; estudo continua aceitando só patrocinador',()=>{
+  const f=fixture();
+  const common=f.server.cadastrarProdutoFarmacia(f.product({studyId:'@IPS_COMMON',requestId:'common-product-0001'})).id;
+  const receipt={studyId:'@IPS_COMMON',restricted:false,requestId:'common-receipt-0001',data:{productId:common,lot:'G1',expiry:'2027-01-31',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Prateleira 1'},kit:'',physical:30,receivedOn:'2026-10-21',document:'NF 555',note:'',invoice:{number:'555',sender:'Distribuidora',unitValue:3.2}}};
+  f.server.registrarRecebimentoFarmacia(receipt);
+  const position=f.server.getFarmaciaEstoque('@IPS_COMMON',false).positions[0];
+  assert.equal(position.available,30);assert.equal(position.pending,0);assert.equal(position.origin,'receipt');
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia({...receipt,requestId:'common-receipt-0002'}),/já foi registrado/);
+  const expired=f.server.registrarRecebimentoFarmacia({...receipt,requestId:'common-receipt-0003',data:{...receipt.data,lot:'G2',expiry:'2026-10-01'}}).id;
+  const blocked=f.server.getFarmaciaEstoque('@IPS_COMMON',false).positions.find(p=>p.id===expired);
+  assert.equal(blocked.available,0);assert.equal(blocked.blocked,30);
+  const site=f.server.cadastrarProdutoFarmacia(f.product()).id;
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia({...receipt,studyId:'P1',requestId:'site-receipt-0001',data:{...receipt.data,productId:site}}),/patrocinador/);
+});
+
+test('sugestões de remetente vêm do Cadastro de Medicamentos, sem repetição e só para quem acessa a Farmácia',()=>{
+  const f=fixture();
+  f.app.sheets['💊 Medicamentos']=new FakeSheet('💊 Medicamentos',[
+    ['ID','Data','Projeto','RM','NF','Remetente'],
+    ['M1','','P1','Sim','1','Marken Ltda'],['M2','','P1','Sim','2','marken ltda'],['M3','','P1','Sim','3','  Almac   Group '],['M4','','P1','Sim','4','']
+  ]);
+  assert.equal(JSON.stringify(f.server.getFarmaciaRemetentesNotas().remetentes),JSON.stringify(['Almac Group','Marken Ltda']));
+  f.users.rows[1][11]='';
+  assert.throws(()=>f.server.getFarmaciaRemetentesNotas(),/permissão/);
 });

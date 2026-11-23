@@ -22,7 +22,9 @@ const NOTAS = [
   nota('222|B', 'falta_pdf'),
   nota('333|C', 'pronta', { pdfId: 'pdf-333', pdfNome: 'NF 333.pdf', movimentos: ['701'], movimentoRm: '701' }),
   nota('444|D', 'pronta', { pdfId: 'pdf-444', pdfNome: 'NF 444.pdf', movimentos: ['702'], movimentoRm: '702' }),
-  nota('555|E', 'concluida', { pdfId: 'pdf-555', emailPreparadoEm: '10/11/2026 10:00' })
+  nota('555|E', 'concluida', { pdfId: 'pdf-555', emailPreparadoEm: '10/11/2026 10:00' }),
+  nota('666|F', 'rm_pendente', { movimentos: [], movimentoRm: '', rmPendente: true, restrita: true,
+    itens: [{ descricao: 'Droga cega · Frasco', quantidade: 3, unidade: 'frasco', lote: 'LC1', estudo: 'Estudo cego', valorUnitario: 1234.5 }] })
 ];
 
 async function fixture(browser, width, pagina) {
@@ -74,12 +76,17 @@ test('notas fiscais: filtros, movimento, seleção e rascunho do e-mail em deskt
   const browser = await loadPlaywright().chromium.launch({ headless: true });
   try {
     for (const width of [1440, 390]) {
-      const { page, errors } = await fixture(browser, width);
-      await page.getByRole('button', { name: /Notas fiscais/ }).click();
+      // Notas de medicamentos ficam na página Farmácia › Notas fiscais; o Cadastro mostra só o histórico.
+      const { page, errors } = await fixture(browser, width, 'page-farmacia-notas');
+      assert.equal(await page.locator('#page-medicamentos').getByRole('button', { name: /Novo Medicamento|Notas fiscais/ }).count(), 0);
+      assert.match(await page.locator('#page-medicamentos .med-historico-aviso').textContent(), /Farmácia › Estoque/);
+      await page.evaluate(() => window.medNfCarregar('medicamentos'));
       await responder(page, 'getMedicamentosNotasFiscais', { notas: NOTAS, copiaFixa: 'ips@ucs.br', ultimosDestinatarios: 'financeiro@ucs.br' });
-      assert.equal(await page.locator('#medItensView').isHidden(), true);
-      assert.equal(await page.locator('#bodyMedNotas tr').count(), 1, 'filtro inicial: RM pendente');
-      assert.equal(await page.locator('#medNfPendentesCount').innerText(), '1');
+      assert.equal(await page.locator('#bodyMedNotas tr').count(), 2, 'filtro inicial: RM pendente');
+      assert.equal(await page.locator('#medNfCount_rm_pendente').innerText(), '2');
+      const restrita = page.locator('#bodyMedNotas tr', { hasText: 'NF 666' });
+      assert.match(await restrita.innerText(), /Acesso restrito/);
+      assert.match(await restrita.locator('td').nth(3).getAttribute('title'), /Estudo cego · R\$ 1\.234,50 \/ un\./);
 
       await page.getByRole('button', { name: 'Informar movimento RM da NF 111' }).click();
       await page.locator('#modalMedNfMovimento').getByLabel(/Movimento RM/).fill('703');
