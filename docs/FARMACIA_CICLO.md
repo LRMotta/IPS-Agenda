@@ -51,12 +51,27 @@ ID e código do participante no estudo, sem nome, nascimento ou outros dados pes
 O vínculo de projeto legado explícito só resolve quando corresponde a um único
 projeto do catálogo; cadastro duplicado ou vínculo ambíguo não autoriza dispensação.
 
-Exige quantidade disponível, data, visita/ciclo informado, prescrição/Documento Fonte,
-referência na plataforma do estudo e último dia previsto de uso. A mesma referência,
-entrada de estoque e participante não podem duplicar uma dispensação. Uma operação
-da plataforma pode identificar itens distintos sem ser recusada apenas por isso. O servidor
-verifica validade para o período, unidade, quantidade e confirmação da conferência.
-Baixa físico e disponível. Não prescreve, calcula dose, randomiza nem acessa IRT/Tasy.
+Exige quantidade disponível, data, visita/ciclo informado e último dia previsto de uso.
+Prescrição/Documento Fonte e o número da transação no IRT/plataforma do estudo são
+opcionais (nem todo estudo gera esse número). Quando informada, a mesma transação,
+entrada de estoque e participante não podem duplicar uma dispensação; sem ela, não há
+essa checagem. Uma transação pode identificar itens distintos sem ser recusada apenas
+por isso. O servidor verifica validade para o período, unidade, quantidade e confirmação
+da conferência. Baixa físico e disponível. Não prescreve, calcula dose, randomiza nem
+acessa IRT/Tasy.
+
+A tela registra uma **guia**: participante, visita, datas e referências uma vez, com
+um ou mais medicamentos ("Adicionar medicamento", até 20), cada um com lote/kit e
+quantidade. A lista de lotes mostra só os que têm saldo disponível, não vencidos e
+que não são retorno, com o saldo no próprio rótulo. `registrarDispensacaoFarmacia()`
+valida todos os itens sob o mesmo lock, aplica-os em ordem sobre o estado lido e grava
+as linhas numa única escrita: se um item falhar (saldo, revisão, validade), nenhum é
+gravado. O mesmo lote/kit não pode aparecer duas vezes na guia. Cada item continua
+sendo uma dispensação própria (`requestId` da guia + `-n`), com retorno e transporte
+vinculados a ele. Guias com mais de um item recebem `guideId` (o `requestId` da guia),
+e o documento impresso de qualquer item traz a guia completa. Repetir a mesma guia
+devolve os registros existentes; repeti-la com outros dados ou outro número de itens
+falha. `registrarCicloFarmacia()` continua aceitando dispensação de um item, sem `guideId`.
 
 ### Retorno e adesão
 

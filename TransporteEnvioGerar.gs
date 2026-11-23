@@ -125,6 +125,17 @@ function transporteEnvioIniciarGeracao_(token, dadosDoToken, usuario) {
 }
 
 /**
+ * Resposta da geracao para o navegador. O google.script.run entrega null quando o objeto tem um Date (a base de
+ * cobranca do monitor tem): a tela voltava ao botao "Gerar" com a versao antiga, embora tudo estivesse feito.
+ * A base de cobranca e interna; o resto vai como JSON puro (datas viram texto).
+ */
+function transporteEnvioRespostaGerar_(resposta) {
+  var copia = JSON.parse(JSON.stringify(resposta));
+  if (copia.monitorRegistro) delete copia.monitorRegistro.baseCobranca;
+  return copia;
+}
+
+/**
  * RPC do passo "Gerar". versao: a do registro na tela. generationRequestId: token (32 hex) por tentativa;
  * repetir o mesmo token retoma sem duplicar PDF ou rascunho.
  */
@@ -166,7 +177,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
   try {
     var repetido = transporteGenerationReplay_(request.record);
     // O resultado guardado traz a versao da epoca; a tela precisa da atual para continuar gravando.
-    if (repetido) return Object.assign({ ok: true }, repetido, { versao: lido.versao });
+    if (repetido) return transporteEnvioRespostaGerar_(Object.assign({ ok: true }, repetido, { versao: lido.versao }));
     // AWB e Agenda: escritas curtas, em lock, antes de qualquer arquivo.
     transporteAwbReservarEnvio_(agendaId, slot, usuario, { strict: true });
     codexWithDocumentLock_('transporteEnvioSincronizarAgenda', function() { return transporteSincronizarAgenda_(registro); });
@@ -188,6 +199,11 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
     if (rascunho.ok && rascunho.subject) {
       registro.rascunhoAssunto = String(rascunho.subject);
       registro.rascunhoDestinatarios = String(rascunho.recipients || '');
+    }
+    // O PDF tambem: o passo Enviar pede para imprimir e precisa do link mesmo depois de reabrir o envio.
+    if (pdf.fileId) {
+      registro.pdfArquivoId = String(pdf.fileId);
+      registro.pdfArquivoNome = String(pdf.fileName || '');
     }
     // Documentacao registrada para o monitor de e-mails (PINEX e Backup nao promovem status).
     if (monitorRef && transporteNormalizeCourierFromCodex_(registro.courier) !== 'PINEX') {
@@ -214,7 +230,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
     resultado.versao = gravado.versao;
     resultado.passo = proximoPasso;
     if (rascunho.ok || rascunho.skipped) transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: resultado, pdf: null, draft: null });
-    return Object.assign({ ok: true }, resultado);
+    return transporteEnvioRespostaGerar_(Object.assign({ ok: true }, resultado));
   } finally {
     TRANSPORTE_GENERATION_REQUEST_ = null;
     TRANSPORTE_GENERATION_WARNINGS_ = null;

@@ -100,8 +100,18 @@ const dentro = (s) => s.eventos.map((e) => e[0]);
 test('gerar: AWB e Agenda sob lock curto; documentos, PDF e rascunho fora do lock; passo enviar', () => {
   const s = servidor();
   const aberto = abrir(s);
-  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', aberto.versao, TOKEN));
+  const bruta = s.gerarDocumentosTransporteEnvio('ab12cd34', '1', aberto.versao, TOKEN);
+  const r = plano(bruta);
   assert.equal(r.ok, true);
+  // Resposta sem Date: o google.script.run entrega null para objetos com Date e a tela voltava ao "Gerar".
+  const comDate = [];
+  (function varrer(v, caminho) {
+    if (Object.prototype.toString.call(v) === '[object Date]') comDate.push(caminho);
+    else if (v && typeof v === 'object') Object.keys(v).forEach((k) => varrer(v[k], caminho + '.' + k));
+  })(bruta, 'resposta');
+  assert.deepEqual(comDate, []);
+  assert.equal(r.monitorRegistro.registrado, true);
+  assert.equal('baseCobranca' in r.monitorRegistro, false);
   assert.deepEqual(dentro(s), ['awb', 'agenda', 'docs', 'pdf', 'rascunho', 'status']);
   const emLock = Object.fromEntries(s.eventos.map((e) => [e[0], e[1]]));
   assert.deepEqual(emLock, { awb: true, agenda: true, docs: false, pdf: false, rascunho: false, status: true });
@@ -345,10 +355,14 @@ test('assunto e destinatários do rascunho ficam no registro; Agenda alterada de
   assert.equal(r.draftRecipients, 'marken@example.invalid');
   const gravado = plano(s.transporteRegistroLer_('ab12cd34', '1')).registro;
   assert.deepEqual([gravado.rascunhoAssunto, gravado.rascunhoDestinatarios], [r.draftSubject, r.draftRecipients]);
+  // O PDF também fica no registro: o passo Enviar mostra o link para imprimir depois de reabrir.
+  assert.deepEqual([gravado.pdfArquivoId, gravado.pdfArquivoNome], ['PDF-1', r.fileName]);
   // Sem mudança na Agenda, reabrir preserva; com mudança, a geração seguinte nasce do zero.
-  assert.equal(plano(abrir(s)).registro.rascunhoAssunto, r.draftSubject);
+  const reaberto = plano(abrir(s)).registro;
+  assert.deepEqual([reaberto.rascunhoAssunto, reaberto.pdfArquivoId], [r.draftSubject, 'PDF-1']);
   const mudou = plano(abrir(s, { dataEnvio: '2026-11-30', dataColeta: '2026-11-30' })).registro;
-  assert.deepEqual([mudou.geracaoToken, mudou.rascunhoAssunto, mudou.rascunhoDestinatarios], [undefined, undefined, undefined]);
+  assert.deepEqual([mudou.geracaoToken, mudou.rascunhoAssunto, mudou.rascunhoDestinatarios, mudou.pdfArquivoId, mudou.pdfArquivoNome],
+    [undefined, undefined, undefined, undefined, undefined]);
 });
 
 test('token do registro com outros dados (mudança que não reinicia o preparo): começa outra geração, sem prender o envio', () => {

@@ -2,7 +2,8 @@
   // Transporte (tela nova): passo a passo de um envio. Prefixo transpCentral*, sem globais genéricos.
   var TC_ENVIO = { aberto: false, agendaId: '', slot: '', dados: null, passo: '', seq: 0, token: '', gerando: false, resultado: null, awbUltima: null, pinex: null, salvando: false, matEdit: null, ajuste: null, anvisa: null, aguardaPeticionamento: false };
   var TC_MATERIAIS_TIPOS = ['Sangue', 'Soro', 'Urina', 'Plasma', 'Tecido', 'Saliva', 'Fezes', 'Vacina'];
-  var TC_PASSOS_ROTULO = { conferir: 'Conferir', awb: 'AWB', pinex_numeros: 'Números da PINEX', gerar: 'Gerar', anvisa: 'Formulário ANVISA', enviar: 'Enviar' };
+  var TC_OCASA_AWB_URL = 'https://pobdigital.ocasa.com/mylifescience?adr=O4vrY2ctp5sQxN5ltV0mRDy%2BhN74hwW%2Byc9Zb86RS5TAkbB07Bl3nuQ1p0diufmyRcBqCA9TzUwvuIZ%2BiQ7X5yYl48m%2FfVzTdyqvZ5mU6ld%2FCD9s99t43dlN%2Bo59mYnUKSylrPlmYJQfgcT52%2BT2VkkaoJVFpJ3hLyZW%2F9pA5wrEk%2BDTDH0tnt5nRa3%2BXGSo';
+  var TC_PASSOS_ROTULO ={ conferir: 'Conferir', awb: 'AWB', pinex_numeros: 'Números da PINEX', gerar: 'Gerar', anvisa: 'Formulário ANVISA', enviar: 'Enviar' };
 
   function transpCentralTokenNovo() {
     var bytes = new Uint8Array(16);
@@ -249,7 +250,9 @@
     // AWB já usada em outro envio: avisa aqui, antes de gravar; a pessoa corrige ou confirma que é esta mesma.
     var aviso = TC_ENVIO.awbAviso;
     var usada = aviso && aviso.text ? '<p class="tc-aviso" role="alert">' + esc(aviso.text) + ' Confira o número. Se for este mesmo, clique de novo para continuar.</p>' : '';
-    return '<section class="tc-bloco"><h3>AWB</h3><p>' + esc(texto) + '</p>' + ultima +
+    // Site da OCASA para gerar a AWB: o endereço fica atrás do texto do link, sem aparecer na tela.
+    var siteOcasa = courier === 'OCASA' ? '<p><a class="tc-link-externo" href="' + esc(TC_OCASA_AWB_URL) + '" target="_blank" rel="noopener noreferrer">Clique aqui para gerar a AWB no site da OCASA</a> (abre em outra aba).</p>' : '';
+    return '<section class="tc-bloco"><h3>AWB</h3><p>' + esc(texto) + '</p>' + siteOcasa + ultima +
       '<div class="tc-campos">' + transpCentralCampo('tcCampo_awb', 'AWB', aviso && aviso.digitada ? aviso.digitada : registro.awb, 'required autocomplete="off"') + '</div>' + usada + '</section>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="awb-ok">' + (usada ? 'Usar esta AWB e continuar' : 'Salvar AWB e continuar') + '</button></div>';
   }
@@ -320,6 +323,21 @@
       (para ? '<span><span class="tc-dim">Para</span> ' + esc(para) + '</span>' : '') + '</span>';
   }
 
+  // PDF para imprimir: do resultado da geração ou, em outra sessão, do registro do envio. Envio gerado antes de o
+  // registro guardar o PDF: indica a pasta do Drive de quem gerou.
+  function transpCentralHtmlPdf(registro, resultado) {
+    var url = String((resultado && resultado.fileUrl) || '').trim();
+    var nome = String((resultado && resultado.fileName) || (registro && registro.pdfArquivoNome) || '').trim();
+    var id = String((registro && registro.pdfArquivoId) || '').trim();
+    if (!url && id) url = 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/view';
+    if (!url) {
+      return '<span class="tc-dim">O PDF está no Google Drive de quem gerou: Meu Drive › Documentação para Transporte de Amostras › ' +
+        esc((registro && registro.protocolo) || 'protocolo do estudo') + '.</span>';
+    }
+    return '<a href="' + esc(url) + '" target="_blank" rel="noopener">Abrir o PDF para imprimir</a>' +
+      (nome ? ' <span class="tc-dim">' + esc(nome) + '</span>' : '');
+  }
+
   function transpCentralHtmlEnviar(registro) {
     var r = TC_ENVIO.resultado;
     // Os documentos gerados são impressos, assinados e entregues ao agente da courier junto com as amostras.
@@ -332,7 +350,7 @@
     var gru = !!(registro && registro.gruPronta);
     // Cada item é marcado pela pessoa; "Pronto, enviei" só libera com todos marcados. texto: rótulo da caixa;
     // extra: o que fica abaixo dele (link e assunto do rascunho), fora do rótulo.
-    var itens = [{ texto: 'Imprima os documentos, assine onde for pedido e deixe-os com as amostras, para entregar ao agente da courier na retirada.' }];
+    var itens = [{ texto: 'Imprima os documentos, assine onde for pedido e deixe-os com as amostras, para entregar ao agente da courier na retirada.', extra: transpCentralHtmlPdf(registro, r) }];
     // PINEX com os números: o servidor não cria rascunho; os documentos seguem na conversa do agendamento.
     if (courier === 'PINEX') itens.push({ texto: 'No Gmail, abra a conversa do agendamento com a PINEX (a que trouxe os números) e responda nela, anexando os documentos gerados.' });
     else itens.push({ texto: 'Abra o rascunho do pedido de coleta no Gmail.', extra: transpCentralHtmlRascunho(registro, r) });
@@ -492,17 +510,27 @@
       .withSuccessHandler(function(resposta) {
         TC_ENVIO.gerando = false;
         if (!transpCentralEnvioAtual(seq)) return;
+        // Sem resposta legível a geração pode ter terminado no servidor: relê o envio em vez de voltar ao "Gerar".
+        if (!resposta || resposta.ok !== true) { transpCentralReabrirAposGerar('Confira o transporte: a resposta da geração não chegou à tela.'); return; }
         TC_ENVIO.resultado = resposta;
-        if (resposta && resposta.versao) TC_ENVIO.dados.versao = resposta.versao;
+        if (resposta.versao) TC_ENVIO.dados.versao = resposta.versao;
         transpCentralRenderPasso();
       })
       .withFailureHandler(function(erro) {
         TC_ENVIO.gerando = false;
         if (!transpCentralEnvioAtual(seq)) return;
-        TC_ENVIO.resultado = { erro: appErrorMessage(erro) };
+        var mensagem = appErrorMessage(erro);
+        // A versão da tela ficou para trás (uma geração anterior terminou, por exemplo): mostra o estado atual.
+        if (/alterado por outra pessoa/i.test(mensagem)) { transpCentralReabrirAposGerar('Este transporte mudou desde que a tela foi aberta. Ele foi recarregado.'); return; }
+        TC_ENVIO.resultado = { erro: mensagem };
         transpCentralRenderPasso();
       })
       .gerarDocumentosTransporteEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot, TC_ENVIO.dados.versao, TC_ENVIO.token);
+  }
+
+  function transpCentralReabrirAposGerar(aviso) {
+    snack(aviso);
+    transpCentralAbrirEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot);
   }
 
   function transpCentralSair(aposSair) {

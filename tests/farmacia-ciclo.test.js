@@ -354,3 +354,59 @@ test('retorno e chegada aceitam data anterior à última operação com motivo; 
   // 140 iniciais − 35 dispensados + 11 retornados; a transferência por transporte não altera o físico.
   assert.equal(f.stock().positions.reduce((sum,p)=>sum+p.physical,0),116);
 });
+
+function secondLot(f,lot='L2',physical=20){
+  const id=f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'initial-'+lot+'-request',data:{productId:f.product,lot,expiry:'2027-08-31',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Gaveta 1'},kit:'',physical,blocked:0,countedOn:'2026-10-12',confirmed:true,note:''}}).id;
+  f.movement({positionId:id,revision:id,quantity:physical});
+  return id;
+}
+function guide(f,items,data={},requestId='guide-request-0001'){
+  const common={occurredOn:'2026-10-26',document:'DOC-1',reason:'',participantId:'CAD-1',visit:'C1D1',prescription:'PRESC-1',platformReference:'',validThrough:'2026-11-05',confirmed:true,...data};
+  const revision=id=>f.stock().positions.find(p=>p.id===id).revision;
+  return {studyId:'P1',restricted:false,requestId,data:common,items:items.map(([positionId,quantity])=>({positionId,revision:revision(positionId),quantity}))};
+}
+
+test('guia de dispensação grava vários medicamentos numa única escrita, ligados pela guia, e repete sem duplicar',()=>{
+  const f=fixture(),second=secondLot(f),writes=f.sheet().writes;
+  const p=guide(f,[[f.position,30],[second,5]]),result=f.server.registrarDispensacaoFarmacia(p);
+  assert.equal(result.ids.length,2);assert.equal(f.sheet().writes,writes+1);
+  const records=f.stock().movements.filter(r=>r.type==='LIFECYCLE'&&r.data.action==='dispense');
+  assert.deepEqual([...records.map(r=>r.data.guideId)],[p.requestId,p.requestId]);
+  assert.deepEqual([...records.map(r=>r.data.participantLabel)],['EST-014','EST-014']);
+  assert.equal(f.stock().positions.find(x=>x.id===f.position).available,110);assert.equal(f.stock().positions.find(x=>x.id===second).available,15);
+  const repeated=f.server.registrarDispensacaoFarmacia(p);
+  assert.equal(repeated.repeated,true);assert.deepEqual([...repeated.ids],[...result.ids]);assert.equal(f.sheet().writes,writes+1);
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia({...p,items:[p.items[0]]}),/outros dados/);
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia({...p,data:{...p.data,visit:'C2D1'}}),/outros dados/);
+});
+
+test('guia com um item sem saldo não grava nenhum dos medicamentos',()=>{
+  const f=fixture(),second=secondLot(f),writes=f.sheet().writes;
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,30],[second,21]])),/Saldo insuficiente/);
+  assert.equal(f.sheet().writes,writes);
+  assert.equal(f.stock().positions.find(x=>x.id===f.position).available,140);
+});
+
+test('guia recusa o mesmo lote duas vezes, lista vazia e itens em excesso antes de gravar',()=>{
+  const f=fixture(),writes=f.sheet().writes;
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,10],[f.position,5]])),/mais de uma vez/);
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[])),/de 1 a 20/);
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,Array.from({length:21},()=>[f.position,1]))),/de 1 a 20/);
+  assert.equal(f.sheet().writes,writes);
+});
+
+test('guia de um item não recebe identificador de guia e segue as permissões da dispensação',()=>{
+  const f=fixture(),id=f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,10]])).ids[0];
+  assert.equal(f.stock().movements.find(r=>r.id===id).data.guideId,undefined);
+  f.state.permission='read';assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,1]],{},'guide-request-0002')),/permissão/);
+  f.state.permission='operate';assert.equal(f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,1]],{},'guide-request-0003')).repeated,false);
+});
+
+test('transação no IRT é opcional; quando informada continua impedindo a mesma dispensação duplicada',()=>{
+  const f=fixture();
+  f.write({quantity:1,platformReference:''});f.write({quantity:1,platformReference:''});
+  assert.equal(f.stock().movements.filter(r=>r.type==='LIFECYCLE'&&r.data.platformReference==='').length,2);
+  f.write({quantity:1,platformReference:'IRT-X'});
+  assert.throws(()=>f.write({quantity:1,platformReference:'IRT-X'}),/já foi registrada/);
+  assert.throws(()=>f.write({quantity:1,guideId:'guide-forged-0001'}),/própria guia/);
+});
