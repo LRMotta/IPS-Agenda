@@ -63,8 +63,14 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       await page.evaluate(() => transpCentralCarregar(false));
       assert.equal(await page.evaluate(() => window.__pedidos.length), 1);
       assert.equal(await page.locator('#tcFazer').getAttribute('aria-busy'), 'true');
+      // Botão no padrão do app: rótulo, ocupado durante a leitura e o horário da última leitura.
+      assert.equal(await page.locator('#tcRefresh').getAttribute('class'), 'btn-refresh');
+      assert.equal(await page.locator('#tcRefresh').isDisabled(), true);
+      assert.equal(await page.locator('#tcTs').innerText(), '');
       await page.evaluate((resposta) => window.__pedidos[0].ok(resposta), RESPOSTA);
       assert.equal(await page.locator('#tcFazer').getAttribute('aria-busy'), 'false');
+      assert.equal(await page.locator('#tcRefresh').isDisabled(), false);
+      assert.match(await page.locator('#tcRefresh').innerText(), /Atualizar tarefas\s*Atualizado: \d{2}:\d{2}/);
       assert.equal(await page.locator('.tc-title').innerText(), 'Preparar 2 transportes');
       assert.equal(await page.locator('#tcTabFazer').innerText(), 'Para fazer (2)');
       // Não fica preso à primeira tarefa: cada transporte da próxima tem seu próprio botão, e cada linha da lista também começa.
@@ -121,8 +127,13 @@ test('Transporte (piloto): vazio, erro e respostas fora de ordem', async () => {
     await page.evaluate((resposta) => { window.CURRENT_ACCESS = { ok: true, email: 'outra@example.invalid', role: 'admin' }; window.__pedidos[2].ok(resposta); }, RESPOSTA);
     assert.match(await page.locator('#tcFazer').innerText(), /Tudo feito por agora/);
     await page.evaluate(() => { window.CURRENT_ACCESS = { ok: true, email: 'admin@example.invalid', role: 'admin' }; transpCentralCarregar(true); });
+    // Leitura com falha: o botão volta a funcionar e o horário continua o da última leitura que deu certo.
+    const horario = await page.locator('#tcTs').innerText();
+    assert.match(horario, /^Atualizado: \d{2}:\d{2}$/);
     await page.evaluate(() => window.__pedidos[3].falha(new Error('Acesso permitido apenas para administradores.')));
     assert.deepEqual(await page.evaluate(() => window.__erros), ['Acesso permitido apenas para administradores.']);
+    assert.equal(await page.locator('#tcRefresh').isDisabled(), false);
+    assert.equal(await page.locator('#tcTs').innerText(), horario);
     // Disponível para todos os perfis: quem não é admin também carrega a lista.
     await page.evaluate(() => { window.CURRENT_ACCESS = { ok: true, email: 'u@example.invalid', role: 'user' }; transpCentralCarregar(true); });
     assert.equal(await page.evaluate(() => window.__pedidos.length), 5);

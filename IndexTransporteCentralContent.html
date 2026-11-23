@@ -1,7 +1,10 @@
     <div class="page" id="page-transporte-central">
       <div class="tc-wrap">
         <div class="tc-head">
-          <button class="icon-btn" type="button" id="tcRefresh" onclick="transpCentralCarregar(true)" aria-label="Atualizar tarefas" title="Atualizar tarefas"><span class="material-symbols-outlined" aria-hidden="true">refresh</span></button>
+          <button class="btn-refresh" type="button" id="tcRefresh" onclick="transpCentralCarregar(true)">
+            <span class="material-symbols-outlined" aria-hidden="true">refresh</span><span class="btn-label">Atualizar tarefas</span>
+            <span class="dash-ts" id="tcTs"></span>
+          </button>
         </div>
         <div class="tc-tabs" id="tcTabs" role="tablist" aria-label="Seções do Transporte">
           <button type="button" class="tc-tab active" role="tab" id="tcTabFazer" data-tc-tab="fazer" aria-selected="true" aria-controls="tcPanelFazer" onclick="transpCentralAba('fazer')">Para fazer</button>
