@@ -1,5 +1,5 @@
 'use strict';
-/* global document, window, FARMACIA_STOCK, farmaciaDocumentHtml, farmaciaCycleNavigate, farmaciaEstoqueReset */
+/* global document, window, FARMACIA_STOCK, farmaciaDocumentHtml, farmaciaCycleNavigate, farmaciaEstoqueReset, DOMParser */
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -81,5 +81,22 @@ test('impressão escapa conteúdo e rejeita referências ausentes ou consulta en
     assert.equal(await page.evaluate(()=>farmaciaDocumentHtml('missing',false)),'');
     await page.evaluate(()=>farmaciaEstoqueReset());assert.equal(await page.evaluate(()=>farmaciaDocumentHtml('DISP1',false)),'');
     await page.setContent(html);assert.equal(await page.locator('img[onerror],script').count(),0);assert.equal(await page.evaluate(()=>window.compromised),undefined);
+  }finally{await browser.close();}
+});
+
+test('guia de dispensação imprime todos os medicamentos gravados juntos',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);const data=cycleData({farmaciaAccess:'read'});
+    const item=(id,quantity)=>({id,type:'LIFECYCLE',author:'farm@example.invalid',registeredAt:'2026-10-26T12:00:00.000Z',data:{action:'dispense',positionId:'IN1',occurredOn:'2026-10-26',quantity,participantId:'CAD-014',participantLabel:'DEMO-014',visit:'C3D1',prescription:'PRESC-GUIA',platformReference:'',validThrough:'2026-11-05',confirmed:true,guideId:'guide-demo-0001',document:'',reason:''}});
+    data.movements.push(item('GUIDE-A',4),item('GUIDE-B',6));
+    await page.evaluate(d=>{FARMACIA_STOCK.data=d;},data);
+    const text=await page.evaluate(()=>{const html=farmaciaDocumentHtml('GUIDE-B',false);const doc=new DOMParser().parseFromString(html,'text/html');return doc.title+'\n'+doc.body.innerText;});
+    assert.match(text,/^Guia de dispensação/);
+    assert.match(text,/Medicamentos na guia\s*2/);
+    assert.match(text,/1 de 2/);assert.match(text,/2 de 2/);
+    assert.match(text,/4 comprimido/);assert.match(text,/6 comprimido/);
+    assert.match(text,/Transação no IRT \/ plataforma do estudo\s*Não informado/);
+    assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });

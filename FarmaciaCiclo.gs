@@ -17,10 +17,17 @@ function farmaciaLifecycleData_(value) {
     result.participantLabel = farmaciaText_(value.participantLabel, 'o código do participante no estudo', 120, true);
     result.visit = farmaciaText_(value.visit, 'a visita ou ciclo informado', 120);
     result.prescription = farmaciaText_(value.prescription, 'a prescrição ou Documento Fonte', 200, true);
-    result.platformReference = farmaciaText_(value.platformReference, 'a referência na plataforma do estudo', 200);
+    // Transação no IRT / plataforma do estudo: opcional, porque nem todo estudo gera esse número.
+    result.platformReference = farmaciaText_(value.platformReference, 'a transação no IRT / plataforma do estudo', 200, true);
     result.validThrough = farmaciaDate_(value.validThrough, 'o último dia previsto de uso');
     if (value.confirmed !== true || result.validThrough < result.occurredOn) throw new Error('Confirme a conferência e o período previsto de uso.');
     result.confirmed = true;
+    // Guia com mais de um medicamento: o mesmo identificador liga os itens gravados juntos.
+    // Registros anteriores não têm a chave, e o replay os normaliza sem ela.
+    if (value.guideId !== undefined && value.guideId !== '') {
+      if (typeof value.guideId !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(value.guideId)) throw new Error('Guia de dispensação inválida.');
+      result.guideId = value.guideId;
+    }
   } else if (value.action === 'return') {
     if (value.confirmed !== true) throw new Error('Confirme a contagem e a segregação do material retornado.');
     result.confirmed = true;
@@ -164,7 +171,7 @@ function farmaciaApplyLifecycle_(ledger, record) {
   if (data.action === 'dispense') {
     if (position.returned || data.occurredOn > position.expiry || data.validThrough > position.expiry ||
         quantity > Math.round((position.available - reserved) * 1000) / 1000) throw new Error('Saldo insuficiente, vencido, retornado ou indisponível para o período de uso.');
-    if (ledger.movements.some(function(item) { return item.type === 'LIFECYCLE' && item.data.action === 'dispense' && item.data.platformReference === data.platformReference &&
+    if (data.platformReference && ledger.movements.some(function(item) { return item.type === 'LIFECYCLE' && item.data.action === 'dispense' && item.data.platformReference === data.platformReference &&
         item.data.positionId === data.positionId && item.data.participantId === data.participantId; })) throw new Error('Esta referência de dispensação já foi registrada para este item e participante.');
     position.available = Math.round((position.available - quantity) * 1000) / 1000;
     position.physical = Math.round((position.physical - quantity) * 1000) / 1000;
@@ -250,6 +257,8 @@ function registrarCicloFarmacia(payload) {
     if (context.studyId === FARMACIA_COMMON_SCOPE_ || !context.ss) throw new Error('Selecione um estudo configurado para o ciclo do medicamento.');
     var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 100);
     farmaciaAssertRequestId_(requestId);
+    // Itens de guia só nascem em registrarDispensacaoFarmacia, que os grava juntos.
+    if (payload.data && payload.data.guideId !== undefined) throw new Error('Registre guias de dispensação pela própria guia.');
     var ledger = farmaciaReadLedger_(context), data = farmaciaLifecycleData_(payload.data);
     var previous = ledger.records.find(function(item) { return item.requestId === requestId; });
     if (previous) {
@@ -267,13 +276,7 @@ function registrarCicloFarmacia(payload) {
       var currentPosition = ledger.positions.find(function(item) { return item.id === data.positionId; });
       if (currentPosition && currentPosition.expiry < farmaciaToday_()) throw new Error('Material vencido não pode ser dispensado ou transportado como estoque ativo.');
     }
-    if (data.action === 'dispense') {
-      var participant = farmaciaLifecycleParticipantRows_(context).find(function(item) { return item.id === data.participantId; });
-      if (!participant) throw new Error('Participante não encontrado neste estudo. Confira o vínculo cadastrado.');
-      // O código vem do cadastro e não é truncado: identificação alterada não é aceitável.
-      if (participant.label.length > 120) throw new Error('O código do participante no cadastro excede 120 caracteres. Corrija o cadastro antes de registrar a dispensação.');
-      data.participantLabel = participant.label;
-    }
+    if (data.action === 'dispense') data.participantLabel = farmaciaDispenseParticipantLabel_(context, data.participantId);
     if (data.action === 'return' || (data.action === 'transport_departure' && data.operation === 'storage')) {
       var locations = farmaciaReadLocations_();
       var unit = locations.units.find(function(item) { return item.id === data.locationRef.unitId; });
@@ -297,5 +300,79 @@ function registrarCicloFarmacia(payload) {
     farmaciaAssertLedgerRowReplayable_(context, ledger, row);
     ledger.sheet.getRange(ledger.sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
     return { ok: true, id: record.id, repeated: false };
+  });
+}
+
+function farmaciaDispenseParticipantLabel_(context, participantId) {
+  var participant = farmaciaLifecycleParticipantRows_(context).find(function(item) { return item.id === participantId; });
+  if (!participant) throw new Error('Participante não encontrado neste estudo. Confira o vínculo cadastrado.');
+  // O código vem do cadastro e não é truncado: identificação alterada não é aceitável.
+  if (participant.label.length > 120) throw new Error('O código do participante no cadastro excede 120 caracteres. Corrija o cadastro antes de registrar a dispensação.');
+  return participant.label;
+}
+
+// Guia de dispensação: participante, visita, datas e referências informados uma vez, com um ou mais
+// medicamentos (lote/kit + quantidade). Os itens são validados juntos e gravados numa única escrita:
+// se um deles falhar, nenhum é gravado. Cada item continua sendo uma dispensação própria no ledger,
+// com retorno e transporte vinculados a ele.
+var FARMACIA_DISPENSE_GUIDE_MAX_ITEMS_ = 20;
+
+function registrarDispensacaoFarmacia(payload) {
+  payload = payload || {};
+  return codexWithDocumentLock_('farmacia-lifecycle', function() {
+    var context = farmaciaContext_(payload.studyId, payload.restricted, farmaciaLifecyclePermission_('dispense'));
+    if (context.studyId === FARMACIA_COMMON_SCOPE_ || !context.ss) throw new Error('Selecione um estudo configurado para o ciclo do medicamento.');
+    // Cada item recebe "<guia>-<n>"; o limite deixa espaço para o sufixo dentro dos 100 caracteres.
+    var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 90);
+    farmaciaAssertRequestId_(requestId);
+    var items = payload.items;
+    if (!Array.isArray(items) || !items.length || items.length > FARMACIA_DISPENSE_GUIDE_MAX_ITEMS_) {
+      throw new Error('Inclua de 1 a ' + FARMACIA_DISPENSE_GUIDE_MAX_ITEMS_ + ' medicamentos na guia.');
+    }
+    var common = payload.data || {}, seen = {};
+    var entries = items.map(function(item, index) {
+      item = item || {};
+      var data = farmaciaLifecycleData_({ action: 'dispense', positionId: item.positionId, revision: item.revision, quantity: item.quantity,
+        occurredOn: common.occurredOn, document: common.document, reason: common.reason, participantId: common.participantId,
+        participantLabel: common.participantLabel, visit: common.visit, prescription: common.prescription,
+        platformReference: common.platformReference, validThrough: common.validThrough, confirmed: common.confirmed,
+        guideId: items.length > 1 ? requestId : '' });
+      if (seen[data.positionId]) throw new Error('O mesmo lote / kit aparece mais de uma vez na guia. Informe a quantidade total em um único item.');
+      seen[data.positionId] = true;
+      return { requestId: requestId + '-' + (index + 1), data: data };
+    });
+    var ledger = farmaciaReadLedger_(context);
+    var previous = entries.map(function(entry) { return ledger.records.find(function(item) { return item.requestId === entry.requestId; }); });
+    if (previous.some(Boolean)) {
+      // Repetição da mesma guia (ex.: resposta perdida): todos os itens já gravados, idênticos, e nenhum a mais.
+      var extra = ledger.records.some(function(item) { return item.requestId === requestId + '-' + (entries.length + 1); });
+      var same = !extra && previous.every(function(record, index) {
+        if (!record || record.type !== 'LIFECYCLE') return false;
+        entries[index].data.participantLabel = record.data.participantLabel;
+        return record.dataJson === JSON.stringify(entries[index].data);
+      });
+      if (!same) throw new Error('Esta operação já foi usada com outros dados.');
+      return { ok: true, ids: previous.map(function(record) { return record.id; }), repeated: true };
+    }
+    if (entries[0].data.occurredOn > farmaciaToday_()) throw new Error('A data da operação não pode ser futura.');
+    var label = farmaciaDispenseParticipantLabel_(context, entries[0].data.participantId);
+    var rows = entries.map(function(entry) {
+      var data = entry.data;
+      var currentPosition = ledger.positions.find(function(item) { return item.id === data.positionId; });
+      if (currentPosition && currentPosition.expiry < farmaciaToday_()) throw new Error('Material vencido não pode ser dispensado.');
+      data.participantLabel = label;
+      var record = { id: 'FLC-' + Utilities.getUuid(), type: 'LIFECYCLE', data: data,
+        author: context.access.userEmail, registeredAt: new Date().toISOString() };
+      if (ledger.records.some(function(item) { return item.id === record.id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
+      // Aplicado em memória, em ordem: o saldo de um item já considera os anteriores da guia.
+      farmaciaApplyLifecycle_(ledger, record);
+      ledger.records.push(record);
+      return [record.id, record.type, JSON.stringify(context.studyId), context.restricted, entry.requestId,
+        JSON.stringify(record.registeredAt), JSON.stringify(record.author), JSON.stringify(data)];
+    });
+    if (!ledger.sheet) throw new Error('Entrada de estoque não encontrada.');
+    farmaciaAssertLedgerRowsReplayable_(context, ledger, rows);
+    ledger.sheet.getRange(ledger.sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    return { ok: true, ids: rows.map(function(row) { return row[0]; }), repeated: false };
   });
 }

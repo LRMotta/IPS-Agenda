@@ -227,7 +227,12 @@ function farmaciaReadLedger_(context) {
 // Antes da primeira escrita: a linha nova precisa ser aceita pelo mesmo replay das consultas.
 // Uma linha que o replay recusa tornaria todo o estoque do estudo/classe ilegível.
 function farmaciaAssertLedgerRowReplayable_(context, ledger, row) {
-  var rows = ledger.rows && ledger.rows.length ? ledger.rows.concat([row]) : [FARMACIA_LEDGER_HEADERS_.slice(), row];
+  farmaciaAssertLedgerRowsReplayable_(context, ledger, [row]);
+}
+
+// Várias linhas gravadas juntas (guia de dispensação) passam pelo replay como um bloco.
+function farmaciaAssertLedgerRowsReplayable_(context, ledger, newRows) {
+  var rows = (ledger.rows && ledger.rows.length ? ledger.rows : [FARMACIA_LEDGER_HEADERS_.slice()]).concat(newRows);
   try {
     farmaciaParseLedgerRows_(context, ledger.sheet, rows);
   } catch (error) {
