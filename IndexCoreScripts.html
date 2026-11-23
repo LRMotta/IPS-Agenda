@@ -18,6 +18,7 @@ var TITULOS = {
   requisicao:    { label:'Requisição de Exames', icon:'assignment' },
   estoque:       { label:'Estoque',              icon:'inventory_2' },
   farmacia:      { label:'Farmácia',             icon:'local_pharmacy' },
+  'farmacia-notas': { label:'Notas fiscais de medicamentos', icon:'receipt_long' },
   'transporte-central': { label:'Transporte', icon:'flight_takeoff' },
   usuarios:      { label:'Usuários',             icon:'admin_panel_settings' },
   'audit-log':   { label:'Trilha de Auditoria',  icon:'manage_search' },
@@ -307,6 +308,9 @@ function applyFarmaciaAccess() {
     ['read','operate','manage'].indexOf(CURRENT_ACCESS.farmaciaCommonAccess) !== -1;
   document.querySelectorAll('[data-farmacia-view="stock"]').forEach(function(button) { button.hidden = !stockVisible; });
   document.querySelectorAll('[data-farmacia-view="products"]').forEach(function(button) { button.hidden = !visible; });
+  // Notas fiscais de medicamentos: mesmo público do estoque (o servidor revalida e aplica as classes restritas).
+  document.querySelectorAll('[data-page="farmacia-notas"]').forEach(function(button) { button.hidden = !stockVisible; });
+  if (!stockVisible && getCurrentPage() === 'farmacia-notas') irPara('agenda');
   if (!stockVisible && typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'stock') FARMACIA_VIEW = 'equipment';
   FARMACIA_REQUEST_ID++;
   FARMACIA_STUDY_REQUEST_ID++;
@@ -1033,7 +1037,6 @@ function getFloatingAddConfig() {
     feriados: { label: 'Novo feriado ou emenda', action: function() { abrirFormFeriado(null); } },
     solicitantes: { label: 'Novo solicitante', action: function() { abrirFormSolicitante(null); } },
     equipamentos: { label: 'Novo equipamento', action: function() { abrirFormEquipamento(null); } },
-    medicamentos: { label: 'Novo medicamento', action: function() { abrirFormMedicamento(null); } },
     configuracoes: { label: 'Nova configuração', action: function() { abrirFormConfig(null); } },
     usuarios: { label: 'Novo usuário', adminOnly: true, action: function() { abrirFormUsuarioAdmin(); } }
   };
@@ -1237,6 +1240,12 @@ window.addEventListener('resize', function() {
 document.addEventListener('DOMContentLoaded', function() { appSyncNavAccessibility(); setMobileNav(false); });
 
 function irPara(pagina, options) {
+  if (pagina === 'farmacia-notas' && ['read', 'operate', 'manage'].indexOf(CURRENT_ACCESS.farmaciaAccess) === -1 &&
+      ['read', 'operate', 'manage'].indexOf(CURRENT_ACCESS.farmaciaCommonAccess) === -1) {
+    snack('Seu usuário não tem acesso às notas fiscais da Farmácia.');
+    if (options && options.initial) pagina = 'agenda';
+    else return;
+  }
   if (pagina === 'farmacia' && !CodexAccessRules.isModuleVisible(CURRENT_ACCESS, 'farmacia')) {
     snack('Seu usuário não tem acesso à Farmácia.');
     if (options && options.initial) pagina = 'agenda';
@@ -1278,6 +1287,10 @@ function irPara(pagina, options) {
     document.getElementById('navCadastrosToggle').classList.add('open');
     document.getElementById('navCadastrosBody').classList.add('open');
   }
+  if (pagina === 'farmacia-notas') {
+    document.getElementById('navFarmacia').classList.add('open');
+    document.getElementById('navFarmaciaBody').classList.add('open');
+  }
   if (pagina === 'estoque-view') {
     document.getElementById('navEstoqueToggle').classList.add('open');
     document.getElementById('navEstoqueBody').classList.add('open');
@@ -1311,6 +1324,7 @@ function irPara(pagina, options) {
   if (pagina === 'feriados') carregarFeriados();
   if (pagina === 'equipamentos') carregarEquipamentos();
   if (pagina === 'medicamentos') carregarMedicamentos();
+  if (pagina === 'farmacia-notas' && typeof medNfCarregar === 'function') medNfCarregar('medicamentos');
   if (pagina === 'configuracoes') carregarConfigApp();
   if (pagina === 'pendencias') carregarPendencias(false);
   if (pagina === 'usuarios') carregarUsersAdmin();

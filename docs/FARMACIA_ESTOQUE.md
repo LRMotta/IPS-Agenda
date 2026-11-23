@@ -93,6 +93,41 @@ Vencidos não ficam disponíveis. A referência documental deve identificar o it
 da remessa: mesma referência + produto + lote + kit não pode ser recebida duas vezes.
 Kits individuais permanecem únicos no estudo/classe, inclusive entre tipos de entrada.
 
+No estoque do estudo, o recebimento é só de produto do patrocinador. O estoque
+**Geral (Farmácia)** recebe produtos próprios do IPS (compras), que entram
+**disponíveis** (`pending: 0` no registro), como no inventário inicial; as saídas do
+Geral continuam pelo ajuste (consumo, perda, recontagem).
+
+Novos recebimentos guardam a **nota fiscal** em `invoice`: número, remetente e valor
+unitário do item (o RM pede o valor por item). O número pode ficar em branco quando
+a nota não veio com a carga; com número, remetente e valor (≥ 0, até duas casas)
+são obrigatórios. O remetente é digitado ou escolhido entre os já usados no Cadastro
+de Medicamentos (`getFarmaciaRemetentesNotas`) e nos recebimentos carregados.
+Recebimentos anteriores não têm a chave e continuam legíveis. A nota fica no ledger
+do estudo/classe: em estudo cego, o recebimento da classe restrita só é visto por
+quem tem a concessão restrita.
+
+### Notas fiscais de medicamentos (Farmácia › Notas fiscais)
+
+A página reúne, por NF + primeira palavra do remetente (`medNfChave_`), os
+recebimentos com número de nota de todos os ledgers da Farmácia e as notas antigas
+do Cadastro de Medicamentos. O Cadastro virou histórico: corrige registros
+existentes, mas `salvarMedicamentoRecebido` recusa criar novos.
+
+- Acesso: só quem tem acesso à Farmácia (estudos ou Geral) lista; registrar
+  movimento, anexar PDF, marcar como enviada e preparar o e-mail exigem `operate`
+  e entram na trilha de auditoria como módulo Farmácia. Equipamentos continuam no
+  Cadastro, com as regras anteriores.
+- Estudos cegos: a nota aparece só para quem vê **todos** os itens dela. Um item da
+  classe restrita esconde a nota inteira de quem não tem a concessão restrita do
+  estudo e a marca como "Acesso restrito" para quem tem. A pasta do Drive dos PDFs
+  deve ter acesso compatível; o app não altera permissões do Drive.
+- Movimento RM: itens do Cadastro guardam o movimento na própria linha; itens da
+  Farmácia, na coluna `Movimento_RM` de `Medicamentos_NF` (o cabeçalho é completado
+  na primeira gravação). Um único movimento salvo vale para todos os itens da nota.
+- A leitura dos ledgers para a lista não refaz o replay: registros ilegíveis ficam
+  fora da lista sem impedir a consulta; o estoque continua validando no replay.
+
 O físico se divide em disponível, aguardando avaliação e bloqueado, sem somar
 unidades distintas. Vencimento zera disponível e pendente na consulta e apresenta
 todo o físico como bloqueado, preservando os eventos originalmente registrados.

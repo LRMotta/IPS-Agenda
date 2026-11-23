@@ -13,7 +13,7 @@ function item(id, data, projeto, nf, remetente, movimento, descricao) {
 
 function setup(rows, metaRows, extra) {
   const effects = { drafts: [], files: [], props: {}, scriptProps: {}, audit: [] };
-  const server = runFiles(['WebApp.gs', 'MedicamentosNotasFiscais.gs'], Object.assign({
+  const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'MedicamentosNotasFiscais.gs'], Object.assign({
     Date,
     Session: { getScriptTimeZone: () => 'America/Sao_Paulo' },
     Utilities: {
@@ -31,7 +31,9 @@ function setup(rows, metaRows, extra) {
   if (metaRows) sheets.Medicamentos_NF = new FakeSheet('Medicamentos_NF', [Array.from(server.MED_NF_HEADERS_), ...metaRows]);
   const ss = new FakeSpreadsheet(sheets);
   server.getCodexSpreadsheet_ = () => ss;
-  server.codexAssertCanRead_ = () => ({ ok: true });
+  // Notas de medicamentos ficam na Farmácia: o perfil padrão é o de Farmacêutico(a).
+  server.codexAssertCanRead_ = () => Object.assign({ ok: true, farmaciaAccess: 'manage', farmaciaCommonAccess: 'manage', farmaciaAllStudies: true, farmaciaStudies: [] }, effects.access);
+  server.codexWriteAuditLog_ = (action, modulo, id) => { effects.audit.push([action, modulo, id]); };
   server.codexAssertCanWrite_ = (action, modulo, id) => { effects.audit.push([action, modulo, id]); return { ok: true }; };
   server.codexWithDocumentLock_ = (label, fn) => fn();
   server.getUsuarioEmail = () => 'samya@ucs.br';
@@ -104,7 +106,7 @@ test('movimento RM grava em todos os itens da nota e recusa lista desatualizada'
     assert.equal(medSheet.rows[row - 1][6], '620');
   }
   assert.equal(medSheet.rows[1][6], '0094', 'outras notas intactas');
-  assert.deepEqual(effects.audit[0], ['salvarMovimentoRmNotaFiscal', 'Cadastros', '96517|PRODUTOS']);
+  assert.deepEqual(effects.audit[0], ['salvarMovimentoRmNotaFiscal', 'Farmácia', '96517|PRODUTOS']);
   assert.throws(() => server.salvarMovimentoRmNotaFiscal({ chave: '96517|PRODUTOS', movimentoRm: '621', movimentosAtuais: '' }), /mudou/);
   assert.throws(() => server.salvarMovimentoRmNotaFiscal({ chave: '96517|PRODUTOS', movimentoRm: ' ', movimentosAtuais: '620' }), /Informe/);
   assert.throws(() => server.salvarMovimentoRmNotaFiscal({ chave: '1|X', movimentoRm: '1', movimentosAtuais: '' }), /não foi encontrada/);
@@ -303,4 +305,73 @@ test('equipamentos: PDF vai para a pasta própria e o e-mail usa assunto e texto
   assert.equal(effects.props.MED_NF_ULTIMOS_DESTINATARIOS, undefined);
   const nota = Array.from(server.getEquipamentosNotasFiscais().notas).find((n) => n.chave === '777|MARKEN');
   assert.equal(nota.situacao, 'concluida');
+});
+
+function ledgerRow(id, type, studyId, restricted, data) {
+  return [id, type, JSON.stringify(studyId), restricted, 'request-' + id.toLowerCase() + '-0001', JSON.stringify('2026-11-20T12:00:00.000Z'), JSON.stringify('farm@ucs.br'), JSON.stringify(data)];
+}
+function receipt(id, restricted, number, sender, extra) {
+  return ledgerRow(id, 'RECEIPT', 'P1', restricted, Object.assign({ productId: restricted ? 'FPR-R' : 'FPR-1', lot: 'LT-' + id, expiry: '2027-01-31', location: 'A', kit: '', physical: 5,
+    receivedOn: '2026-11-20', document: 'DOC', note: '', invoice: { number, sender, unitValue: 10.5 } }, extra || {}));
+}
+function setupFarmacia(rows, ledger, metaRows) {
+  const ctx = setup(rows, metaRows);
+  ctx.ss.sheets.Projetos = new FakeSheet('Projetos', [['ID', 'Nome', 'Código'], ['P1', 'Estudo Um', 'E1']]);
+  const name = ctx.server.farmaciaLedgerSheetName_('P1');
+  ctx.ss.sheets[name] = new FakeSheet(name, [Array.from(ctx.server.FARMACIA_LEDGER_HEADERS_),
+    ledgerRow('FPR-1', 'PRODUCT', 'P1', false, { name: 'Droga A', presentation: 'Comprimido 10 mg', unit: 'comprimido' }),
+    ledgerRow('FPR-R', 'PRODUCT', 'P1', true, { name: 'Droga cega', presentation: 'Frasco', unit: 'frasco' }),
+    ...ledger]);
+  return ctx;
+}
+
+test('farmácia: recebimentos com nota entram na lista, juntam com o Cadastro pela mesma NF e o RM vale para os dois', () => {
+  const legado = [item('M1', '2026-09-16', 'STAR-121', '777', 'Marken Ltda', '', 'Item antigo')];
+  const { server, ss, medSheet, effects } = setupFarmacia(legado, [receipt('FRC-1', false, '000777', 'MARKEN LOGISTICA'), receipt('FRC-2', false, '888', 'Almac'), receipt('FRC-3', false, '', '')],
+    [['777|MARKEN', '777', 'Marken Ltda', '', '', '', '', '', '', '', '', '']]);
+  const notas = Array.from(server.getMedicamentosNotasFiscais().notas);
+  assert.equal(notas.length, 2, 'recebimento sem número fica fora');
+  const marken = notas.find((n) => n.chave === '777|MARKEN'), almac = notas.find((n) => n.chave === '888|ALMAC');
+  assert.equal(marken.itens.length, 2); assert.equal(marken.itensCadastro, 1); assert.equal(marken.itensFarmacia, 1);
+  assert.equal(almac.itens[0].descricao, 'Droga A · Comprimido 10 mg'); assert.equal(almac.itens[0].valorUnitario, 10.5);
+  assert.equal(almac.projetos[0], 'Estudo Um'); assert.equal(almac.dataRecebimento, '20/11/2026');
+  assert.equal(almac.situacao, 'rm_pendente'); assert.equal(almac.restrita, false);
+  server.salvarMovimentoRmNotaFiscal({ chave: '777|MARKEN', movimentoRm: '5001', movimentosAtuais: '' });
+  assert.equal(medSheet.rows[1][6], '5001');
+  const meta = ss.getSheetByName('Medicamentos_NF');
+  assert.equal(meta.rows[0][12], 'Movimento_RM', 'aba antiga recebe o cabeçalho novo');
+  assert.equal(meta.rows[1][12], '5001');
+  const depois = Array.from(server.getMedicamentosNotasFiscais().notas).find((n) => n.chave === '777|MARKEN');
+  assert.equal(depois.movimentoRm, '5001'); assert.equal(depois.situacao, 'falta_pdf');
+  server.salvarMovimentoRmNotaFiscal({ chave: '888|ALMAC', movimentoRm: '5002', movimentosAtuais: '' });
+  assert.equal(Array.from(server.getMedicamentosNotasFiscais().notas).find((n) => n.chave === '888|ALMAC').movimentoRm, '5002');
+  assert.throws(() => server.salvarMovimentoRmNotaFiscal({ chave: '888|ALMAC', movimentoRm: '5003', movimentosAtuais: '' }), /mudou/);
+  assert.equal(effects.audit.at(-1)[1], 'Farmácia');
+});
+
+test('farmácia: nota com item da classe restrita só aparece para quem tem a concessão restrita do estudo, e inteira', () => {
+  const legado = [item('M1', '2026-09-16', 'P1', '999', 'Marken', '', 'Item antigo')];
+  const { server, effects } = setupFarmacia(legado, [receipt('FRC-1', true, '999', 'Marken'), receipt('FRC-2', true, '555', 'Fisher'), receipt('FRC-3', false, '444', 'Almac')]);
+  let chaves = Array.from(server.getMedicamentosNotasFiscais().notas).map((n) => n.chave).sort();
+  assert.deepEqual(chaves, ['444|ALMAC'], 'sem concessão restrita: some a nota restrita e a nota mista');
+  assert.throws(() => server.salvarMovimentoRmNotaFiscal({ chave: '555|FISHER', movimentoRm: '1', movimentosAtuais: '' }), /não foi encontrada/);
+  effects.access = { farmaciaStudies: [{ studyId: 'P1', restricted: true }] };
+  const notas = Array.from(server.getMedicamentosNotasFiscais().notas);
+  assert.equal(notas.length, 3);
+  assert.equal(notas.find((n) => n.chave === '999|MARKEN').restrita, true);
+  assert.equal(notas.find((n) => n.chave === '999|MARKEN').itens.length, 2);
+  assert.equal(notas.find((n) => n.chave === '444|ALMAC').restrita, false);
+});
+
+test('farmácia: quem não acessa a Farmácia não lista nem altera notas de medicamentos; equipamentos seguem no Cadastro', () => {
+  const { server, effects } = setupFarmacia([], [receipt('FRC-1', false, '444', 'Almac')]);
+  effects.access = { farmaciaAccess: 'none', farmaciaCommonAccess: 'none', farmaciaAllStudies: false };
+  assert.throws(() => server.getMedicamentosNotasFiscais(), /notas fiscais da Farmácia/);
+  assert.throws(() => server.salvarMovimentoRmNotaFiscal({ chave: '444|ALMAC', movimentoRm: '1', movimentosAtuais: '' }), /notas fiscais da Farmácia/);
+  assert.equal(effects.audit.length, 0);
+  effects.access = { farmaciaAccess: 'read', farmaciaCommonAccess: 'read' };
+  assert.equal(Array.from(server.getMedicamentosNotasFiscais().notas).length, 1);
+  assert.throws(() => server.marcarNotasFiscaisEnviadas({ chaves: ['444|ALMAC'] }), /notas fiscais da Farmácia/);
+  effects.access = { farmaciaAccess: 'none', farmaciaCommonAccess: 'none', farmaciaAllStudies: false };
+  assert.equal(Array.from(server.getEquipamentosNotasFiscais().notas).length, 0);
 });

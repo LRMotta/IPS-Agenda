@@ -390,9 +390,17 @@ function farmaciaSupplyLabel(product) {
   return product.supplySource === 'sponsor' ? 'Patrocinador' : product.supplySource === 'site' ? 'Próprio do IPS' : 'Origem não informada (registro anterior)';
 }
 
+// Estudo recebe produto do patrocinador (aguarda avaliação); o Geral recebe produto próprio do IPS (entra disponível).
+function farmaciaReceiptProductAllowed(product) {
+  return FARMACIA_STOCK.studyId === '@IPS_COMMON' ? product.supplySource !== 'sponsor' : product.supplySource === 'sponsor';
+}
+
 function farmaciaRenderReceiptOptions(data) {
   var select = document.getElementById('farmaciaReceiptProduct'), selected = select.value;
-  var products = (data.products || []).filter(function(product) { return product.supplySource === 'sponsor'; });
+  var products = (data.products || []).filter(farmaciaReceiptProductAllowed);
+  var common = FARMACIA_STOCK.studyId === '@IPS_COMMON';
+  document.getElementById('farmaciaReceiptSectionTitle').textContent = common ? 'Novo recebimento do estoque Geral' : 'Novo recebimento do patrocinador';
+  document.getElementById('farmaciaReceiptHelp').textContent = common ? 'O recebimento entra disponível. Material vencido entra bloqueado. Registre a conferência na referência documental.' : 'O recebimento ficará aguardando avaliação. Material vencido entra bloqueado. Registre a conferência e suas evidências na referência documental.';
   select.innerHTML = '<option value="">Selecione o produto</option>' + products.map(function(product) {
     return '<option value="' + esc(product.id) + '">' + esc(farmaciaProductLabel(product)) + '</option>';
   }).join('');
@@ -446,7 +454,39 @@ function farmaciaOpenReceipt() {
   document.getElementById('farmaciaReceiptReceivedOn').value = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   document.querySelector('#farmaciaModal-receipt .farmacia-dialog-status').textContent = '';
   if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('farmaciaModal-receipt');
+  farmaciaReceiptInvoiceChanged();
+  farmaciaReceiptLoadSenders();
   abrirOverlay('farmaciaModal-receipt');
+}
+
+// Com número de NF, remetente e valor unitário passam a ser obrigatórios (o RM pede o valor por item).
+function farmaciaReceiptInvoiceChanged() {
+  var informed = !!document.getElementById('farmaciaReceiptInvoiceNumber').value.trim();
+  document.getElementById('farmaciaReceiptSender').required = informed;
+  document.getElementById('farmaciaReceiptUnitValue').required = informed;
+}
+
+// Remetentes: os já usados no Cadastro de Medicamentos (uma leitura por sessão) e nos recebimentos carregados.
+function farmaciaReceiptRenderSenders() {
+  var names = (FARMACIA_STOCK.senders || []).slice(), seen = {};
+  ((FARMACIA_STOCK.data || {}).positions || []).forEach(function(position) { if (position.invoice && position.invoice.sender) names.push(position.invoice.sender); });
+  names = names.filter(function(name) { var key = String(name).trim().toLowerCase(); if (!key || seen[key]) return false; seen[key] = true; return true; });
+  names.sort(function(a, b) { return a.localeCompare(b, 'pt-BR'); });
+  document.getElementById('farmaciaReceiptSenders').innerHTML = names.map(function(name) { return '<option value="' + esc(name) + '"></option>'; }).join('');
+}
+
+function farmaciaReceiptLoadSenders() {
+  farmaciaReceiptRenderSenders();
+  if (FARMACIA_STOCK.senders || FARMACIA_STOCK.sendersLoading) return;
+  FARMACIA_STOCK.sendersLoading = true;
+  google.script.run.withSuccessHandler(function(result) {
+    FARMACIA_STOCK.sendersLoading = false;
+    FARMACIA_STOCK.senders = (result && result.remetentes) || [];
+    farmaciaReceiptRenderSenders();
+  }).withFailureHandler(function() {
+    // A lista é só sugestão: sem ela, o remetente continua podendo ser digitado.
+    FARMACIA_STOCK.sendersLoading = false;
+  }).getFarmaciaRemetentesNotas();
 }
 
 function salvarRecebimentoFarmaciaApp(event) {
@@ -455,7 +495,9 @@ function salvarRecebimentoFarmaciaApp(event) {
     lot:document.getElementById('farmaciaReceiptLot').value, expiry:document.getElementById('farmaciaReceiptExpiry').value,
     location:'Catálogo', locationRef:{unitId:document.getElementById('farmaciaReceiptUnit').value,position:document.getElementById('farmaciaReceiptLocation').value},
     kit:document.getElementById('farmaciaReceiptKit').value, physical:document.getElementById('farmaciaReceiptPhysical').valueAsNumber,
-    receivedOn:document.getElementById('farmaciaReceiptReceivedOn').value, document:document.getElementById('farmaciaReceiptDocument').value, note:document.getElementById('farmaciaReceiptNote').value});
+    receivedOn:document.getElementById('farmaciaReceiptReceivedOn').value, document:document.getElementById('farmaciaReceiptDocument').value, note:document.getElementById('farmaciaReceiptNote').value,
+    invoice:{number:document.getElementById('farmaciaReceiptInvoiceNumber').value, sender:document.getElementById('farmaciaReceiptSender').value,
+      unitValue:document.getElementById('farmaciaReceiptUnitValue').value === '' ? null : document.getElementById('farmaciaReceiptUnitValue').valueAsNumber}});
   return false;
 }
 

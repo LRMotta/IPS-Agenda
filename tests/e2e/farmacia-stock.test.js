@@ -1119,7 +1119,18 @@ test('ciclo de vida: recebimento preserva formulário e operação após falha e
       assert.match(await page.locator('#farmaciaInventoryResults').innerText(),/Aguardando avaliação/i);
       await page.locator('#farmaciaReceiptAction').click();
       assert.equal(await page.locator('#farmaciaModal-receipt').getAttribute('inert'),null);
+      assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'getFarmaciaRemetentesNotas');
+      await page.evaluate(()=>window.pending.at(-1).success({remetentes:['Marken Ltda','Almac Group']}));
+      assert.equal(await page.locator('#farmaciaReceiptSenders option').count(),2);
+      assert.equal(await page.locator('#farmaciaReceiptSectionTitle').textContent(),'Novo recebimento do patrocinador');
       await fillReceipt(page);
+      assert.equal(await page.locator('#farmaciaReceiptSender').evaluate(el=>el.required),false);
+      await page.locator('#farmaciaReceiptInvoiceNumber').fill('000123');
+      assert.equal(await page.locator('#farmaciaReceiptSender').evaluate(el=>el.required),true);
+      assert.equal(await page.locator('#farmaciaReceiptUnitValue').evaluate(el=>el.required),true);
+      await page.locator('#farmaciaReceiptSender').fill('Marken Ltda');
+      await page.locator('#farmaciaReceiptUnitValue').fill('12.50');
+      { const dir=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(dir,{recursive:true}); await page.locator('#farmaciaModal-receipt .modal-box').screenshot({animations:'disabled',path:path.join(dir,'farmacia-recebimento-nf-'+width+'.png')}); }
       await page.locator('#farmaciaReceiptForm button[type=submit]').click();
       const first=await page.evaluate(()=>({method:window.pending.at(-1).method,payload:window.pending.at(-1).args[0]}));
       assert.equal(first.method,'registrarRecebimentoFarmacia');
@@ -1127,6 +1138,7 @@ test('ciclo de vida: recebimento preserva formulário e operação após falha e
       assert.equal(first.payload.data.physical,4);
       assert.equal(first.payload.data.document,'REMESSA-FICTICIA-001');
       assert.deepEqual(first.payload.data.locationRef,{unitId:'UNIT-1',position:'Prateleira 1'});
+      assert.deepEqual(first.payload.data.invoice,{number:'000123',sender:'Marken Ltda',unitValue:12.5});
       assert.equal(await page.locator('#farmaciaReceiptFields').evaluate(el=>el.disabled),true);
       assert.equal(await page.locator('#farmaciaReceiptDocument').isDisabled(),true);
       await page.keyboard.press('Escape');

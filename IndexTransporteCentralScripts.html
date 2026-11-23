@@ -549,6 +549,21 @@
     if (getCurrentPage() === 'transporte-central') transpCentralCarregar(true);
   }
 
+  // Horário da última leitura, no mesmo formato de Pendências e Dashboard ("Atualizado: 10:32").
+  function transpCentralAtualizarTs() {
+    var ts = document.getElementById('tcTs');
+    if (!ts) return;
+    var lido = TRANSP_CENTRAL_STATE.lidoEm;
+    ts.textContent = lido ? 'Atualizado: ' + lido.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+  }
+
+  function transpCentralBotaoOcupado(ocupado) {
+    var btn = document.getElementById('tcRefresh');
+    if (!btn) return;
+    btn.disabled = !!ocupado;
+    btn.setAttribute('aria-busy', ocupado ? 'true' : 'false');
+  }
+
   function transpCentralCarregar(forcar) {
     var alvo = document.getElementById('tcFazer');
     var status = document.getElementById('tcStatus');
@@ -557,12 +572,15 @@
     var email = CURRENT_ACCESS.email;
     if (!TRANSP_CENTRAL_STATE.dados || forcar) alvo.setAttribute('aria-busy', 'true');
     if (status) status.textContent = 'Carregando tarefas…';
+    transpCentralBotaoOcupado(true);
     // Resposta fora de ordem, outra conta ou outra tela não sobrescrevem o que está na tela.
     function atual() {
       return requestId === TRANSP_CENTRAL_REQUEST_ID && email === CURRENT_ACCESS.email && getCurrentPage() === 'transporte-central';
     }
     google.script.run
       .withSuccessHandler(function(resposta) {
+        // O botão volta a valer com a resposta do último pedido, mesmo se a pessoa já saiu da tela.
+        if (requestId === TRANSP_CENTRAL_REQUEST_ID) transpCentralBotaoOcupado(false);
         if (!atual()) return;
         if (!resposta || resposta.ok !== true || !Array.isArray(resposta.tarefas)) {
           alvo.setAttribute('aria-busy', 'false');
@@ -570,10 +588,14 @@
           return;
         }
         TRANSP_CENTRAL_STATE.dados = resposta;
+        TRANSP_CENTRAL_STATE.lidoEm = new Date();
+        transpCentralAtualizarTs();
         transpCentralRender(resposta);
         if (status) status.textContent = resposta.tarefas.length + ' tarefa(s) para fazer.';
       })
       .withFailureHandler(function(erro) {
+        // O botão volta a valer com a resposta do último pedido, mesmo se a pessoa já saiu da tela.
+        if (requestId === TRANSP_CENTRAL_REQUEST_ID) transpCentralBotaoOcupado(false);
         if (!atual()) return;
         alvo.setAttribute('aria-busy', 'false');
         // Mantém a lista anterior, se houver, e avisa que está desatualizada.

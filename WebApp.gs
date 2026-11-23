@@ -13273,6 +13273,8 @@ function salvarMedicamentoRecebido(payload) {
   var sh = getMedicamentosSheet_(ss);
   var rowIndex = payload.rowIndex || payload.idMedicamentoRec
     ? cadastroLocalizarLinhaPorId_(sh, payload.idMedicamentoRec, 0, 'medicamento') : 0;
+  // O Cadastro de Medicamentos é histórico: corrige registros existentes, mas novos recebimentos são da Farmácia.
+  if (!rowIndex) throw new Error('Novos recebimentos de medicamentos são registrados em Farmácia › Estoque.');
   var usuario = getUsuarioEmail();
   var idRegistro = gerarCodigoRegistro_('MED');
   var criadoEm = new Date();
