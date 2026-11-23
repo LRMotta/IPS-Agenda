@@ -464,6 +464,12 @@ test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser conf
     // Mesma AWB avisada, segundo clique: grava sem nova consulta.
     const p4 = await abrir(browser, 1280);
     await iniciar(p4.page, envio({ passo: 'awb', passos: ['conferir', 'awb', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', awb: '' }) }));
+    // Link para gerar a AWB no site da OCASA: abre em outra aba e o endereço não aparece no texto.
+    const siteOcasa = p4.page.getByRole('link', { name: /Clique aqui para gerar a AWB no site da OCASA/ });
+    assert.match(await siteOcasa.getAttribute('href'), /^https:\/\/pobdigital\.ocasa\.com\/mylifescience\?adr=/);
+    assert.equal(await siteOcasa.getAttribute('target'), '_blank');
+    assert.equal(await siteOcasa.getAttribute('rel'), 'noopener noreferrer');
+    assert.doesNotMatch(await p4.page.locator('#page-transporte-central').innerText(), /pobdigital/);
     await p4.page.fill('#tcCampo_awb', 'PK2AAA000001');
     await p4.page.getByRole('button', { name: /Salvar AWB/ }).click();
     await responder(p4.page, 'getTransporteAwbAviso', { awb: 'PK2AAA000001', text: 'A AWB já foi utilizada em outro envio.' });

@@ -2,6 +2,7 @@
   // Transporte (tela nova): passo a passo de um envio. Prefixo transpCentral*, sem globais genéricos.
   var TC_ENVIO = { aberto: false, agendaId: '', slot: '', dados: null, passo: '', seq: 0, token: '', gerando: false, resultado: null, awbUltima: null, pinex: null, salvando: false, matEdit: null, ajuste: null, anvisa: null, aguardaPeticionamento: false };
   var TC_MATERIAIS_TIPOS = ['Sangue', 'Soro', 'Urina', 'Plasma', 'Tecido', 'Saliva', 'Fezes', 'Vacina'];
+  var TC_OCASA_AWB_URL = 'https://pobdigital.ocasa.com/mylifescience?adr=O4vrY2ctp5sQxN5ltV0mRDy%2BhN74hwW%2Byc9Zb86RS5TAkbB07Bl3nuQ1p0diufmyRcBqCA9TzUwvuIZ%2BiQ7X5yYl48m%2FfVzTdyqvZ5mU6ld%2FCD9s99t43dlN%2Bo59mYnUKSylrPlmYJQfgcT52%2BT2VkkaoJVFpJ3hLyZW%2F9pA5wrEk%2BDTDH0tnt5nRa3%2BXGSo';
   var TC_PASSOS_ROTULO ={ conferir: 'Conferir', awb: 'AWB', pinex_numeros: 'Números da PINEX', gerar: 'Gerar', anvisa: 'Formulário ANVISA', enviar: 'Enviar' };
 
   function transpCentralTokenNovo() {
@@ -249,7 +250,9 @@
     // AWB já usada em outro envio: avisa aqui, antes de gravar; a pessoa corrige ou confirma que é esta mesma.
     var aviso = TC_ENVIO.awbAviso;
     var usada = aviso && aviso.text ? '<p class="tc-aviso" role="alert">' + esc(aviso.text) + ' Confira o número. Se for este mesmo, clique de novo para continuar.</p>' : '';
-    return '<section class="tc-bloco"><h3>AWB</h3><p>' + esc(texto) + '</p>' + ultima +
+    // Site da OCASA para gerar a AWB: o endereço fica atrás do texto do link, sem aparecer na tela.
+    var siteOcasa = courier === 'OCASA' ? '<p><a class="tc-link-externo" href="' + esc(TC_OCASA_AWB_URL) + '" target="_blank" rel="noopener noreferrer">Clique aqui para gerar a AWB no site da OCASA</a> (abre em outra aba).</p>' : '';
+    return '<section class="tc-bloco"><h3>AWB</h3><p>' + esc(texto) + '</p>' + siteOcasa + ultima +
       '<div class="tc-campos">' + transpCentralCampo('tcCampo_awb', 'AWB', aviso && aviso.digitada ? aviso.digitada : registro.awb, 'required autocomplete="off"') + '</div>' + usada + '</section>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-act="awb-ok">' + (usada ? 'Usar esta AWB e continuar' : 'Salvar AWB e continuar') + '</button></div>';
   }
