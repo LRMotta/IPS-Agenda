@@ -240,6 +240,21 @@ test('outra pessoa no envio, falha e nova tentativa com o mesmo token, saída e 
     await page.getByRole('button', { name: 'Tentar de novo' }).click();
     const token2 = await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'gerarDocumentosTransporteEnvio').args[3]);
     assert.equal(token2, token1);
+    // Resposta nula (a geração pode ter terminado no servidor): relê o envio, não volta ao "Gerar documentos".
+    await page.evaluate(() => window.__rpc.splice(0));
+    await page.evaluate(() => { TC_ENVIO.gerando = false; window.transpCentralGerar(); });
+    await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'gerarDocumentosTransporteEnvio').ok(null));
+    assert.equal(await page.evaluate(() => window.__rpc.filter((p) => p.rpc === 'getTransporteEnvio').length), 1);
+    await responder(page, 'getTransporteEnvio', envio({ passo: 'enviar', versao: 7 }));
+    assert.equal(await page.evaluate(() => [TC_ENVIO.passo, TC_ENVIO.dados.versao].join('|')), 'enviar|7');
+    assert.match(await page.evaluate(() => window.__msgs.join('|')), /resposta da geração não chegou/);
+    // Versão antiga recusada: também relê, em vez de deixar "Tentar de novo" que só repete a recusa.
+    await page.evaluate(() => window.__rpc.splice(0));
+    await page.evaluate(() => { TC_ENVIO.passo = 'gerar'; window.transpCentralGerar(); });
+    await page.evaluate(() => window.__rpc.find((p) => p.rpc === 'gerarDocumentosTransporteEnvio').falha(new Error('Este transporte foi alterado por outra pessoa. Recarregue antes de continuar.')));
+    assert.equal(await page.evaluate(() => window.__rpc.filter((p) => p.rpc === 'getTransporteEnvio').length), 1);
+    await responder(page, 'getTransporteEnvio', envio({ passo: 'enviar', versao: 7 }));
+    assert.equal(await page.evaluate(() => TC_ENVIO.passo), 'enviar');
     // Resposta de uma abertura antiga não sobrescreve a atual.
     await page.evaluate(() => window.__rpc.splice(0));
     await page.evaluate(() => { TC_ENVIO.aberto = false; transpCentralComecar('a1', '1'); transpCentralComecar('a1', '1'); });
@@ -431,7 +446,21 @@ test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser conf
     const marken = await p3.page.locator('.tc-wiz-main').innerText();
     assert.match(marken, /Pedir a coleta à courier[\s\S]*Abra o rascunho/);
     assert.doesNotMatch(marken, /GRU/);
+    // Envio gerado antes de o registro guardar o PDF: indica a pasta do Drive.
+    assert.match(marken, /Imprima os documentos[\s\S]*Meu Drive › Documentação para Transporte de Amostras/);
     await p3.page.close();
+    // Com o PDF no registro (envio reaberto): link para imprimir, em outra aba.
+    const pPdf = await abrir(browser, 1280);
+    await iniciar(pPdf.page, envio({ passo: 'enviar', registro: Object.assign(envio().registro, { pdfArquivoId: 'PDF-9', pdfArquivoNome: 'AWB123 - Transporte.pdf' }) }));
+    const pdf = pPdf.page.getByRole('link', { name: 'Abrir o PDF para imprimir' });
+    assert.equal(await pdf.getAttribute('href'), 'https://drive.google.com/file/d/PDF-9/view');
+    assert.equal(await pdf.getAttribute('target'), '_blank');
+    assert.match(await pPdf.page.locator('.tc-wiz-main').innerText(), /AWB123 - Transporte\.pdf/);
+    // Clicar no link não marca o item da lista.
+    await pdf.evaluate((a) => a.addEventListener('click', (e) => e.preventDefault()));
+    await pdf.click();
+    assert.equal(await pPdf.page.locator('#tcCheck0').isChecked(), false);
+    await pPdf.page.close();
     // Mesma AWB avisada, segundo clique: grava sem nova consulta.
     const p4 = await abrir(browser, 1280);
     await iniciar(p4.page, envio({ passo: 'awb', passos: ['conferir', 'awb', 'gerar', 'enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', awb: '' }) }));
@@ -455,7 +484,7 @@ test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser conf
     await iniciar(p6.page, envio({ registro: Object.assign(envio().registro, { materiais: [{ ativo: true, material: 'Líquor', tubos: 1, total: 1, unit: 'mL' }] }) }));
     await p6.page.getByRole('button', { name: 'Editar' }).click();
     assert.equal(await p6.page.locator('#tcMatTipo0').inputValue(), 'Líquor');
-    assert.deepEqual(erros.concat(p2.erros, p3.erros, p4.erros, p5.erros, p6.erros), []);
+    assert.deepEqual(erros.concat(p2.erros, p3.erros, p4.erros, p5.erros, p6.erros, pPdf.erros), []);
   } finally { await browser.close(); }
 });
 
