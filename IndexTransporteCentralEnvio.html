@@ -340,24 +340,37 @@
 
   function transpCentralHtmlEnviar(registro) {
     var r = TC_ENVIO.resultado;
-    // Os documentos gerados são impressos, assinados e entregues ao agente da courier junto com as amostras.
-    // O e-mail é só o pedido de coleta: sem anexo na DHL; com a CE do estudo na MARKEN e na OCASA.
+    // Os documentos gerados são impressos e assinados à mão. A cópia digitalizada vai anexada ao e-mail de agendamento
+    // (com a CE do estudo na MARKEN e na OCASA); a via impressa é entregue ao laboratório e fica junto da caixa de envio.
+    // DHL: o e-mail não leva anexos (nem a CE nem os documentos), então não há o que digitalizar.
+    // PINEX (Agendamento): o Formulário só serve ao pré-agendamento; não é impresso, assinado nem digitalizado.
     var courier = String((registro && registro.courier) || '').toUpperCase();
-    var anexo = courier.indexOf('DHL') >= 0 ? 'O e-mail não leva anexos.' : (courier === 'MARKEN' || courier === 'OCASA' ? 'O e-mail leva a CE do estudo em anexo.' : '');
-    var explicacao = r ? '' : '<p>Os documentos já foram gerados. Falta enviar o pedido de coleta à courier.</p>';
+    var soFormulario = courier === 'PINEX (AGENDAMENTO)';
+    var dhl = courier.indexOf('DHL') >= 0;
+    var anexo = dhl ? 'O e-mail não leva anexos.' : (courier === 'MARKEN' || courier === 'OCASA' ? 'O rascunho já traz a CE do estudo em anexo.' : '');
+    var explicacao = r ? '' : '<p>Os documentos já foram gerados. Falta ' + (soFormulario ? 'enviar o pré-agendamento à courier.' : (dhl ? 'assinar e enviar o pedido de coleta à courier.' : 'assinar, digitalizar e enviar o pedido de coleta à courier.')) + '</p>';
     var avisos = ((TC_ENVIO.dados && TC_ENVIO.dados.avisos) || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('');
     // Envio internacional com a GRU e o extrato prontos: anexar os dois é um passo próprio, antes de enviar.
     var gru = !!(registro && registro.gruPronta);
     // Cada item é marcado pela pessoa; "Pronto, enviei" só libera com todos marcados. texto: rótulo da caixa;
     // extra: o que fica abaixo dele (link e assunto do rascunho), fora do rótulo.
-    var itens = [{ texto: 'Imprima os documentos, assine onde for pedido e deixe-os com as amostras, para entregar ao agente da courier na retirada.', extra: transpCentralHtmlPdf(registro, r) }];
+    var itens = [];
+    if (!soFormulario) {
+      itens.push({ texto: 'Imprima os documentos e assine à mão onde for pedido.', extra: transpCentralHtmlPdf(registro, r) });
+      if (!dhl) itens.push({ texto: 'Digitalize os documentos assinados.' });
+    }
     // PINEX com os números: o servidor não cria rascunho; os documentos seguem na conversa do agendamento.
-    if (courier === 'PINEX') itens.push({ texto: 'No Gmail, abra a conversa do agendamento com a PINEX (a que trouxe os números) e responda nela, anexando os documentos gerados.' });
-    else itens.push({ texto: 'Abra o rascunho do pedido de coleta no Gmail.', extra: transpCentralHtmlRascunho(registro, r) });
+    if (courier === 'PINEX') itens.push({ texto: 'No Gmail, abra a conversa do agendamento com a PINEX (a que trouxe os números) e responda nela, anexando os documentos assinados e digitalizados.' });
+    else if (soFormulario) itens.push({ texto: 'Abra o rascunho do pré-agendamento no Gmail. Ele leva o Formulário em anexo; o Formulário só serve ao pré-agendamento e não é impresso nem assinado.', extra: transpCentralHtmlRascunho(registro, r) });
+    else {
+      itens.push({ texto: 'Abra o rascunho do pedido de coleta no Gmail.', extra: transpCentralHtmlRascunho(registro, r) });
+      if (!dhl) itens.push({ texto: 'Anexe ao rascunho os documentos assinados e digitalizados.' });
+    }
     // Envio internacional com a GRU e o extrato prontos: anexar os dois é um item próprio, antes de enviar.
     if (gru) itens.push({ texto: 'Anexe a GRU e o extrato ao e-mail. Eles estão na pasta deste envio, no servidor.', forte: true });
     itens.push({ texto: 'Confira o destinatário, a data e a janela de retirada.' + (anexo ? ' ' + anexo : '') });
     itens.push({ texto: 'Clique em Enviar no Gmail e volte aqui.' });
+    if (!soFormulario) itens.push({ texto: 'Entregue as guias ao laboratório e mantenha-as juntas com a caixa de envio das amostras.' });
     var marcados = TC_ENVIO.checks || (TC_ENVIO.checks = {});
     var faltam = itens.filter(function(_item, i) { return !marcados[i]; }).length;
     return '<section class="tc-bloco"><h3>' + (gru ? 'Anexar a GRU e o extrato e enviar à courier' : 'Pedir a coleta à courier') + '</h3>' + explicacao + avisos +
