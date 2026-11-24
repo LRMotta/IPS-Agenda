@@ -11,7 +11,8 @@ function transporteEnvioCeStatus_(protocolo) {
   protocolo = String(protocolo || '').trim();
   if (!protocolo) return { checked: false, found: false, message: 'Protocolo não selecionado.' };
   try {
-    var arquivo = transporteComunicadoEspecialDaExecucao_(transporteEnvioSsVazio_(), protocolo);
+    // Mesmo nome de estudo do anexo do rascunho: a busca no Drive feita para o anexo serve tambem ao aviso.
+    var arquivo = transporteComunicadoEspecialDaExecucao_(transporteEnvioSsVazio_(), transporteProjetoDisplay_(protocolo));
     if (arquivo) return { checked: true, found: true, message: 'CE localizada para o estudo.', name: arquivo.getName(), url: arquivo.getUrl() };
   } catch (erro) {
     Logger.log('CE nao consultada: ' + String(erro && erro.message || erro));
@@ -71,11 +72,13 @@ function transporteEnvioCriarRascunho_(registro, opcoes) {
 }
 
 // Documentos em memoria -> PDF no Drive. Reaproveita o PDF ja confirmado quando o token o trouxe.
-function transporteEnvioGerarPdf_(registro, request, usuario) {
+function transporteEnvioGerarPdf_(registro, request, usuario, lap) {
+  lap = lap || function() {};
   var courier = registro.courier;
   var temperatura = transporteNormalizeTemperaturaFromCodex_(registro.temperatura);
   if (request.record.pdf && request.record.pdf.fileId) return Object.assign({}, request.record.pdf, { reaproveitado: true });
   var docs = transporteDocsDados_(registro);
+  lap('pdf_dados');
   var spec = transportePdfSpec_(courier, temperatura, registro.destino, docs.ss);
   if (!spec.ordem.length) throw new Error('Courier sem configuração de PDF: ' + courier);
   if (TRANSPORTE_DOCS_GRADE_COURIERS_HTML_.indexOf(transporteNormalizeCourierFromCodex_(courier)) < 0) {
@@ -83,10 +86,13 @@ function transporteEnvioGerarPdf_(registro, request, usuario) {
   }
   var nome = transportePdfFileName_(registro.awb, transporteParseDate_(registro.dataEnvio), temperatura, courier, '');
   var pasta = transportePdfDestinationFolder_(registro.protocolo);
+  lap('pdf_pasta');
   var gerado = transporteDocsGradeGerarPdfHtml_(docs.ss, spec, courier, registro, nome, docs);
+  lap('pdf_html');
   var conteudoHash = transportePdfManifestoHash_(gerado.conteudo);
   transporteGenerationCheckpoint_({ phase: 'PDF_INTENT' });
   var arquivo = pasta.createFile(gerado.blob);
+  lap('pdf_drive');
   var pdfId = arquivo.getId();
   var pdf = {
     ok: true, type: 'pdf', fileId: pdfId, fileName: gerado.blob.getName(), courier: courier, conteudoPdfHash: conteudoHash,
@@ -98,6 +104,7 @@ function transporteEnvioGerarPdf_(registro, request, usuario) {
   };
   transporteGenerationCheckpoint_({ phase: 'PDF_READY', pdf: pdf });
   pdf.driveAccess = transporteShareGeneratedPdfWithActiveUser_(arquivo, pasta);
+  lap('pdf_compartilhar');
   pdf.warnings = [];
   return pdf;
 }
@@ -172,11 +179,16 @@ function transporteEnvioRespostaGerar_(resposta) {
  * repetir o mesmo token retoma sem duplicar PDF ou rascunho.
  */
 function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationRequestId) {
+  // Etapas no log ([CODEX_PERF] gerarDocumentosTransporteEnvio): so nome e duracao, para medir a geracao em producao.
+  var lap = transporteLapStart_('gerarDocumentosTransporteEnvio');
   var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
+  lap('acesso');
   var posse = transporteEnvioReivindicar_(agendaId, slot, usuario);
+  lap('reivindicar');
   if (!posse.ok) throw transporteRegistroErro_('TRANSPORTE_REGISTRO_EM_PREPARO', 'Este transporte está sendo preparado por outra pessoa agora.', { emPreparoPor: posse.emPreparoPor });
   var lido = transporteRegistroLer_(agendaId, slot);
+  lap('ler_registro');
   if (!lido.registro) throw new Error('Abra o envio antes de gerar os documentos.');
   if (lido.versao !== Number(versao)) throw transporteRegistroErro_('TRANSPORTE_REGISTRO_VERSAO', 'Este transporte foi alterado por outra pessoa. Recarregue antes de continuar.');
   var registro = JSON.parse(JSON.stringify(lido.registro));
@@ -185,6 +197,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
   transporteValidarObrigatoriosWebApp_(registro);
   transporteValidarDataEnvioMinima_(registro.dataEnvio);
   codexMatBioValidateTransportPayload_(registro);
+  lap('validar');
   // O token identifica os DADOS do envio: o numero do passo e os dados da propria geracao (token, rascunho)
   // mudam a cada gravacao e nao entram no hash.
   var dadosDoToken = JSON.parse(JSON.stringify(registro));
@@ -195,6 +208,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
   var inicio = transporteEnvioIniciarGeracao_(String(lido.registro.geracaoToken || generationRequestId || ''), dadosDoToken, usuario);
   var request = inicio.request;
   generationRequestId = inicio.token;
+  lap('iniciar_geracao');
   if (registro.geracaoToken !== generationRequestId) {
     // Guardado antes de qualquer arquivo: se a execucao morrer no meio, a proxima tentativa encontra o token.
     var comToken = Object.assign({}, lido.registro, { geracaoToken: generationRequestId });
@@ -202,6 +216,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
     transporteRegistroGravar_(agendaId, slot, comToken, { versaoEsperada: lido.versao, usuario: usuario, manterVersao: true });
     lido.registro = comToken;
     registro.geracaoToken = generationRequestId;
+    lap('gravar_token');
   }
   request.record.generationRequestId = generationRequestId;
   TRANSPORTE_GENERATION_REQUEST_ = request;
@@ -211,17 +226,22 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
     // O resultado guardado traz a versao da epoca; a tela precisa da atual para continuar gravando.
     if (repetido) return transporteEnvioRespostaGerar_(Object.assign({ ok: true }, repetido, { versao: lido.versao }));
     // AWB e Agenda: escritas curtas, em lock, antes de qualquer arquivo.
+    lap('replay');
     transporteAwbReservarEnvio_(agendaId, slot, usuario, { strict: true });
+    lap('awb');
     codexWithDocumentLock_('transporteEnvioSincronizarAgenda', function() { return transporteSincronizarAgenda_(registro); });
-    var pdf = transporteEnvioGerarPdf_(registro, request, usuario);
+    lap('agenda');
+    var pdf = transporteEnvioGerarPdf_(registro, request, usuario, lap);
     var temperaturaPdf = transporteNormalizeTemperaturaFromCodex_(registro.temperatura);
     var docHash = transportePdfManifestoHash_({ dados: transporteGenerationCanonical_(registro), conteudo: pdf.conteudoPdfHash });
     var monitorRef = transporteMonitorReferencia_(registro.idAgenda, registro.agendaSlot);
     var peticao = transporteEnvioGerarPeticao_(registro, request);
+    lap('peticao');
     var rascunho = request.record.draft || transporteEnvioCriarRascunho_(registro, {
       requestedByEmail: usuario, temperaturaPdf: temperaturaPdf, monitorRef: monitorRef, pdfHash: docHash,
       generationRequestId: generationRequestId, pdfFileId: pdf.fileId, peticaoFileId: peticao && peticao.fileId ? peticao.fileId : ''
     });
+    lap('rascunho');
     var resultado = Object.assign({}, pdf, {
       draftOk: !!rascunho.ok, draftId: rascunho.draftId || '', draftError: rascunho.ok ? '' : String(rascunho.message || rascunho.error || ''),
       draftSkipped: !!rascunho.skipped, draftMessage: rascunho.message || '', monitorRef: monitorRef, manifestoPdfHash: docHash,
@@ -232,6 +252,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
       peticaoWarning: peticao && peticao.erro ? peticao.erro : '',
       ce: transporteEnvioCeStatus_(registro.protocolo)
     });
+    lap('ce_status');
     // Assunto e destinatarios ficam no registro: o passo Enviar aponta o rascunho certo mesmo em outro dia ou computador.
     if (rascunho.ok && rascunho.subject) {
       registro.rascunhoAssunto = String(rascunho.subject);
@@ -263,16 +284,19 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
         resultado.monitorWarning = 'Não foi possível registrar o acompanhamento do envio: ' + String(erroMonitor && erroMonitor.message || erroMonitor);
       }
     }
+    lap('monitor');
     try {
       var sincronia = codexWithDocumentLock_('transporteEnvioDocsGerados', function() { return transporteMarcarDocsGeradosAgenda_(registro, pdf); });
       if (sincronia) resultado.agendaSync = sincronia;
     } catch (erroAgenda) {
       resultado.agendaWarning = 'Documentos gerados, mas o status da Agenda não foi atualizado: ' + String(erroAgenda && erroAgenda.message || erroAgenda);
     }
+    lap('status_agenda');
     // Envio internacional: o proximo passo e o formulario ANVISA; o e-mail a courier so depois da GRU e do extrato.
     var proximoPasso = transporteEnvioInternacional_(registro) && !registro.peticionamentoEnviadoEm ? 'anvisa' : 'enviar';
     registro.passoNumero = transporteEnvioNumeroPasso_(registro, proximoPasso);
     var gravado = transporteEnvioGravarAposGerar_(agendaId, slot, registro, lido, usuario, proximoPasso);
+    lap('gravar_registro');
     resultado.versao = gravado.versao;
     resultado.passo = proximoPasso;
     if (rascunho.ok || rascunho.skipped) transporteGenerationCheckpoint_({ phase: 'COMPLETE', result: resultado, pdf: null, draft: null });

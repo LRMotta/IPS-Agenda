@@ -6480,14 +6480,16 @@ function transporteCodexEmailInlineTableSpacing_(html) {
 }
 
 // A CE e procurada para o aviso e para o anexo; so vale dentro da mesma execucao.
+// A ausencia tambem fica guardada: sem CE, a busca percorre a pasta e as subpastas no Drive, e a geracao
+// perguntava duas vezes (anexo do rascunho e aviso). A chave inclui a planilha: so a real tem o link da aba Protocolos.
 var TRANSPORTE_CE_ARQUIVO_EXECUCAO_ = Object.create(null);
 
 function transporteComunicadoEspecialDaExecucao_(ss, projeto) {
-  var chave = String(projeto || '').trim();
-  if (!TRANSPORTE_CE_ARQUIVO_EXECUCAO_[chave]) {
-    var file = transporteCodexFindComunicadoEspecial_(ss, projeto);
-    if (!file) return null;
-    TRANSPORTE_CE_ARQUIVO_EXECUCAO_[chave] = file;
+  var planilha = '';
+  try { planilha = ss && ss.getId ? String(ss.getId() || '') : ''; } catch (erroId) { planilha = ''; }
+  var chave = planilha + '|' + String(projeto || '').trim();
+  if (!(chave in TRANSPORTE_CE_ARQUIVO_EXECUCAO_)) {
+    TRANSPORTE_CE_ARQUIVO_EXECUCAO_[chave] = transporteCodexFindComunicadoEspecial_(ss, projeto) || null;
   }
   return TRANSPORTE_CE_ARQUIVO_EXECUCAO_[chave];
 }
@@ -7143,7 +7145,16 @@ function transportePdfActualSheetName_(key, ss) {
   return sh ? sh.getName() : '';
 }
 
+// A pasta do estudo serve ao PDF e a peticao da mesma geracao: procurada uma vez por execucao.
+var TRANSPORTE_PDF_PASTA_EXECUCAO_ = Object.create(null);
+
 function transportePdfDestinationFolder_(protocolo) {
+  var chave = String(protocolo || 'PASTA_PADRAO').trim() || 'PASTA_PADRAO';
+  if (!TRANSPORTE_PDF_PASTA_EXECUCAO_[chave]) TRANSPORTE_PDF_PASTA_EXECUCAO_[chave] = transportePdfDestinationFolderBuscar_(protocolo);
+  return TRANSPORTE_PDF_PASTA_EXECUCAO_[chave];
+}
+
+function transportePdfDestinationFolderBuscar_(protocolo) {
   var root = DriveApp.getRootFolder();
   var folderName = 'Documenta\u00e7\u00e3o para Transporte de Amostras';
   var folders = root.getFoldersByName(folderName);

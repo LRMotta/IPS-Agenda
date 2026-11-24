@@ -354,7 +354,10 @@ test('CE e procurada uma vez por execucao para o aviso e o anexo', () => {
   c.transporteCodexFindComunicadoEspecial_ = () => { buscas++; return null; };
   assert.equal(c.transporteComunicadoEspecialDaExecucao_({}, 'Sem CE'), null);
   c.transporteComunicadoEspecialDaExecucao_({}, 'Sem CE');
-  assert.equal(buscas, 4, 'ausencia nao fica guardada');
+  // Sem CE a busca varre a pasta e as subpastas no Drive: a ausencia tambem vale ate o fim da execucao.
+  assert.equal(buscas, 3, 'ausencia fica guardada na mesma planilha');
+  c.transporteComunicadoEspecialDaExecucao_({ getId: () => 'planilha-real' }, 'Sem CE');
+  assert.equal(buscas, 4, 'outra planilha (a real tem o link da aba Protocolos) faz a propria busca');
 });
 
 test('aba com esquema garantido na execucao nao rele o cabecalho, exceto na leitura instrumentada', () => {
