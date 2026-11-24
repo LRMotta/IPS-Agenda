@@ -103,7 +103,15 @@ unitário do item (o RM pede o valor por item). O número pode ficar em branco q
 a nota não veio com a carga; com número, remetente e valor (≥ 0, até duas casas)
 são obrigatórios. O remetente é digitado ou escolhido entre os já usados no Cadastro
 de Medicamentos (`getFarmaciaRemetentesNotas`) e nos recebimentos carregados.
-Recebimentos anteriores não têm a chave e continuam legíveis. A nota fica no ledger
+Recebimentos anteriores não têm a chave e continuam legíveis.
+
+A nota pode ser **informada depois ou corrigida** pelo detalhe da entrada recebida
+(`registrarNotaRecebimentoFarmacia`, nível `operate`): grava um registro
+`RECEIPT_INVOICE` (prefixo `FNF-`) com o recebimento, a nota completa (número,
+remetente e valor obrigatórios) e o motivo. O recebimento original não muda; o registro
+mais recente de cada recebimento passa a valer na entrada e na lista de notas fiscais,
+e aparece no histórico como "Nota fiscal informada". Nota igual à atual é recusada.
+A nota fica no ledger
 do estudo/classe: em estudo cego, o recebimento da classe restrita só é visto por
 quem tem a concessão restrita.
 

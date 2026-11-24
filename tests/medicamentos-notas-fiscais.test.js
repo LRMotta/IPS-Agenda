@@ -375,3 +375,11 @@ test('farmácia: quem não acessa a Farmácia não lista nem altera notas de med
   effects.access = { farmaciaAccess: 'none', farmaciaCommonAccess: 'none', farmaciaAllStudies: false };
   assert.equal(Array.from(server.getEquipamentosNotasFiscais().notas).length, 0);
 });
+
+test('farmácia: nota informada ou corrigida depois do recebimento move o item para a nota nova', () => {
+  const { server } = setupFarmacia([], [receipt('FRC-1', false, '', ''), receipt('FRC-2', false, '111', 'Almac'),
+    ledgerRow('FNF-1', 'RECEIPT_INVOICE', 'P1', false, { receiptId: 'FRC-1', invoice: { number: '900', sender: 'Marken', unitValue: 2 }, reason: 'Chegou depois' }),
+    ledgerRow('FNF-2', 'RECEIPT_INVOICE', 'P1', false, { receiptId: 'FRC-2', invoice: { number: '112', sender: 'Almac', unitValue: 3 }, reason: 'Número errado' })]);
+  const chaves = Array.from(server.getMedicamentosNotasFiscais().notas).map((n) => n.chave).sort();
+  assert.deepEqual(chaves, ['112|ALMAC', '900|MARKEN']);
+});
