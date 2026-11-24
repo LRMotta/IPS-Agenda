@@ -44,7 +44,9 @@
   function transpCentralEtiquetas(tarefa) {
     var etiquetas = [];
     if (tarefa.prazoLabel) etiquetas.push('<span class="chip chip-red tc-chip"><span class="material-symbols-outlined" aria-hidden="true">schedule</span>' + esc(tarefa.prazoLabel) + '</span>');
-    if (tarefa.parouNoPasso) etiquetas.push('<span class="chip chip-orange tc-chip"><span class="material-symbols-outlined" aria-hidden="true">bookmark</span>Parou no passo ' + esc(tarefa.parouNoPasso) + '</span>');
+    // "Parou no passo Enviar": o nome do passo diz algo a quem so acompanha; o numero fica so se o nome nao vier.
+    var rotuloPasso = tarefa.parouNoPassoNome && typeof TC_PASSOS_ROTULO !== 'undefined' ? TC_PASSOS_ROTULO[tarefa.parouNoPassoNome] : '';
+    if (tarefa.parouNoPasso) etiquetas.push('<span class="chip chip-orange tc-chip"><span class="material-symbols-outlined" aria-hidden="true">bookmark</span>Parou no passo ' + esc(rotuloPasso || tarefa.parouNoPasso) + '</span>');
     if (tarefa.comPessoa) etiquetas.push('<span class="chip chip-purple tc-chip"><span class="material-symbols-outlined" aria-hidden="true">person</span>Com ' + esc(tarefa.comPessoa) + ' agora</span>');
     return etiquetas.length ? '<div class="tc-badges">' + etiquetas.join('') + '</div>' : '';
   }

@@ -316,7 +316,7 @@ test('"Parou no passo N" vem do número gravado com o passo e some quando o pass
   const preparos = { 'n1|1': { passo: 'gerar', passoNumero: 3, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false },
     'n2|1': { passo: 'concluido', passoNumero: 0, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false } };
   const r = construir(s, [linha(s, 'n1', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n2', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n3', '06/10/2026', [{ nome: 'OCASA' }])], { preparos });
-  assert.deepEqual(r.tarefas.map((x) => [x.agendaId, x.parouNoPasso]), [['n1', 3], ['n2', 0], ['n3', 0]]);
+  assert.deepEqual(r.tarefas.map((x) => [x.agendaId, x.parouNoPasso, x.parouNoPassoNome]), [['n1', 3, 'gerar'], ['n2', 0, ''], ['n3', 0, '']]);
 });
 
 test('PINEX com os documentos gerados no passo a passo: enviar (com a GRU no título), não preparar de novo', () => {
