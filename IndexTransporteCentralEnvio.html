@@ -368,13 +368,14 @@
       itens.push({ texto: dhl ? 'Abra o rascunho do pedido de coleta no Gmail.' : 'Abra o rascunho do pedido de coleta no Gmail e anexe os documentos assinados e digitalizados.',
         extra: transpCentralHtmlRascunho(registro, r) + (anexo ? '<div class="tc-dim">' + esc(anexo) + '</div>' : '') });
     }
-    // Envio internacional com a GRU e o extrato prontos: anexar os dois é um item próprio, antes de enviar.
-    if (gru) itens.push({ texto: 'Anexe a GRU e o extrato ao e-mail. Eles estão na pasta deste envio, no servidor.', forte: true });
+    // Envio internacional com a GRU e o extrato prontos: anexar os dois e a petição de fiscalização é um item próprio,
+    // antes de enviar. A OCASA pode bloquear o embarque se faltar qualquer um deles.
+    if (gru) itens.push({ texto: 'Anexe ao e-mail a GRU, o extrato e a petição de fiscalização. A GRU e o extrato estão na pasta deste envio, no servidor; a petição seguiu no e-mail do formulário ANVISA.', forte: true });
     itens.push({ texto: 'Clique em Enviar no Gmail e volte aqui.' });
     if (!soFormulario) itens.push({ texto: 'Entregue as guias ao laboratório e mantenha-as juntas com a caixa de envio das amostras.' });
     var marcados = TC_ENVIO.checks || (TC_ENVIO.checks = {});
     var faltam = itens.filter(function(_item, i) { return !marcados[i]; }).length;
-    return '<section class="tc-bloco"><h3>' + (gru ? 'Anexar a GRU e o extrato e enviar à courier' : 'Pedir a coleta à courier') + '</h3>' + explicacao + avisos +
+    return '<section class="tc-bloco"><h3>' + (gru ? 'Anexar a GRU, o extrato e a petição e enviar à courier' : 'Pedir a coleta à courier') + '</h3>' + explicacao + avisos +
       '<ol class="tc-checklist" data-tc-total="' + itens.length + '">' + itens.map(function(item, i) {
         return '<li class="tc-check' + (marcados[i] ? ' feito' : '') + '"><input type="checkbox" id="tcCheck' + i + '" data-tc-check="' + i + '"' + (marcados[i] ? ' checked' : '') + '>' +
           '<div><label for="tcCheck' + i + '">' + (item.forte ? '<strong>' + esc(item.texto) + '</strong>' : esc(item.texto)) + '</label>' + (item.extra ? '<div class="tc-check-extra">' + item.extra + '</div>' : '') + '</div></li>';

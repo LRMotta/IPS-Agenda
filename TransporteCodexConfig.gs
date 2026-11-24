@@ -811,9 +811,10 @@ function transporteDocumentosSemEnvioPendencias_(agora) {
     var anexos = Number(item.anexos || 0);
     var motivo = item.rascunhoStatus !== 'CRIADO'
       ? 'PDF gerado, mas o rascunho não foi criado.'
-      : (identificado && anexos < 1
-        ? 'E-mail identificado, mas sem documentação anexada.'
-        : (identificado && anexos > 0
+      : (identificado && anexos < transporteAnexosMinimosEnvio_(item.courier)
+        ? (anexos < 1 ? 'E-mail identificado, mas sem documentação anexada.'
+          : 'E-mail identificado só com ' + anexos + ' anexo; faltam os documentos assinados além da CE.')
+        : (identificado
           ? 'E-mail com documentação identificado; atualização da Agenda aguardando nova tentativa.'
           : 'Rascunho criado; envio do e-mail não identificado há mais de 1 hora.'));
     if (item.pendenciaEnvio) motivo = item.pendenciaEnvio;
@@ -956,9 +957,9 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
   var agendaPrecheck = null;
   var snapshotPrecheck = null;
   var exigeAnexoCache = Object.create(null);
-  function exigeAnexo(courier) {
+  function anexosMinimos(courier) {
     var key = transporteNorm_(courier);
-    if (exigeAnexoCache[key] === undefined) exigeAnexoCache[key] = transporteCourierExigeAnexoEnvio_(courier);
+    if (exigeAnexoCache[key] === undefined) exigeAnexoCache[key] = transporteAnexosMinimosEnvio_(courier);
     return exigeAnexoCache[key];
   }
   function linhaAgendaPrecheck(id) {
@@ -982,7 +983,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
       // devolver novamente a mesma mensagem entre os 100 resultados recentes.
       var identificadoEm = transporteOperacaoDate_(item.emailIdentificadoEm);
       var anexosIdentificados = Math.max(0, Math.floor(Number(item.anexos || 0) || 0));
-      var documentacaoAceita = anexosIdentificados > 0 || !exigeAnexo(item.courier);
+      var documentacaoAceita = anexosIdentificados >= anexosMinimos(item.courier);
       if (identificadoEm && documentacaoAceita) {
         var slotMapManual = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 };
         var idxManual = slotMapManual[item.slot];
@@ -1003,8 +1004,9 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
     }
     // Recupera operações que versões anteriores concluíram antes de conseguir
     // promover a Agenda. Depois que o status chega a Agendado, elas deixam de
-    // entrar naturalmente nas próximas execuções.
-    if (!transporteOperacaoDate_(item.emailIdentificadoEm) || (Number(item.anexos || 0) < 1 && exigeAnexo(item.courier))) return false;
+    // entrar naturalmente nas próximas execuções. O envio já foi aceito antes: basta 1 anexo, mesmo na MARKEN e
+    // na OCASA, para não barrar operações aceitas antes do mínimo de 2 anexos.
+    if (!transporteOperacaoDate_(item.emailIdentificadoEm) || Number(item.anexos || 0) < Math.min(1, anexosMinimos(item.courier))) return false;
     var slotMap = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4 };
     var idx = slotMap[item.slot];
     if (!idx) return false;
@@ -1078,9 +1080,9 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         }
         var anexos = transporteMensagemAnexos_(message);
         var atual = encontrados[ref];
-        var exigeDocumentacao = exigeAnexo(item.courier);
-        var aceita = anexos.length > 0 || !exigeDocumentacao;
-        var atualAceita = atual && (atual.anexos.length > 0 || !exigeDocumentacao);
+        var minimoAnexos = anexosMinimos(item.courier);
+        var aceita = anexos.length >= minimoAnexos;
+        var atualAceita = atual && atual.anexos.length >= minimoAnexos;
         if (!atual || (aceita && !atualAceita) || (aceita === atualAceita && messageDate.getTime() > atual.date.getTime())) {
           encontrados[ref] = {
             date: messageDate,
@@ -1137,7 +1139,8 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         return;
       }
       var attachmentCount = match.anexos.length;
-      var exigeAnexoEnvio = exigeAnexo(item.courier);
+      // Recuperação de envio já aceito mantém o mínimo antigo (1 anexo).
+      var minimoAnexosEnvio = item.reprocessar ? Math.min(1, anexosMinimos(item.courier)) : anexosMinimos(item.courier);
       var evidencia = [
         match.date,
         '',
@@ -1146,7 +1149,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
         new Date()
       ];
       evidenciaUpdates.push({ row: item.row, values: evidencia });
-      if (attachmentCount < 1 && exigeAnexoEnvio) {
+      if (attachmentCount < minimoAnexosEnvio) {
         semAnexo.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId });
         return;
       }
@@ -1202,7 +1205,7 @@ function transporteMonitorarEnviosExecutar_(agendaId, diagnostico) {
       evidencia[TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Enviado_Em') - TRANSPORTE_OPERACOES_HEADERS_.indexOf('Email_Identificado_Em')] = match.date;
       enviados.push({ agendaId: item.agendaId, slot: item.slot, messageId: match.messageId, anexos: attachmentCount });
     });
-    diagnostico.recusas = diagnostico.recusas.concat(naoPromovidos, semAnexo.map(function(item) { return Object.assign({}, item, { motivo: 'Anexos ausentes; courier exige documentação' }); }));
+    diagnostico.recusas = diagnostico.recusas.concat(naoPromovidos, semAnexo.map(function(item) { return Object.assign({}, item, { motivo: 'Anexos ausentes ou insuficientes; courier exige documentação' }); }));
     if (statusCells.length) {
       agenda.getRangeList(statusCells).setValue('Agendado');
       if (typeof agendaInvalidateDateIndexCache_ === 'function') agendaInvalidateDateIndexCache_();
@@ -1907,6 +1910,14 @@ function transporteCourierConfig_(courier) {
   var configs = transporteReadAgendaCourierConfigs_();
   var normalized = transporteNormalizeCourierFromCodex_(courier);
   return configs[transporteNorm_(normalized)] || configs[transporteNorm_(courier)] || {};
+}
+
+// MARKEN e OCASA levam a CE (anexada pelo sistema) e os documentos assinados (anexados a mao):
+// um unico anexo costuma ser so a CE. Demais couriers que exigem documentacao: 1 anexo.
+function transporteAnexosMinimosEnvio_(courier) {
+  if (!transporteCourierExigeAnexoEnvio_(courier)) return 0;
+  var nome = transporteNorm_(courier);
+  return (nome.indexOf('marken') !== -1 || nome.indexOf('ocasa') !== -1) ? 2 : 1;
 }
 
 function transporteCourierExigeAnexoEnvio_(courier) {

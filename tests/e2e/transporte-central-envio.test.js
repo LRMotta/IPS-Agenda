@@ -431,13 +431,13 @@ test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser conf
     // OCASA internacional com a GRU pronta: anexar é um passo da lista.
     await iniciar(page, envio({ passo: 'enviar', passos: ['enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', gruPronta: true }) }));
     const ocasa = await page.locator('.tc-wiz-main').innerText();
-    assert.match(ocasa, /Anexar a GRU e o extrato e enviar à courier[\s\S]*Abra o rascunho[\s\S]*Anexe a GRU e o extrato[\s\S]*pasta deste envio/);
+    assert.match(ocasa, /Anexar a GRU, o extrato e a petição e enviar à courier[\s\S]*Abra o rascunho[\s\S]*Anexe ao e-mail a GRU, o extrato e a petição de fiscalização[\s\S]*pasta deste envio[\s\S]*formulário ANVISA/);
     await page.close();
     // PINEX com os números: não há rascunho; responde na conversa do agendamento.
     const p2 = await abrir(browser, 1280);
     await iniciar(p2.page, envio({ passo: 'enviar', passos: ['enviar'], registro: Object.assign(envio().registro, { courier: 'PINEX', gruPronta: true }) }));
     const pinex = await p2.page.locator('.tc-wiz-main').innerText();
-    assert.match(pinex, /conversa do agendamento com a PINEX[\s\S]*documentos assinados e digitalizados[\s\S]*Anexe a GRU e o extrato/);
+    assert.match(pinex, /conversa do agendamento com a PINEX[\s\S]*documentos assinados e digitalizados[\s\S]*Anexe ao e-mail a GRU, o extrato e a petição/);
     assert.doesNotMatch(pinex, /Abra o rascunho/);
     await p2.page.close();
     // PINEX (Agendamento): o Formulário só serve ao pré-agendamento; não é impresso, assinado nem digitalizado.

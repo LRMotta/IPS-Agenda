@@ -107,7 +107,7 @@ test('monitor da copia com anexo promove Pendente e Docs gerados para Agendado',
           getPlainBody: () => 'Documentos anexos. Ref. IPS: IPS-TRP-EVT-1-T1',
           getDate: () => messageDate,
           getId: () => 'MSG-1',
-          getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+          getAttachments: () => [{ getName: () => 'CE.pdf' }, { getName: () => 'assinado.pdf' }]
         }]
       }]
     }
@@ -248,7 +248,7 @@ test('email com anexo continua elegivel para nova tentativa se a Agenda divergir
           getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-3-T1',
           getDate: () => messageDate,
           getId: () => 'MSG-3',
-          getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+          getAttachments: () => [{ getName: () => 'CE.pdf' }, { getName: () => 'assinado.pdf' }]
         }]
       }]
     }
@@ -303,7 +303,7 @@ test('status Agendado informado manualmente encerra pendencia mesmo com courier 
             getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-MANUAL-T1',
             getDate: () => messageDate,
             getId: () => 'MSG-MANUAL',
-            getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+            getAttachments: () => [{ getName: () => 'CE.pdf' }, { getName: () => 'assinado.pdf' }]
           }]
         }] : [];
       }
@@ -361,7 +361,7 @@ test('monitor recupera operacao antiga concluida antes de promover a Agenda', ()
           getPlainBody: () => 'Ref. IPS: IPS-TRP-EVT-4-T1',
           getDate: () => messageDate,
           getId: () => 'MSG-4',
-          getAttachments: () => [{ getName: () => 'assinado.pdf' }]
+          getAttachments: () => [{ getName: () => 'assinado.pdf' }] // envio aceito antes do mínimo de 2 anexos
         }]
       }]
     }
@@ -506,7 +506,7 @@ test('AWB e revalidada sob lock depois da busca Gmail', () => {
 
 test('documentacao legada usa somente nome reconhecido e leitura nao migra colunas', () => {
   for (const [name, expected] of [['620X41337652_20OUT2026_AMBIENTE.pdf', 1], ['620X41337652_20OUT2026_AMBIENTE_CONGELADO.pdf', 1], ['620X41337652_20OUT2026_AMBIENTE_REFRIGERADO.pdf', 1], ['docs.pdf', 0]]) {
-    const { server, agenda } = monitorFixture({ courier: 'MARKEN', attachments: [{}] });
+    const { server, agenda } = monitorFixture({ courier: 'MARKEN', attachments: [{}, {}] });
     const sheet = server.book.getSheetByName('Transporte_Operacoes');
     sheet.rows = sheet.rows.map(row => row.slice(0, 19));
     sheet.rows[1][7] = name;
@@ -520,7 +520,7 @@ test('documentacao legada usa somente nome reconhecido e leitura nao migra colun
 
 test('AWB ausente bloqueia courier obrigatorio e preserva DHL sem AWB nos dois lados', () => {
   for (const courier of ['MARKEN', 'DHL']) {
-    const { server, agenda } = monitorFixture({ courier, attachments: [{}] });
+    const { server, agenda } = monitorFixture({ courier, attachments: [{}, {}] });
     agenda.rows[1][4] = '';
     const sheet = server.book.getSheetByName('Transporte_Operacoes');
     sheet.getRange(2, 20).setValue('');
@@ -572,7 +572,7 @@ test('recuperacao numerica exige referencia valida, mesmo slot e valor equivalen
 });
 
 test('monitor encontra a Agenda com ID numerico legado e conclui o envio com anexos', () => {
-  const { server, agenda, message } = monitorFixture({ courier: 'OCASA', status: 'Docs gerados', attachments: [{ getName: () => 'assinado.pdf' }] });
+  const { server, agenda, message } = monitorFixture({ courier: 'OCASA', status: 'Docs gerados', attachments: [{ getName: () => 'CE.pdf' }, { getName: () => 'assinado.pdf' }] });
   agenda.rows[1][3] = '1417e053';
   const sheet = server.book.getSheetByName('Transporte_Operacoes');
   sheet.getRange(2, 1, 1, 3).setValues([[1.417e56, '1', 'IPS-TRP-1417E053-T1']]);
@@ -583,7 +583,7 @@ test('monitor encontra a Agenda com ID numerico legado e conclui o envio com ane
   const operacao = server.transporteOperacoesRows_()[0];
   assert.equal(operacao.agendaId, '1417e053');
   assert.equal(operacao.gmailMessageId, 'MSG-TEST');
-  assert.equal(operacao.anexos, 1);
+  assert.equal(operacao.anexos, 2);
   assert.ok(operacao.emailEnviadoEm instanceof Date);
 });
 
@@ -703,8 +703,26 @@ test('diagnostico explica anexos ausentes, divergencia e status incompatível', 
   }
 });
 
+test('MARKEN e OCASA com so a CE anexada nao concluem o envio; demais couriers seguem com 1 anexo', () => {
+  for (const courier of ['MARKEN', 'OCASA']) {
+    const { server, agenda } = monitorFixture({ courier, status: 'Docs gerados', attachments: [{ getName: () => 'MB11_CE.pdf' }] });
+    const result = server.transporteMonitorarEnviosPorEmail_();
+    assert.equal(result.enviados, 0);
+    assert.equal(result.semAnexo, 1);
+    assert.ok(result.diagnostico.recusas.some(item => /Anexos ausentes ou insuficientes/.test(item.motivo)));
+    assert.equal(agenda.rows[1][2], 'Docs gerados');
+    assert.equal(server.transporteOperacoesRows_()[0].anexos, 1);
+    assert.match(server.transporteDocumentosSemEnvioPendencias_(new Date(Date.now() + 7200000))[0].motivo, /só com 1 anexo; faltam os documentos assinados além da CE/);
+    // Nova execução não promove pelo número de anexos já gravado.
+    assert.equal(server.transporteMonitorarEnviosPorEmail_().enviados, 0);
+  }
+  for (const [courier, esperado] of [['MARKEN', 2], ['OCASA', 2], ['PINEX (Agendamento)', 1], ['DHL', 0], ['DHL Ambiente', 0]]) {
+    assert.equal(monitorFixture({ courier }).server.transporteAnexosMinimosEnvio_(courier), esperado, courier);
+  }
+});
+
 test('mensagem posterior sem anexo nao oculta envio anterior com documentos', () => {
-  const { server, message } = monitorFixture({ courier: 'OCASA', attachments: [{}] });
+  const { server, message } = monitorFixture({ courier: 'OCASA', attachments: [{}, {}] });
   const reply = { ...message, getDate: () => new Date(Date.now() + 120000), getAttachments: () => [], getId: () => 'RESPOSTA' };
   server.GmailApp.search = () => [{ getMessages: () => [message, reply] }];
   const result = server.transporteMonitorarEnviosPorEmail_();
