@@ -363,12 +363,13 @@
     if (courier === 'PINEX') itens.push({ texto: 'No Gmail, abra a conversa do agendamento com a PINEX (a que trouxe os números) e responda nela, anexando os documentos assinados e digitalizados.' });
     else if (soFormulario) itens.push({ texto: 'Abra o rascunho do pré-agendamento no Gmail. Ele leva o Formulário em anexo; o Formulário só serve ao pré-agendamento e não é impresso nem assinado.', extra: transpCentralHtmlRascunho(registro, r) });
     else {
-      itens.push({ texto: 'Abra o rascunho do pedido de coleta no Gmail.', extra: transpCentralHtmlRascunho(registro, r) });
-      if (!dhl) itens.push({ texto: 'Anexe ao rascunho os documentos assinados e digitalizados.' });
+      // Sem item de "conferir destinatário e data": o rascunho é montado pelo sistema e a conferência real é do Gmail
+      // ao enviar. O aviso sobre a CE e os anexos fica como texto sob o item, sem caixa para marcar.
+      itens.push({ texto: dhl ? 'Abra o rascunho do pedido de coleta no Gmail.' : 'Abra o rascunho do pedido de coleta no Gmail e anexe os documentos assinados e digitalizados.',
+        extra: transpCentralHtmlRascunho(registro, r) + (anexo ? '<div class="tc-dim">' + esc(anexo) + '</div>' : '') });
     }
     // Envio internacional com a GRU e o extrato prontos: anexar os dois é um item próprio, antes de enviar.
     if (gru) itens.push({ texto: 'Anexe a GRU e o extrato ao e-mail. Eles estão na pasta deste envio, no servidor.', forte: true });
-    itens.push({ texto: 'Confira o destinatário, a data e a janela de retirada.' + (anexo ? ' ' + anexo : '') });
     itens.push({ texto: 'Clique em Enviar no Gmail e volte aqui.' });
     if (!soFormulario) itens.push({ texto: 'Entregue as guias ao laboratório e mantenha-as juntas com a caixa de envio das amostras.' });
     var marcados = TC_ENVIO.checks || (TC_ENVIO.checks = {});

@@ -128,13 +128,13 @@ test('passo a passo MARKEN: conferir, gerar, enviar e concluir', async () => {
       await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 3 de 3 · Enviar/);
       // Assinar à mão, digitalizar, via impressa na caixa e cópia digitalizada anexada ao rascunho (MARKEN: com a CE do estudo).
-      assert.match(await page.locator('.tc-wiz-main').innerText(), /Imprima os documentos e assine à mão[\s\S]*Digitalize os documentos assinados[\s\S]*Abra o rascunho do pedido de coleta no Gmail[\s\S]*Anexe ao rascunho os documentos assinados e digitalizados[\s\S]*CE do estudo[\s\S]*Clique em Enviar[\s\S]*Entregue as guias ao laboratório e mantenha-as juntas com a caixa de envio das amostras/);
+      assert.match(await page.locator('.tc-wiz-main').innerText(), /Imprima os documentos e assine à mão[\s\S]*Digitalize os documentos assinados[\s\S]*Abra o rascunho do pedido de coleta no Gmail e anexe os documentos assinados e digitalizados[\s\S]*CE do estudo[\s\S]*Clique em Enviar[\s\S]*Entregue as guias ao laboratório e mantenha-as juntas com a caixa de envio das amostras/);
       assert.doesNotMatch(await page.locator('.tc-wiz-main').innerText(), /PDFs anexados/);
       // Lista de marcar: o botão só libera com todos os itens marcados; a trilha mostra os passos feitos.
       assert.deepEqual(await page.locator('.tc-trilha-item').evaluateAll((itens) => itens.map((li) => li.className.replace('tc-trilha-item tc-trilha-', ''))), ['feito', 'feito', 'atual']);
       const caixas = page.locator('[data-tc-check]');
       const total = await caixas.count();
-      assert.equal(total, 7);
+      assert.equal(total, 5);
       for (let i = 0; i < total; i++) {
         assert.equal(await page.getByRole('button', { name: /Pronto, enviei/ }).isDisabled(), true);
         await caixas.nth(i).check();
@@ -446,15 +446,15 @@ test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser conf
     const agendamento = await pAg.page.locator('.tc-wiz-main').innerText();
     assert.match(agendamento, /rascunho do pré-agendamento[\s\S]*Formulário[\s\S]*não é impresso nem assinado/);
     assert.doesNotMatch(agendamento, /Imprima os documentos|Digitalize|Entregue as guias/);
-    assert.equal(await pAg.page.locator('[data-tc-check]').count(), 3);
+    assert.equal(await pAg.page.locator('[data-tc-check]').count(), 2);
     await pAg.page.close();
     // DHL: o e-mail não leva anexos, então não há digitalização nem anexo; as guias impressas seguem com a caixa.
     const pDhl = await abrir(browser, 1280);
     await iniciar(pDhl.page, envio({ passo: 'enviar', registro: Object.assign(envio().registro, { courier: 'DHL Ambiente' }) }));
     const dhl = await pDhl.page.locator('.tc-wiz-main').innerText();
     assert.match(dhl, /Imprima os documentos e assine à mão[\s\S]*Abra o rascunho do pedido de coleta[\s\S]*O e-mail não leva anexos[\s\S]*Entregue as guias ao laboratório/);
-    assert.doesNotMatch(dhl, /Digitalize|Anexe ao rascunho|CE do estudo/);
-    assert.equal(await pDhl.page.locator('[data-tc-check]').count(), 5);
+    assert.doesNotMatch(dhl, /Digitalize|anexe os documentos|CE do estudo/);
+    assert.equal(await pDhl.page.locator('[data-tc-check]').count(), 4);
     await pDhl.page.close();
     // Sem GRU (envio nacional), o texto segue o de sempre.
     const p3 = await abrir(browser, 1280);
