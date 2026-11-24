@@ -287,7 +287,9 @@ function transporteTarefasConstruir_(ctx) {
       participante: String(r[i.participante] || ''), projeto: String(r[i.projeto] || ''), visita: String(r[i.visita] || ''),
       titulo: transporteTarefaTitulo_(situacoes, transportes.some(function(t) { return t.gruPronta; })), transportes: transportes,
       comPessoa: comPessoa ? comPessoa.comPessoa : '', comEmail: comPessoa ? comPessoa.comEmail : '',
-      parouNoPasso: parou ? parou.passoNumero : 0
+      parouNoPasso: parou ? parou.passoNumero : 0,
+      // Nome do passo (conferir, gerar, enviar...): a etiqueta diz onde parou, nao so o numero.
+      parouNoPassoNome: parou ? String(parou.passo || '') : ''
     });
   });
   tarefas.sort(function(a, b) {

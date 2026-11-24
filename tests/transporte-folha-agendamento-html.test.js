@@ -137,10 +137,9 @@ test('pagina MARKEN mostra Transporte e Origem, sem assinatura, Ref. interna ou 
   assert.match(semOrigem, /<p>Participante em jejum\.<\/p>(<div class="linha"><\/div>){7}<\/div>/);
   assert.match(html, /<div class="fa">/);
   assert.doesNotMatch(html, /Recebido pelo agente|Ref\. interna|Confirma|Agendado em|P[aá]gina \d/);
-  // O conversor HtmlService nao aceita flex/grid. Fundo por CSS so no hero (cinza leve).
+  // O conversor HtmlService nao aceita flex/grid nem imprime background-color (o cinza do hero nao saiu no PDF).
   assert.doesNotMatch(html, /display:\s*(flex|grid)/);
-  assert.match(html, /\.fa \.hero td\{[^}]*background-color:#f2f2f2\}/);
-  assert.deepEqual(html.match(/background[^;}]*/g), ['background-color:#f2f2f2']);
+  assert.doesNotMatch(html, /background/);
 });
 
 test('temperatura: ambiente so com contorno, fria sombreada e mista em blocos separados', () => {
