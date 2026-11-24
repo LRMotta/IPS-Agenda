@@ -8,8 +8,8 @@
  * abas da planilha de Transporte, que sera desativada: na geracao pelo Transporte,
  * visita e origem chegam em registro.folhaAgenda (transporteAtualizarRegistroPorAgenda_)
  * e o LabCentral ja esta em memoria. A pagina usa
- * tabelas e contornos: o conversor HtmlService nao aceita flex/grid; fundo por CSS so no
- * hero (background-color confirmado em 13/11/2026). Participante sempre por iniciais e Nº de identificacao.
+ * tabelas e contornos: o conversor HtmlService nao aceita flex/grid nem imprime
+ * background-color (o cinza do hero nao saiu no PDF); sombreamento so por imagem. Participante sempre por iniciais e Nº de identificacao.
  */
 
 var TRANSPORTE_FOLHA_HTML_SLOTS_ = {
@@ -34,8 +34,7 @@ var TRANSPORTE_FOLHA_HTML_CSS_ =
   '.fa .titulo{font-size:16pt;font-weight:bold}' +
   '.fa .sub{font-size:8pt;color:#555}' +
   '.fa .hero{border:1.5px solid #000}' +
-  // Fundo leve do projeto original: background-color confirmado pelo usuario no PDF do Apps Script.
-  '.fa .hero td{padding:11px 12px;border-left:1px solid #bdbdbd;background-color:#f2f2f2}' +
+  '.fa .hero td{padding:11px 12px;border-left:1px solid #bdbdbd}' +
   '.fa .hero td.prim{border-left:0}' +
   '.fa .grande{font-size:16pt;font-weight:bold;line-height:1.15}' +
   '.fa .awb{font-size:13.5pt;font-weight:bold}' +
