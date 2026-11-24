@@ -182,6 +182,51 @@ function farmaciaReceiptInvoice_(value) {
   return { number: number, sender: sender, unitValue: unitValue === null ? null : Math.round(unitValue * 100) / 100 };
 }
 
+// Nota fiscal informada ou corrigida depois do recebimento (RECEIPT_INVOICE). O recebimento original não muda:
+// o registro novo fica no histórico e passa a valer como a nota do recebimento (o mais recente prevalece).
+function farmaciaReceiptInvoiceEditData_(value) {
+  value = value || {};
+  var invoice = farmaciaReceiptInvoice_(value.invoice);
+  if (!invoice.number) throw new Error('Informe o número da nota fiscal.');
+  return { receiptId: farmaciaText_(value.receiptId, 'o recebimento', 100), invoice: invoice,
+    reason: farmaciaText_(value.reason, 'o motivo', 500) };
+}
+
+function farmaciaApplyReceiptInvoice_(ledger, record) {
+  var receipt = ledger.records.find(function(item) { return item.type === 'RECEIPT' && item.id === record.data.receiptId; });
+  if (!receipt) throw new Error('Recebimento não encontrado neste estudo e classe de acesso.');
+  var position = ledger.positions.find(function(item) { return item.id === receipt.id; });
+  if (position) position.invoice = record.data.invoice;
+  ledger.movements.push(record);
+}
+
+function registrarNotaRecebimentoFarmacia(payload) {
+  payload = payload || {};
+  return codexWithDocumentLock_('farmacia-RECEIPT_INVOICE', function() {
+    var context = farmaciaContext_(payload.studyId, payload.restricted, 'operate');
+    if (!context.ss) throw new Error('Armazenamento deste estudo e classe ainda não configurado.');
+    var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 100);
+    farmaciaAssertRequestId_(requestId);
+    var ledger = farmaciaReadLedger_(context), data = farmaciaReceiptInvoiceEditData_(payload.data);
+    var previous = ledger.records.find(function(record) { return record.requestId === requestId; });
+    if (previous) {
+      if (previous.type !== 'RECEIPT_INVOICE' || previous.dataJson !== JSON.stringify(data)) throw new Error('Esta operação já foi usada com outros dados.');
+      return { ok: true, id: previous.id, repeated: true };
+    }
+    var receipt = ledger.records.find(function(record) { return record.type === 'RECEIPT' && record.id === data.receiptId; });
+    if (!receipt) throw new Error('Recebimento não encontrado neste estudo e classe de acesso.');
+    var position = ledger.positions.find(function(item) { return item.id === receipt.id; });
+    var current = position ? position.invoice : receipt.data.invoice;
+    if (current && JSON.stringify(current) === JSON.stringify(data.invoice)) throw new Error('A nota fiscal informada é igual à atual.');
+    var id = 'FNF-' + Utilities.getUuid();
+    if (ledger.records.some(function(record) { return record.id === id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
+    var row = [id, 'RECEIPT_INVOICE', JSON.stringify(context.studyId), context.restricted, requestId, JSON.stringify(new Date().toISOString()), JSON.stringify(context.access.userEmail), JSON.stringify(data)];
+    farmaciaAssertLedgerRowReplayable_(context, ledger, row);
+    ledger.sheet.getRange(ledger.sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+    return { ok: true, id: id, repeated: false };
+  });
+}
+
 function farmaciaMovementData_(value) {
   value = value || {};
   if (['block', 'release', 'transfer'].indexOf(value.action) === -1) throw new Error('Selecione uma movimentação válida.');
@@ -279,8 +324,8 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
       // Nunca desserializar payloads de outros estudos/classes na consulta autorizada.
       if (scope !== context.studyId || row[3] !== context.restricted) return;
       var registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
-      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', LIFECYCLE: 'FLC-', ADJUSTMENT: 'FAJ-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-' };
-      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA|LC|AJ)-[A-Za-z0-9_-]+$/.test(row[0]) ||
+      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', LIFECYCLE: 'FLC-', ADJUSTMENT: 'FAJ-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-', RECEIPT_INVOICE: 'FNF-' };
+      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA|LC|AJ|NF)-[A-Za-z0-9_-]+$/.test(row[0]) ||
           !prefixes[row[1]] || row[0].indexOf(prefixes[row[1]]) !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
           typeof row[4] !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(row[4]) ||
           typeof registeredAt !== 'string' || isNaN(Date.parse(registeredAt)) || new Date(registeredAt).toISOString() !== registeredAt ||
@@ -308,6 +353,9 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
       } else if (record.type === 'LIFECYCLE') {
         if (context.studyId === FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
         farmaciaApplyLifecycle_({ records: records, products: products, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate }, record);
+      } else if (record.type === 'RECEIPT_INVOICE') {
+        if (JSON.stringify(farmaciaReceiptInvoiceEditData_(data)) !== record.dataJson) throw new Error('Nota fiscal do recebimento inválida.');
+        farmaciaApplyReceiptInvoice_({ records: records, positions: positions, movements: movements }, record);
       } else if (record.type === 'ADJUSTMENT') {
         if (context.studyId !== FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaAdjustmentData_(data)) !== record.dataJson) throw new Error('Ajuste de quantidade inválido.');
         farmaciaApplyAdjustment_({ products: products, positions: positions, movements: movements }, record);

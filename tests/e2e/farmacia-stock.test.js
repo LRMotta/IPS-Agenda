@@ -1426,3 +1426,46 @@ test('estoque de estudo não oferece saída / ajuste de quantidade', async()=>{
     assert.deepEqual(errors,[]); await page.close();
   } finally {await browser.close();}
 });
+
+test('recebimento sem nota permite informar a nota depois, com motivo, pelo detalhe da entrada', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    for (const width of [1280,390]) {
+      const {page,errors}=await fixture(browser,width);
+      const data=lifecycleData();
+      data.farmaciaAccess='operate';
+      data.positions.push({...data.positions[0],id:'RC1',revision:'RC1',origin:'receipt',lot:'L-SEM-NF',physical:4,blocked:0,pending:4,available:0,receivedOn:'2026-10-21',invoice:{number:'',sender:'',unitValue:null}});
+      data.movements.push({id:'RC1',type:'RECEIPT',registeredAt:'2026-10-21T12:00:00.000Z',author:'farmacia@example.invalid',data:{lot:'L-SEM-NF',physical:4,receivedOn:'2026-10-21',document:'REMESSA-2',invoice:{number:'',sender:'',unitValue:null}}});
+      await openStock(page,data);
+      await page.locator('#farmaciaInventoryResults button[data-position-id="RC1"]').click();
+      assert.match(await page.locator('#farmaciaInvoiceCurrent').innerText(),/não informada/);
+      assert.equal(await page.getByRole('button',{name:'Salvar nota fiscal',exact:true}).isVisible(),true);
+      await page.evaluate(()=>window.pending.filter(p=>p.method==='getFarmaciaRemetentesNotas').forEach(p=>p.success({remetentes:['Marken Ltda']})));
+      await page.locator('#farmaciaInvoiceNumber').fill('4321');
+      await page.locator('#farmaciaInvoiceSender').fill('Marken Ltda');
+      await page.locator('#farmaciaInvoiceUnitValue').fill('7.25');
+      await page.locator('#farmaciaInvoiceReason').fill('Nota chegou depois da carga');
+      { const dir=process.env.PLAYWRIGHT_ARTIFACTS_DIR||path.join(os.tmpdir(),'ips-agenda-playwright'); fs.mkdirSync(dir,{recursive:true}); await page.locator('#farmaciaModal-positionDetail .modal-box').screenshot({animations:'disabled',path:path.join(dir,'farmacia-nota-depois-'+width+'.png')}); }
+      await page.getByRole('button',{name:'Salvar nota fiscal',exact:true}).click();
+      const call=await page.evaluate(()=>({method:window.pending.at(-1).method,payload:window.pending.at(-1).args[0]}));
+      assert.equal(call.method,'registrarNotaRecebimentoFarmacia');
+      assert.deepEqual(call.payload.data,{receiptId:'RC1',reason:'Nota chegou depois da carga',invoice:{number:'4321',sender:'Marken Ltda',unitValue:7.25}});
+      assert.equal(await page.locator('.farmacia-invoice-fields').evaluate(el=>el.disabled),true);
+      await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
+      assert.equal(await page.locator('.farmacia-invoice-fields').evaluate(el=>el.disabled),false);
+      assert.equal(await page.locator('#farmaciaInvoiceNumber').inputValue(),'4321');
+      const corrected=lifecycleData();
+      corrected.positions.push({...data.positions[1],invoice:{number:'4321',sender:'Marken Ltda',unitValue:7.25}});
+      corrected.movements.push(data.movements[1],{id:'FNF-1',type:'RECEIPT_INVOICE',registeredAt:'2026-10-22T12:00:00.000Z',author:'farmacia@example.invalid',data:{receiptId:'RC1',reason:'Nota chegou depois da carga',invoice:{number:'4321',sender:'Marken Ltda',unitValue:7.25}}});
+      corrected.farmaciaAccess='operate';
+      const second=await fixture(browser,width);
+      await openStock(second.page,corrected);
+      await second.page.locator('#farmaciaInventoryResults button[data-position-id="RC1"]').click();
+      assert.match(await second.page.locator('#farmaciaInvoiceCurrent').innerText(),/NF 4321 · Marken Ltda · R\$ 7,25/);
+      assert.match(await second.page.locator('#farmaciaPositionDetail').innerText(),/Nota fiscal informada/);
+      assert.equal(await second.page.getByRole('button',{name:'Salvar correção da nota',exact:true}).isVisible(),true);
+      assert.deepEqual(errors,[]); assert.deepEqual(second.errors,[]);
+      await page.close(); await second.page.close();
+    }
+  } finally {await browser.close();}
+});

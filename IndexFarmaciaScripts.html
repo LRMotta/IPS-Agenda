@@ -65,7 +65,7 @@ function farmaciaEstoqueReset() {
   FARMACIA_STOCK.saving = false;
   FARMACIA_STOCK.restoreFocus = null;
   FARMACIA_STOCK.productToken = FARMACIA_STOCK.initialToken = '';
-  FARMACIA_STOCK.receiptToken = FARMACIA_STOCK.movementToken = '';
+  FARMACIA_STOCK.receiptToken = FARMACIA_STOCK.movementToken = FARMACIA_STOCK.invoiceToken = '';
   FARMACIA_STOCK.positionId = '';
   FARMACIA_STOCK.positionSnapshot = null;
   document.getElementById('farmaciaReceiptForm').reset();
@@ -293,7 +293,7 @@ function farmaciaSignedQuantity(delta, unit) {
 function farmaciaStockSave(type, data) {
   var catalogAction = type === 'location' || type === 'status' || type === 'probe' || type === 'calibration';
   var currentData = farmaciaCurrentData();
-  if (FARMACIA_STOCK.saving || !currentData || (catalogAction ? !currentData.locationsConfigured || !currentData.locationsCanManage : !currentData.configured || (type === 'receipt' ? ['operate', 'manage'] : ['manage']).indexOf(currentData.farmaciaAccess) === -1 || (type === 'adjustment' && FARMACIA_STOCK.studyId !== '@IPS_COMMON'))) return;
+  if (FARMACIA_STOCK.saving || !currentData || (catalogAction ? !currentData.locationsConfigured || !currentData.locationsCanManage : !currentData.configured || (type === 'receipt' || type === 'invoice' ? ['operate', 'manage'] : ['manage']).indexOf(currentData.farmaciaAccess) === -1 || (type === 'adjustment' && FARMACIA_STOCK.studyId !== '@IPS_COMMON'))) return;
   var epoch = FARMACIA_STOCK.epoch, studyId = FARMACIA_STOCK.studyId, restricted = FARMACIA_STOCK.restricted;
   function isCurrentSave() {
     return catalogAction ? epoch === FARMACIA_STOCK.epoch && getCurrentPage() === 'farmacia' : farmaciaStockCurrent(epoch, studyId, restricted);
@@ -305,7 +305,7 @@ function farmaciaStockSave(type, data) {
   document.getElementById('farmaciaLocationFields').disabled = true;
   document.getElementById('farmaciaProbeFields').disabled = true;
   document.getElementById('farmaciaReceiptFields').disabled = true;
-  document.querySelectorAll('.farmacia-movement-fields').forEach(function(fields) { fields.disabled = true; });
+  document.querySelectorAll('.farmacia-movement-fields, .farmacia-invoice-fields').forEach(function(fields) { fields.disabled = true; });
   document.querySelectorAll('.farmacia-location-status-fields').forEach(function(fields) { fields.disabled = true; });
   document.getElementById('farmaciaStockStatus').textContent = 'Salvando…';
   var modal = document.getElementById(farmaciaDialogId(type));
@@ -320,7 +320,7 @@ function farmaciaStockSave(type, data) {
     modal.dataset.extraSaving = '0';
     if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(modal.id);
     fecharOverlay(modal.id);
-    if (type !== 'status' && type !== 'calibration' && type !== 'movement' && type !== 'adjustment') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
+    if (type !== 'status' && type !== 'calibration' && type !== 'movement' && type !== 'adjustment' && type !== 'invoice') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
     farmaciaProductControlChanged();
     farmaciaProductCategoryChanged();
     if (catalogAction && result && result.catalog && Array.isArray(result.catalog.storageUnits)) {
@@ -348,6 +348,7 @@ function farmaciaStockSave(type, data) {
     document.querySelectorAll('.farmacia-location-status-fields').forEach(function(fields) { fields.disabled = !current.locationsCanManage; });
     farmaciaRenderReceiptOptions(current);
     document.querySelectorAll('.farmacia-movement-fields').forEach(function(fields) { fields.disabled = current.farmaciaAccess !== 'manage'; });
+    document.querySelectorAll('.farmacia-invoice-fields').forEach(function(fields) { fields.disabled = ['operate', 'manage'].indexOf(current.farmaciaAccess) === -1; });
     farmaciaUpdateSummary();
     document.getElementById('farmaciaStockStatus').textContent = appErrorMessage(error) + ' O formulário e o identificador da operação foram preservados para conferência ou nova tentativa.';
   });
@@ -361,6 +362,7 @@ function farmaciaStockSave(type, data) {
   else if (type === 'receipt') runner.registrarRecebimentoFarmacia(payload);
   else if (type === 'movement') runner.registrarMovimentacaoFarmacia(payload);
   else if (type === 'adjustment') runner.registrarAjusteFarmacia(payload);
+  else if (type === 'invoice') runner.registrarNotaRecebimentoFarmacia(payload);
   else runner.registrarInventarioInicialFarmacia(payload);
 }
 
@@ -511,10 +513,12 @@ function farmaciaOpenPosition(id) {
   FARMACIA_STOCK.positionSnapshot = Object.assign({}, position);
   FARMACIA_STOCK.movementToken = '';
   FARMACIA_STOCK.adjustmentToken = '';
+  FARMACIA_STOCK.invoiceToken = '';
   var labels = {INITIAL:'Saldo inicial',RECEIPT:'Recebimento',block:'Bloqueio',release:'Liberação',transfer:'Transferência',dispense:'Dispensação',return:'Retorno do participante',transport_departure:'Saída para transporte',transport_arrival:'Chegada do transporte',destination:'Destinação final'};
-  var history = (data.movements || []).filter(function(record) { return record.id === id || record.data.positionId === id; });
+  var history = (data.movements || []).filter(function(record) { return record.id === id || record.data.positionId === id || (record.type === 'RECEIPT_INVOICE' && record.data.receiptId === id); });
   var rows = history.map(function(record) {
     var event = record.data;
+    if (record.type === 'RECEIPT_INVOICE') return '<tr><td>Nota fiscal informada<small>' + esc(event.reason || '') + '</small></td><td>—</td><td>' + esc(farmaciaInvoiceLabel(event.invoice)) + '</td><td>' + esc(record.author) + '<small>' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     var quantity = event.quantity === undefined ? event.physical : event.quantity;
     if (record.type === 'ADJUSTMENT') return '<tr><td>' + esc(farmaciaAdjustmentLabel(record)) + '<small>' + esc(event.reason || '') + '</small></td><td>' + esc(farmaciaSignedQuantity(record.adjustmentDelta, product.unit)) + '<small>' + esc((event.from === 'blocked' ? 'Bloqueado' : 'Disponível') + (event.kind === 'recount' ? ' · contado: ' + farmaciaStockNumber(event.quantity) + ' ' + product.unit : '')) + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(event.occurredOn)) + '<small>Responsável: ' + esc(event.responsible) + '</small><small>Registrado por ' + esc(record.author) + ' em ' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     if (event.action === 'transport_arrival') {
@@ -526,6 +530,7 @@ function farmaciaOpenPosition(id) {
   if (!history.length) rows = '<tr><td>Saldo inicial</td><td>' + farmaciaStockNumber(position.physical) + ' ' + esc(product.unit) + '</td><td>Registro anterior</td><td>' + esc(position.author) + '<small>' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
   var html = '<div class="form-section"><div class="section-label">' + esc(farmaciaProductLabel(product)) + ' · Lote ' + esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '') + '</div><dl class="farmacia-detail-grid"><div class="full"><dt>Localização atual</dt><dd>' + esc(position.location) + '</dd></div><div><dt>Disponível</dt><dd>' + farmaciaStockNumber(position.available) + ' ' + esc(product.unit) + '</dd></div><div><dt>Aguardando avaliação / Bloqueado</dt><dd>' + farmaciaStockNumber(position.pending || 0) + ' / ' + farmaciaStockNumber(position.blocked) + ' ' + esc(product.unit) + '</dd></div></dl></div>';
   html += farmaciaTable(['Evento / Motivo','Quantidade / Localização','Referência documental','Data / Responsável'], rows, 'Histórico do lote');
+  if (position.origin === 'receipt') html += farmaciaInvoiceSectionHtml(position, data);
   if (position.inTransit) html += '<p class="farmacia-cycle-help">Conclua o transporte em andamento antes de movimentar esta entrada.</p>';
   if (product.supplySource === 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += '<form id="farmaciaMovementForm" onsubmit="return salvarMovimentacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Registrar movimentação</div><fieldset class="form-grid farmacia-movement-fields">' +
     '<div class="field"><label class="field-label" for="farmaciaMovementAction">Ação</label><select class="f-input" id="farmaciaMovementAction" onchange="farmaciaMovementChanged()">' + (position.returned ? '' : '<option value="block">Bloquear</option>') + (position.expired || position.returned ? '' : '<option value="release">Liberar conforme documento</option>') + '<option value="transfer">Transferir localização (saldo integral)</option></select></div>' +
@@ -538,6 +543,7 @@ function farmaciaOpenPosition(id) {
   if (FARMACIA_STOCK.studyId === '@IPS_COMMON' && product.supplySource !== 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += farmaciaAdjustmentFormHtml(position, product);
   document.getElementById('farmaciaPositionDetail').innerHTML = html;
   if (document.getElementById('farmaciaAdjustmentForm')) farmaciaAdjustmentKindChanged();
+  if (document.getElementById('farmaciaInvoiceForm')) farmaciaReceiptLoadSenders();
   if (document.getElementById('farmaciaMovementForm')) {
     farmaciaUnitOptions('farmaciaMovementUnit');
     farmaciaMovementUnitChanged();
@@ -546,6 +552,35 @@ function farmaciaOpenPosition(id) {
   document.querySelector('#farmaciaModal-positionDetail .farmacia-dialog-status').textContent = '';
   if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('farmaciaModal-positionDetail');
   abrirOverlay('farmaciaModal-positionDetail');
+}
+
+function farmaciaInvoiceLabel(invoice) {
+  if (!invoice || !invoice.number) return 'Nota fiscal não informada';
+  return 'NF ' + invoice.number + ' · ' + invoice.sender + (typeof invoice.unitValue === 'number' ? ' · R$ ' + invoice.unitValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' / un.' : '');
+}
+
+// Nota do recebimento: mostra a atual e permite informar depois ou corrigir. O recebimento original não muda;
+// a nota nova fica no histórico da entrada e passa a valer na lista de notas fiscais.
+function farmaciaInvoiceSectionHtml(position, data) {
+  var invoice = position.invoice || {}, informed = !!invoice.number;
+  var html = '<div class="form-section"><div class="section-label">Nota fiscal do recebimento</div><p class="farmacia-invoice-current" id="farmaciaInvoiceCurrent">' + esc(farmaciaInvoiceLabel(invoice)) + '</p></div>';
+  if (['operate', 'manage'].indexOf(data.farmaciaAccess) === -1) return html;
+  return html + '<form id="farmaciaInvoiceForm" onsubmit="return salvarNotaRecebimentoFarmaciaApp(event)"><div class="form-section"><div class="section-label">' + (informed ? 'Corrigir nota fiscal' : 'Informar nota fiscal') + '</div><fieldset class="form-grid farmacia-invoice-fields">' +
+    '<div class="field"><label class="field-label" for="farmaciaInvoiceNumber">Nº da nota fiscal</label><input class="f-input" id="farmaciaInvoiceNumber" maxlength="30" inputmode="numeric" required value="' + esc(invoice.number || '') + '"></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaInvoiceSender">Remetente</label><input class="f-input" id="farmaciaInvoiceSender" maxlength="120" list="farmaciaReceiptSenders" autocomplete="off" required value="' + esc(invoice.sender || '') + '"></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaInvoiceUnitValue">Valor unitário (R$)</label><input class="f-input" id="farmaciaInvoiceUnitValue" type="number" min="0" max="1000000000" step="0.01" required value="' + (typeof invoice.unitValue === 'number' ? esc(String(invoice.unitValue)) : '') + '"></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaInvoiceReason">Motivo (obrigatório)</label><input class="f-input" id="farmaciaInvoiceReason" maxlength="500" required placeholder="' + (informed ? 'Ex.: número digitado errado no recebimento' : 'Ex.: nota chegou depois da carga') + '"></div>' +
+    '</fieldset></div><div class="farmacia-dialog-actions"><button class="btn-save" type="submit">' + (informed ? 'Salvar correção da nota' : 'Salvar nota fiscal') + '</button></div></form>';
+}
+
+function salvarNotaRecebimentoFarmaciaApp(event) {
+  event.preventDefault();
+  var position = FARMACIA_STOCK.positionSnapshot;
+  if (!position) return false;
+  var value = document.getElementById('farmaciaInvoiceUnitValue');
+  farmaciaStockSave('invoice', {receiptId:position.id, reason:document.getElementById('farmaciaInvoiceReason').value,
+    invoice:{number:document.getElementById('farmaciaInvoiceNumber').value, sender:document.getElementById('farmaciaInvoiceSender').value, unitValue:value.value === '' ? null : value.valueAsNumber}});
+  return false;
 }
 
 // Estoque Geral: consumo, perda e recontagem ficam no histórico; nenhum registro anterior é apagado.

@@ -1051,3 +1051,35 @@ test('sugestões de remetente vêm do Cadastro de Medicamentos, sem repetição 
   f.users.rows[1][11]='';
   assert.throws(()=>f.server.getFarmaciaRemetentesNotas(),/permissão/);
 });
+
+test('nota fiscal informada depois fica no histórico, vale para o recebimento e preserva o registro original',()=>{
+  const f=lifecycleFixture();
+  const receiptId=f.server.registrarRecebimentoFarmacia(f.receipt({invoice:{number:'',sender:'',unitValue:null}})).id;
+  const original=f.sheet().rows.find(row=>row[0]===receiptId)[7];
+  const edit=(invoice,requestId='invoice-request-0001',reason='Nota chegou depois da carga')=>({studyId:'P1',restricted:false,requestId,data:{receiptId,invoice,reason}});
+  const first=f.server.registrarNotaRecebimentoFarmacia(edit({number:'321',sender:'Marken',unitValue:4.5}));
+  let position=f.stock().positions.find(p=>p.id===receiptId);
+  assert.equal(JSON.stringify(position.invoice),JSON.stringify({number:'321',sender:'Marken',unitValue:4.5}));
+  assert.equal(f.stock().movements.find(m=>m.id===first.id).type,'RECEIPT_INVOICE');
+  assert.equal(f.server.registrarNotaRecebimentoFarmacia(edit({number:'321',sender:'Marken',unitValue:4.5})).repeated,true);
+  assert.throws(()=>f.server.registrarNotaRecebimentoFarmacia(edit({number:'321',sender:'Marken',unitValue:4.5},'invoice-request-0002')),/igual à atual/);
+  f.server.registrarNotaRecebimentoFarmacia(edit({number:'3210',sender:'Marken',unitValue:4.5},'invoice-request-0003','Número digitado errado'));
+  position=f.stock().positions.find(p=>p.id===receiptId);
+  assert.equal(position.invoice.number,'3210');
+  assert.equal(f.sheet().rows.find(row=>row[0]===receiptId)[7],original,'o recebimento original não muda');
+});
+
+test('nota informada depois exige número, remetente, valor e motivo, e só vale para recebimentos do mesmo estoque',()=>{
+  const f=lifecycleFixture();
+  const receiptId=f.server.registrarRecebimentoFarmacia(f.receipt()).id;
+  const initialId=f.server.registrarInventarioInicialFarmacia(f.initial(f.productId)).id;
+  const writes=f.sheet().writes;
+  const attempt=(data,n)=>()=>f.server.registrarNotaRecebimentoFarmacia({studyId:'P1',restricted:false,requestId:'invoice-invalid-000'+n,data});
+  const ok={number:'1',sender:'Marken',unitValue:1};
+  assert.throws(attempt({receiptId,invoice:{number:'',sender:'',unitValue:null},reason:'x'},1),/número da nota/);
+  assert.throws(attempt({receiptId,invoice:ok,reason:''},2),/motivo/);
+  assert.throws(attempt({receiptId,invoice:{number:'1',sender:'',unitValue:1},reason:'x'},3),/remetente/);
+  assert.throws(attempt({receiptId:initialId,invoice:ok,reason:'x'},4),/Recebimento não encontrado/);
+  assert.throws(()=>f.server.registrarNotaRecebimentoFarmacia({studyId:'P1',restricted:true,requestId:'invoice-other-class',data:{receiptId,invoice:ok,reason:'x'}}),/Recebimento não encontrado|configurado/);
+  assert.equal(f.sheet().writes,writes);
+});

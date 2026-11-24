@@ -19,6 +19,7 @@ const FUNCTIONS = ['applyDashboardPendingFilter_', 'bindTableRecordActions', 'fo
 const PARTICIPANTES = [
   { id: '1', idPessoa: 'PES-1', nome: 'Ana Exemplo', idParticipante: 'AUR-001', dataNascimento: '1970-03-12', idade: '56', cpf: '111.111.111-11',
     projeto: 'AURORA', braco: 'Braço A', status: 'Ativo', telefone: '(54) 99999 0001', observacoes: 'Prefere contato pela manhã.\nSegunda linha.',
+    contatoEmergenciaNome: 'Bruno Exemplo', contatoEmergenciaGrau: 'Filho(a)', contatoEmergenciaTelefone: '(54) 99999 0009',
     ultimaVisita: 'C2D1', ultimaVisitaData: '02/11/2026' },
   { id: '2', idPessoa: 'PES-2', nome: 'Bruno Exemplo', idParticipante: 'AUR-002', dataNascimento: '1985-07-01', idade: '41',
     projeto: 'AURORA', status: 'Em triagem' },
@@ -92,6 +93,7 @@ test('Participantes: cartões, filtros e detalhe expansível no desktop e no cel
       await toggle.click();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await page.getByText('111.111.111-11').isVisible(), true);
+      assert.match(await page.locator('#par-detail-0').textContent(), /Contato de emergência: Bruno Exemplo · Filho\(a\) · \(54\) 99999 0009/);
       assert.equal(await page.locator('#par-detail-0 .par-det-obs').evaluate(el => el.scrollWidth <= el.clientWidth + 1), true);
       await page.screenshot({ path: path.join(artifacts, 'participant-list-' + width + '.png') });
       // Clique na linha também alterna; clique em ação não abre o detalhe.
@@ -101,7 +103,7 @@ test('Participantes: cartões, filtros e detalhe expansível no desktop e no cel
       assert.deepEqual(await page.evaluate(() => window.actions), ['edit:2']);
       assert.equal(await page.locator('#bodyParticipantes .part-detail:visible').count(), 0);
       await page.locator('#bodyParticipantes .part-row').nth(1).locator('[data-par-detail-target]').click();
-      assert.match(await page.locator('#par-detail-1').textContent(), /Sem CPF, telefone ou observações/);
+      assert.match(await page.locator('#par-detail-1').textContent(), /Sem CPF, telefone, contato de emergência ou observações/);
 
       // Cartão filtra por grupo e fica marcado.
       await page.locator('[data-par-card-grupo="ativos"]').click();

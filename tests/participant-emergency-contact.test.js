@@ -46,6 +46,12 @@ test('contato de emergência cria as colunas, grava e volta no cadastro', () => 
   assert.equal(dto.contatoEmergenciaNome, 'Maria Souza');
   assert.equal(dto.contatoEmergenciaGrau, 'Filho(a)');
   assert.equal(dto.contatoEmergenciaTelefone, '(54) 98888-1111');
+  // A persiana da listagem usa o DTO sem detalhes.
+  const listagem = server.participanteDadosDaLinha_(sheet.rows[1], sheet.rows[0], { data: '', visita: '---' }, true);
+  assert.equal(listagem.contatoEmergenciaNome, 'Maria Souza');
+  assert.equal(listagem.contatoEmergenciaGrau, 'Filho(a)');
+  assert.equal(listagem.contatoEmergenciaTelefone, '(54) 98888-1111');
+  assert.equal(listagem.rua, undefined);
 });
 
 test('cliente que omite o contato de emergência preserva o valor gravado', () => {

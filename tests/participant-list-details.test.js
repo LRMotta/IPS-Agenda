@@ -38,7 +38,9 @@ test('bootstrap de participantes preserva tabela e busca, omite detalhes e mantÃ
   f.server.participanteLerAcompanhantes_ = () => { throw new Error('Detalhe fora da listagem'); };
   const slim = plain(f.server.getCadastrosBootstrapData('participantes').data);
   assert.equal(f.tzCalls() - beforeTz, 1);
-  const fields = ['id', 'idPessoa', 'nome', 'idParticipante', 'dataNascimento', 'sexoNascimento', 'idade', 'cpf', 'projeto', 'braco', 'status', 'telefone', 'observacoes', 'ultimaVisita', 'ultimaVisitaData'];
+  const fields = ['id', 'idPessoa', 'nome', 'idParticipante', 'dataNascimento', 'sexoNascimento', 'idade', 'cpf', 'projeto', 'braco', 'status', 'telefone', 'observacoes', 'ultimaVisita', 'ultimaVisitaData',
+    // O contato de emergÃªncia aparece na persiana da listagem.
+    'contatoEmergenciaNome', 'contatoEmergenciaGrau', 'contatoEmergenciaTelefone'];
   assert.deepEqual(Object.keys(slim[0]).sort(), fields.sort());
   fields.forEach(key => assert.equal(slim[0][key], full[0][key], key));
   f.server.participanteLerAcompanhantes_ = parseCompanions;
