@@ -15306,10 +15306,10 @@ function salvarNovoEventoCompleto(dados) {
   var ss = setup.ss;
   var agenda = setup.agenda;
   var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
-  var backupOrigemValida = codexMeasurePerformance_(operation, 'backup_origin_check', { rowCount: 0 }, function() {
-    return !backupOrigemId || !!agendaRowNumberById_(agenda, backupOrigemId);
+  var backupOrigemLinha = codexMeasurePerformance_(operation, 'backup_origin_check', { rowCount: 0 }, function() {
+    return backupOrigemId ? agendaRowNumberById_(agenda, backupOrigemId) : 0;
   });
-  if (!backupOrigemValida) {
+  if (backupOrigemId && !backupOrigemLinha) {
     return { erro: 'O agendamento de origem do backup não foi encontrado. Atualize a Agenda e tente novamente.' };
   }
   var erroTemperaturaBackup = agendaNovoEnvioBackupTemperaturaErro_(dados);
@@ -15364,9 +15364,9 @@ function salvarNovoEventoCompleto(dados) {
     });
     return resultadoPeriodo;
   }
-  var resultado = _gravarLinhaEvento(agenda, d, dados, ss, operation);
-  if (resultado && resultado.ok) codexMeasurePerformance_(operation, 'backup_link', { rowCount: 1 }, function() {
-    return agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultado.id, d, dados.origemBackupSlot);
+  // O vínculo do backup roda dentro da gravação, antes da ordenação e do flush final.
+  var resultado = _gravarLinhaEvento(agenda, d, dados, ss, operation, {
+    backupLink: { origemId: backupOrigemId, linhaOrigem: backupOrigemLinha, slot: dados.origemBackupSlot }
   });
   if (resultado && resultado.ok) resultado.operationalAlerts = operationalAlerts;
   return resultado;
@@ -15383,7 +15383,8 @@ function salvarNovoEventoComFeriado(dados) {
   dados.status = 'Agendado';
   var agenda = getAgendaSheet_();
   var backupOrigemId = String(dados.backupOrigemAgendaId || '').trim();
-  if (backupOrigemId && !agendaRowNumberById_(agenda, backupOrigemId)) {
+  var backupOrigemLinha = backupOrigemId ? agendaRowNumberById_(agenda, backupOrigemId) : 0;
+  if (backupOrigemId && !backupOrigemLinha) {
     return { erro: 'O agendamento de origem do backup não foi encontrado. Atualize a Agenda e tente novamente.' };
   }
   var erroTemperaturaBackup = agendaNovoEnvioBackupTemperaturaErro_(dados);
@@ -15425,8 +15426,9 @@ function salvarNovoEventoComFeriado(dados) {
   if (visitaMesmaData && dados.salvarVisitaMesmaDataConfirmado !== true) return visitaMesmaData;
   var erroRealizadoFuturoUnico = agendaRealizadoFuturoErro_(dados.status, d);
   if (erroRealizadoFuturoUnico) return { erro: erroRealizadoFuturoUnico };
-  var resultado = _gravarLinhaEvento(agenda, d, dados, ss);
-  if (resultado && resultado.ok) agendaVincularBackupAoAgendamento_(agenda, backupOrigemId, resultado.id, d, dados.origemBackupSlot);
+  var resultado = _gravarLinhaEvento(agenda, d, dados, ss, null, {
+    backupLink: { origemId: backupOrigemId, linhaOrigem: backupOrigemLinha, slot: dados.origemBackupSlot }
+  });
   return resultado;
   });
 }
@@ -16683,6 +16685,16 @@ function _gravarLinhaEvento(agenda, d, dados, ss, performanceOperation, saveOpti
     agenda,
     linhaNova
   );
+  });
+
+  var backupLink = saveOptions.backupLink;
+  if (backupLink && backupLink.origemId) agendaMeasureSaveStage_(performanceOperation, 'backup_link', { rowCount: 1 }, function() {
+    // Antes da ordenação, a linha nova e a de origem ainda são conhecidas.
+    backupLink.ref = agendaVincularBackupAoAgendamento_(agenda, backupLink.origemId, id, d, backupLink.slot, {
+      linhaOrigem: backupLink.linhaOrigem,
+      linhaDestino: linhaNova,
+      skipFlush: !saveOptions.deferFinalize
+    });
   });
 
   if (!saveOptions.deferFinalize) agendaMeasureSaveStage_(performanceOperation, 'sort_agenda', { rowCount: Math.max(0, agenda.getLastRow() - 1) }, function() {
@@ -18854,20 +18866,27 @@ function agendaAtualizarBackupDataVinculada_(agenda, agendamentoId, dataHora) {
   return { atualizado: atualizados };
 }
 
-function agendaVincularBackupAoAgendamento_(agenda, origemId, destinoId, dataHora, backupSlot) {
+function agendaVincularBackupAoAgendamento_(agenda, origemId, destinoId, dataHora, backupSlot, linkOptions) {
+  linkOptions = linkOptions || {};
   backupSlot = agendaBackupSlotKey_(backupSlot);
   origemId = String(origemId || '').trim();
   destinoId = String(destinoId || '').trim();
   if (!origemId || !destinoId) return null;
-  var linhaOrigem = agendaRowNumberById_(agenda, origemId);
-  if (!linhaOrigem) throw new Error('O agendamento de origem do backup não foi encontrado.');
-  var origem = agenda.getRange(linhaOrigem, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  // Linhas já localizadas sob o mesmo lock evitam reler a coluna de IDs inteira;
+  // a origem é conferida pelo ID e, se divergir, volta à busca completa.
+  var linhaOrigem = Number(linkOptions.linhaOrigem || 0);
+  var origem = linhaOrigem ? agenda.getRange(linhaOrigem, 1, 1, AGENDA_CFG.lastCol).getValues()[0] : null;
+  if (!origem || String(origem[AGENDA_CFG.idx.id] || '').trim() !== origemId) {
+    linhaOrigem = agendaRowNumberById_(agenda, origemId);
+    if (!linhaOrigem) throw new Error('O agendamento de origem do backup não foi encontrado.');
+    origem = agenda.getRange(linhaOrigem, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  }
   var backup = agendaBackupFromRow_(origem, backupSlot);
   var statusAnterior = backup.status;
   var refAnterior = backupSlot === 'backup2' ? JSON.stringify(backup.agendamentos) : String(origem[AGENDA_CFG.idx.backupAgendaRef] || '');
   var backupLabel = backupSlot === 'backup2' ? 'Backup II' : 'Backup';
   var ref = Object.assign({ id: destinoId }, agendaBackupRefQuando_(dataHora));
-  var linhaDestino = agendaRowNumberById_(agenda, destinoId);
+  var linhaDestino = Number(linkOptions.linhaDestino || 0) || agendaRowNumberById_(agenda, destinoId);
   var awbDestino = linhaDestino ? agenda.getRange(linhaDestino, AGENDA_CFG.idx.c1.awb + 1) : null;
   var awb = awbDestino ? String(awbDestino.getDisplayValue() || awbDestino.getValue() || '').trim() : '';
   if (awb) ref.awb = awb;
@@ -18885,7 +18904,8 @@ function agendaVincularBackupAoAgendamento_(agenda, origemId, destinoId, dataHor
     { field: backupLabel + ' - Agendamento', oldValue: refAnterior, newValue: refJson }
   ], 'Backup vinculado ao novo agendamento ' + destinoId);
   // Persistir o vínculo antes de outra etapa/RPC reler o agendamento de destino.
-  SpreadsheetApp.flush();
+  // Dentro da gravação do evento, o flush final da própria gravação cumpre esse papel.
+  if (!linkOptions.skipFlush) SpreadsheetApp.flush();
   agendaInvalidateWindowCache_();
   return ref;
 }

@@ -173,6 +173,47 @@ test('vinculo do backup devolve e atualiza a AWB do envio na visita original', (
   assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.awb, '620X87654321');
 });
 
+test('vinculo dentro da gravacao usa as linhas conhecidas sem reler IDs nem fazer flush extra', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const source = Array(cfg.lastCol).fill('');
+  source[cfg.idx.id] = 'origem-rapida';
+  source[cfg.idx.cb.status] = 'Não Agendado';
+  const destination = Array(cfg.lastCol).fill('');
+  destination[cfg.idx.id] = 'destino-rapido';
+  destination[cfg.idx.c1.awb] = '620X11112222';
+  const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), source, destination]);
+  const getRange = sheet.getRange.bind(sheet);
+  const idScans = [];
+  sheet.getRange = (row, column, numRows = 1, numColumns = 1) => {
+    if (column === cfg.col.id && numColumns === 1 && numRows > 1) idScans.push(row);
+    return getRange(row, column, numRows, numColumns);
+  };
+  let flushes = 0;
+  server.SpreadsheetApp = { flush() { flushes++; } };
+  server.formatarDataSafe = () => '29/07/2026';
+  server.formatarDataIsoAgenda_ = () => '2026-07-29';
+  server.formatAgendaHora_ = () => '14:30';
+  server.codexWriteAuditChanges_ = () => {};
+
+  const ref = server.agendaVincularBackupAoAgendamento_(sheet, 'origem-rapida', 'destino-rapido', new Date(2026, 6, 29, 14, 30), '', {
+    linhaOrigem: 2, linhaDestino: 3, skipFlush: true
+  });
+  assert.equal(ref.awb, '620X11112222');
+  assert.equal(sheet.rows[1][cfg.idx.cb.status], 'Adicionado à Agenda');
+  assert.equal(idScans.length, 0);
+  assert.equal(flushes, 0);
+
+  // Linha de origem divergente volta à busca pelo ID em vez de gravar na linha errada.
+  sheet.rows[1][cfg.idx.cb.status] = 'Não Agendado';
+  server.agendaVincularBackupAoAgendamento_(sheet, 'origem-rapida', 'destino-rapido', new Date(2026, 6, 29, 14, 30), '', {
+    linhaOrigem: 3, linhaDestino: 3, skipFlush: true
+  });
+  assert.equal(idScans.length, 1);
+  assert.equal(sheet.rows[1][cfg.idx.cb.status], 'Adicionado à Agenda');
+  assert.equal(sheet.rows[2][cfg.idx.cb.status], '');
+});
+
 test('novo vinculo do backup preserva os anteriores e a leitura retorna o ultimo', () => {
   const server = agendaServer();
   const cfg = server.AGENDA_CFG;
@@ -460,7 +501,8 @@ test('interface vincula somente depois de salvar e abre o agendamento pelo chip'
   assert.match(client, /agendaCourierStatusHtml\(c, backup, naoAplicavel, ok\)/);
   assert.match(client, /agendaAbrirAgendamentoVinculado/);
   assert.match(client, /abrirAgendaRegistroPorId\(agendaId\)/);
-  assert.match(server, /agendaVincularBackupAoAgendamento_\(agenda, backupOrigemId, resultado\.id, d, dados\.origemBackupSlot\)/);
+  assert.match(server, /backupLink: \{ origemId: backupOrigemId, linhaOrigem: backupOrigemLinha, slot: dados\.origemBackupSlot \}/);
+  assert.match(server, /agendaVincularBackupAoAgendamento_\(agenda, backupLink\.origemId, id, d, backupLink\.slot/);
   assert.match(server, /Backup_Agendamento_Ref/);
 });
 
