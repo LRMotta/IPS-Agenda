@@ -37,8 +37,19 @@ function transporteEnvioCriarRascunho_(registro, opcoes) {
     var cc = transporteCaixaCopias_(transporteDraftCcRecipients_(remetente), email.caixaPayload);
     var anexos = (transporteIsDhl_(courier) || courier === 'PINEX (Agendamento)') ? []
       : transporteCodexEmailAttachments_(transporteEnvioSsVazio_(), transporteProjetoDisplay_(registro.protocolo));
+    // So a CE entra aqui (fora a PINEX Agendamento). 'sim'/'nao' vai para o registro: o passo Enviar diz se ela esta no
+    // rascunho mesmo depois de reabrir. Valor explicito porque a reconstrucao do registro descarta campos vazios.
+    var ceAnexada = courier === 'PINEX (Agendamento)' || transporteIsDhl_(courier) ? '' : (anexos.length ? 'sim' : 'nao');
     if (courier === 'PINEX (Agendamento)' && opcoes.pdfFileId) {
       try { anexos.push(DriveApp.getFileById(opcoes.pdfFileId).getBlob()); } catch (erroPdf) { Logger.log('PDF PINEX nao anexado ao rascunho.'); }
+    }
+    // Envio internacional: a peticao de fiscalizacao (gerada pelo app, sem assinatura) vai junto da CE.
+    var peticaoAnexada = '';
+    if (ceAnexada && transporteEnvioInternacional_(registro)) {
+      peticaoAnexada = 'nao';
+      if (opcoes.peticaoFileId) {
+        try { anexos.push(DriveApp.getFileById(opcoes.peticaoFileId).getBlob()); peticaoAnexada = 'sim'; } catch (erroPeticao) { Logger.log('Peticao nao anexada ao rascunho.'); }
+      }
     }
     var corpo = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(email.html + '<p>Atenciosamente,</p>') + getGmailSignature() +
       transporteMonitorRefHtml_(opcoes.monitorRef, opcoes.pdfHash, opcoes.generationRequestId));
@@ -50,7 +61,7 @@ function transporteEnvioCriarRascunho_(registro, opcoes) {
     try { draftId = rascunho && rascunho.getId ? String(rascunho.getId() || '') : ''; } catch (erroId) { draftId = ''; }
     if (!draftId) throw new Error('Rascunho criado sem confirmação do ID. Confira o Gmail.');
     var resultado = { ok: true, draftId: draftId, temperaturaPdf: email.temperaturaPdf || '', message: 'Rascunho criado com sucesso! Preserve a referência IPS-TRP no corpo ao enviar.',
-      subject: email.assunto, recipients: email.destinatarios.join(', '), userEmail: guard.userEmail, activeUserEmail: guard.activeUserEmail, requestedByEmail: guard.requestedByEmail };
+      subject: email.assunto, recipients: email.destinatarios.join(', '), ceAnexada: ceAnexada, peticaoAnexada: peticaoAnexada, userEmail: guard.userEmail, activeUserEmail: guard.activeUserEmail, requestedByEmail: guard.requestedByEmail };
     transporteGenerationCheckpoint_({ phase: 'DRAFT_READY', draft: resultado });
     return resultado;
   } catch (erro) {
@@ -89,6 +100,27 @@ function transporteEnvioGerarPdf_(registro, request, usuario) {
   pdf.driveAccess = transporteShareGeneratedPdfWithActiveUser_(arquivo, pasta);
   pdf.warnings = [];
   return pdf;
+}
+
+/**
+ * Peticao de fiscalizacao do envio internacional, salva na mesma pasta do Drive que o PDF dos documentos.
+ * Repetir a geracao com o mesmo token reaproveita o arquivo. Dado faltando no cadastro nao interrompe a geracao:
+ * devolve o aviso, o rascunho sai sem a peticao e o passo Enviar pede para anexa-la.
+ */
+function transporteEnvioGerarPeticao_(registro, request) {
+  // PINEX (Agendamento) so gera o Formulario do pre-agendamento; a peticao vem com os documentos, depois dos numeros.
+  if (!transporteEnvioInternacional_(registro) || registro.courier === 'PINEX (Agendamento)') return null;
+  if (request.record.peticao && request.record.peticao.fileId) return request.record.peticao;
+  try {
+    var form = transportePeticaoGerar_(registro);
+    if (!form.ok) return { erro: 'Petição de fiscalização não gerada: ' + form.erros.join(' ') };
+    var arquivo = transportePdfDestinationFolder_(registro.protocolo).createFile(transportePeticaoPdfBlob_(registro, form));
+    var peticao = { fileId: String(arquivo.getId()), fileName: String(arquivo.getName ? arquivo.getName() : '') };
+    transporteGenerationCheckpoint_({ peticao: peticao });
+    return peticao;
+  } catch (erro) {
+    return { erro: 'Petição de fiscalização não gerada: ' + String(erro && erro.message || erro) };
+  }
 }
 
 /**
@@ -185,20 +217,34 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
     var temperaturaPdf = transporteNormalizeTemperaturaFromCodex_(registro.temperatura);
     var docHash = transportePdfManifestoHash_({ dados: transporteGenerationCanonical_(registro), conteudo: pdf.conteudoPdfHash });
     var monitorRef = transporteMonitorReferencia_(registro.idAgenda, registro.agendaSlot);
+    var peticao = transporteEnvioGerarPeticao_(registro, request);
     var rascunho = request.record.draft || transporteEnvioCriarRascunho_(registro, {
       requestedByEmail: usuario, temperaturaPdf: temperaturaPdf, monitorRef: monitorRef, pdfHash: docHash,
-      generationRequestId: generationRequestId, pdfFileId: pdf.fileId
+      generationRequestId: generationRequestId, pdfFileId: pdf.fileId, peticaoFileId: peticao && peticao.fileId ? peticao.fileId : ''
     });
     var resultado = Object.assign({}, pdf, {
       draftOk: !!rascunho.ok, draftId: rascunho.draftId || '', draftError: rascunho.ok ? '' : String(rascunho.message || rascunho.error || ''),
       draftSkipped: !!rascunho.skipped, draftMessage: rascunho.message || '', monitorRef: monitorRef, manifestoPdfHash: docHash,
       draftSubject: rascunho.ok ? String(rascunho.subject || '') : '', draftRecipients: rascunho.ok ? String(rascunho.recipients || '') : '',
+      draftCe: rascunho.ok ? String(rascunho.ceAnexada || '') : '',
+      draftPeticao: rascunho.ok ? String(rascunho.peticaoAnexada || '') : '',
+      peticaoFileId: peticao && peticao.fileId ? peticao.fileId : '', peticaoFileName: peticao && peticao.fileName ? peticao.fileName : '',
+      peticaoWarning: peticao && peticao.erro ? peticao.erro : '',
       ce: transporteEnvioCeStatus_(registro.protocolo)
     });
     // Assunto e destinatarios ficam no registro: o passo Enviar aponta o rascunho certo mesmo em outro dia ou computador.
     if (rascunho.ok && rascunho.subject) {
       registro.rascunhoAssunto = String(rascunho.subject);
       registro.rascunhoDestinatarios = String(rascunho.recipients || '');
+      if (rascunho.ceAnexada) registro.rascunhoCe = String(rascunho.ceAnexada);
+      else delete registro.rascunhoCe;
+      if (rascunho.peticaoAnexada) registro.rascunhoPeticao = String(rascunho.peticaoAnexada);
+      else delete registro.rascunhoPeticao;
+    }
+    // A peticao salva no Drive: o passo Enviar aponta o arquivo se for preciso anexa-la a mao.
+    if (peticao && peticao.fileId) {
+      registro.peticaoArquivoId = String(peticao.fileId);
+      registro.peticaoArquivoNome = String(peticao.fileName || '');
     }
     // O PDF tambem: o passo Enviar pede para imprimir e precisa do link mesmo depois de reabrir o envio.
     if (pdf.fileId) {

@@ -129,11 +129,12 @@ function transporteEnvioPassos_(registro) {
 // Campos que a pessoa preenche no passo a passo e que a reconstrucao pela Agenda nao pode apagar.
 var TRANSPORTE_ENVIO_CAMPOS_LOCAIS_ = ['agendadoPor', 'pinexAgendadoPor', 'responsavelEntrega', 'horaEnvio', 'solicitarCaixa',
   'pinexColeta', 'pinexProtocolo', 'observacoes', 'fasePinex', 'passoNumero', 'peticionamentoEnviadoEm', 'peticionamentoEnviadoPor', 'gruPronta', 'gruProntaEm', 'gruProntaPor',
-  'geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios', 'pdfArquivoId', 'pdfArquivoNome'];
+  'geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios', 'rascunhoCe', 'rascunhoPeticao', 'pdfArquivoId', 'pdfArquivoNome', 'peticaoArquivoId', 'peticaoArquivoNome'];
 
 // Dados da geracao em curso (token de recuperacao, rascunho e PDF criados). Valem para um conjunto de dados: quando a
 // Agenda muda e o preparo recomeca, sao descartados e a geracao seguinte nasce do zero.
-var TRANSPORTE_ENVIO_CAMPOS_GERACAO_ = ['geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios', 'pdfArquivoId', 'pdfArquivoNome'];
+var TRANSPORTE_ENVIO_CAMPOS_GERACAO_ = ['geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios', 'rascunhoCe', 'rascunhoPeticao', 'pdfArquivoId', 'pdfArquivoNome',
+  'peticaoArquivoId', 'peticaoArquivoNome'];
 
 // Campos que o navegador pode gravar por salvarTransporteEnvio. Os de controle (fase da PINEX, numero do passo,
 // peticionamento, GRU) so mudam pelas rotas do servidor que os decidem.
