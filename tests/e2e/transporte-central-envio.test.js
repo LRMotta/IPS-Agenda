@@ -128,7 +128,7 @@ test('passo a passo MARKEN: conferir, gerar, enviar e concluir', async () => {
       await page.getByRole('button', { name: 'Continuar', exact: true }).click();
       assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 3 de 3 · Enviar/);
       // Assinar à mão, digitalizar, via impressa na caixa e cópia digitalizada anexada ao rascunho (MARKEN: com a CE do estudo).
-      assert.match(await page.locator('.tc-wiz-main').innerText(), /Imprima os documentos e assine à mão[\s\S]*Digitalize os documentos assinados[\s\S]*Abra o rascunho do pedido de coleta no Gmail e anexe os documentos assinados e digitalizados[\s\S]*CE do estudo[\s\S]*Clique em Enviar[\s\S]*Entregue as guias ao laboratório e mantenha-as juntas com a caixa de envio das amostras/);
+      assert.match(await page.locator('.tc-wiz-main').innerText(), /Imprima os documentos e assine à mão todas as vias[\s\S]*Digitalize uma via assinada de cada documento[\s\S]*Abra o rascunho do pedido de coleta no Gmail e anexe os documentos assinados e digitalizados[\s\S]*CE do estudo[\s\S]*Clique em Enviar[\s\S]*Entregue ao laboratório todas as vias assinadas, inclusive a que foi digitalizada, e mantenha-as juntas com a caixa de envio das amostras/);
       assert.doesNotMatch(await page.locator('.tc-wiz-main').innerText(), /PDFs anexados/);
       // Lista de marcar: o botão só libera com todos os itens marcados; a trilha mostra os passos feitos.
       assert.deepEqual(await page.locator('.tc-trilha-item').evaluateAll((itens) => itens.map((li) => li.className.replace('tc-trilha-item tc-trilha-', ''))), ['feito', 'feito', 'atual']);
@@ -433,6 +433,20 @@ test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser conf
     const ocasa = await page.locator('.tc-wiz-main').innerText();
     assert.match(ocasa, /Anexar a GRU, o extrato e a petição e enviar à courier[\s\S]*Abra o rascunho[\s\S]*Anexe ao e-mail a GRU, o extrato e a petição de fiscalização[\s\S]*pasta deste envio[\s\S]*formulário ANVISA/);
     await page.close();
+    // Petição gerada pelo app e já anexada ao rascunho: o item pede só a GRU e o extrato.
+    const pPet = await abrir(browser, 1280);
+    await iniciar(pPet.page, envio({ passo: 'enviar', passos: ['enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', gruPronta: true, rascunhoCe: 'sim', rascunhoPeticao: 'sim', peticaoArquivoId: 'PET-1', peticaoArquivoNome: 'Peticao_Fiscalizacao_X.pdf' }) }));
+    const comPeticao = await pPet.page.locator('.tc-wiz-main').innerText();
+    assert.match(comPeticao, /Anexar a GRU e o extrato e enviar à courier[\s\S]*já traz a CE do estudo e a petição de fiscalização em anexo[\s\S]*Anexe ao e-mail a GRU e o extrato[\s\S]*A petição de fiscalização já está no rascunho/);
+    assert.doesNotMatch(comPeticao, /formulário ANVISA/);
+    await pPet.page.close();
+    // Petição no Drive, mas fora do rascunho: pede para anexá-la e aponta o arquivo.
+    const pPet2 = await abrir(browser, 1280);
+    await iniciar(pPet2.page, envio({ passo: 'enviar', passos: ['enviar'], registro: Object.assign(envio().registro, { courier: 'OCASA', gruPronta: true, rascunhoPeticao: 'nao', peticaoArquivoId: 'PET-1', peticaoArquivoNome: 'Peticao_Fiscalizacao_X.pdf' }) }));
+    const semPeticao = await pPet2.page.locator('.tc-wiz-main').innerText();
+    assert.match(semPeticao, /Anexe ao e-mail a GRU, o extrato e a petição de fiscalização[\s\S]*a petição está no Drive, junto do PDF dos documentos[\s\S]*Peticao_Fiscalizacao_X.pdf/);
+    assert.equal(await pPet2.page.locator('a[href*="PET-1"]').count(), 1);
+    await pPet2.page.close();
     // PINEX com os números: não há rascunho; responde na conversa do agendamento.
     const p2 = await abrir(browser, 1280);
     await iniciar(p2.page, envio({ passo: 'enviar', passos: ['enviar'], registro: Object.assign(envio().registro, { courier: 'PINEX', gruPronta: true }) }));
@@ -445,17 +459,30 @@ test('passo Enviar: GRU e extrato, PINEX sem rascunho; AWB avisada pode ser conf
     await iniciar(pAg.page, envio({ passo: 'enviar', registro: Object.assign(envio().registro, { courier: 'PINEX (Agendamento)' }) }));
     const agendamento = await pAg.page.locator('.tc-wiz-main').innerText();
     assert.match(agendamento, /rascunho do pré-agendamento[\s\S]*Formulário[\s\S]*não é impresso nem assinado/);
-    assert.doesNotMatch(agendamento, /Imprima os documentos|Digitalize|Entregue as guias/);
+    assert.doesNotMatch(agendamento, /Imprima os documentos|Digitalize|Entregue ao laboratório/);
     assert.equal(await pAg.page.locator('[data-tc-check]').count(), 2);
     await pAg.page.close();
     // DHL: o e-mail não leva anexos, então não há digitalização nem anexo; as guias impressas seguem com a caixa.
     const pDhl = await abrir(browser, 1280);
     await iniciar(pDhl.page, envio({ passo: 'enviar', registro: Object.assign(envio().registro, { courier: 'DHL Ambiente' }) }));
     const dhl = await pDhl.page.locator('.tc-wiz-main').innerText();
-    assert.match(dhl, /Imprima os documentos e assine à mão[\s\S]*Abra o rascunho do pedido de coleta[\s\S]*O e-mail não leva anexos[\s\S]*Entregue as guias ao laboratório/);
-    assert.doesNotMatch(dhl, /Digitalize|anexe os documentos|CE do estudo/);
+    assert.match(dhl, /Imprima os documentos e assine à mão[\s\S]*Abra o rascunho do pedido de coleta[\s\S]*O e-mail não leva anexos[\s\S]*Entregue ao laboratório todas as vias assinadas e mantenha-as/);
+    assert.doesNotMatch(dhl, /Digitalize|anexe os documentos|CE do estudo|inclusive a que foi digitalizada/);
     assert.equal(await pDhl.page.locator('[data-tc-check]').count(), 4);
     await pDhl.page.close();
+    // CE não localizada na geração: item próprio para anexá-la; com a CE anexada, só a nota sob o rascunho.
+    const pCe = await abrir(browser, 1280);
+    await iniciar(pCe.page, envio({ passo: 'enviar', registro: Object.assign(envio().registro, { rascunhoCe: 'nao' }) }));
+    const semCe = await pCe.page.locator('.tc-wiz-main').innerText();
+    assert.match(semCe, /A CE do estudo não foi localizada e não está no rascunho. Anexe-a também ao e-mail./);
+    assert.doesNotMatch(semCe, /já traz a CE/);
+    await pCe.page.close();
+    const pCe2 = await abrir(browser, 1280);
+    await iniciar(pCe2.page, envio({ passo: 'enviar', registro: Object.assign(envio().registro, { rascunhoCe: 'sim' }) }));
+    const comCe = await pCe2.page.locator('.tc-wiz-main').innerText();
+    assert.match(comCe, /O rascunho já traz a CE do estudo em anexo/);
+    assert.doesNotMatch(comCe, /não foi localizada|Confira se o rascunho/);
+    await pCe2.page.close();
     // Sem GRU (envio nacional), o texto segue o de sempre.
     const p3 = await abrir(browser, 1280);
     await iniciar(p3.page, envio({ passo: 'enviar' }));

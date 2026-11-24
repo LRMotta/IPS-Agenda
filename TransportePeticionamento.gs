@@ -142,6 +142,12 @@ function transportePeticionamentoStatusPermitido_(agendaId, slot, esperados) {
   }
 }
 
+/** PDF da peticao (o mesmo no e-mail a quem peticiona e no rascunho da courier). form: resultado ok de transportePeticaoGerar_. */
+function transportePeticaoPdfBlob_(registro, form) {
+  return HtmlService.createHtmlOutput(form.html).getBlob().getAs(MimeType.PDF)
+    .setName('Peticao_Fiscalizacao_' + String(registro.awb || '').replace(/[^A-Za-z0-9_-]/g, '') + '.pdf');
+}
+
 /**
  * Conclui o passo ANVISA: gera o PDF do formulario, envia o e-mail aos autorizados (uma vez) e so entao muda o status
  * para "Aguardando peticionamento". Falha no e-mail mantem a tarefa com "Tentar de novo" e NAO muda o status.
@@ -164,7 +170,7 @@ function transportePeticionamentoConcluir_(agendaId, slot, versao, usuario, opco
   transportePeticionamentoStatusPermitido_(agendaId, slot, ['docsgerados', 'peticionamento']);
   if (!registro.peticionamentoEnviadoEm) {
     var linhaAgenda = opcoes.linhaAgenda !== undefined ? opcoes.linhaAgenda : transportePeticionamentoLinhaAgenda_(agendaId);
-    var pdf = HtmlService.createHtmlOutput(form.html).getBlob().getAs(MimeType.PDF).setName('Peticao_Fiscalizacao_' + String(registro.awb || '').replace(/[^A-Za-z0-9_-]/g, '') + '.pdf');
+    var pdf = transportePeticaoPdfBlob_(registro, form);
     var mensagem = {
       to: destinatarios.join(','), subject: transportePeticionamentoAssunto_(registro),
       htmlBody: transportePeticionamentoHtml_(registro, linhaAgenda, {

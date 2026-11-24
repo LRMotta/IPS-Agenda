@@ -289,6 +289,9 @@
     var rascunho = r.draftSkipped ? '<li>Rascunho de e-mail: não é criado para esta courier. ' + esc(r.draftMessage || '') + '</li>'
       : (r.draftOk ? '<li>Rascunho de e-mail criado no Gmail.</li>' : '<li class="tc-aviso">Rascunho de e-mail não criado: ' + esc(r.draftError || 'erro desconhecido') + '</li>');
     var ce = r.ce && r.ce.found ? '<li>Comunicado Especial localizado: ' + esc(r.ce.name || '') + '.</li>' : '<li class="tc-aviso">Comunicado Especial não localizado para este estudo.</li>';
+    // Envio internacional: a petição de fiscalização fica no Drive, junto do PDF, e vai no rascunho da courier.
+    if (r.peticaoFileId) ce += '<li>Petição de fiscalização: ' + transpCentralLinkDrive(r.peticaoFileId, r.peticaoFileName || 'abrir') + (r.draftPeticao === 'sim' ? ' (anexada ao rascunho)' : '') + '.</li>';
+    if (r.peticaoWarning) ce += '<li class="tc-aviso">' + esc(r.peticaoWarning) + '</li>';
     return '<section class="tc-bloco"><h3>Documentos gerados</h3><ul class="tc-materiais">' +
       '<li>PDF: <a href="' + esc(r.fileUrl || '#') + '" target="_blank" rel="noopener">' + esc(r.fileName || 'abrir') + '</a></li>' + rascunho + ce + '</ul>' +
       (r.agendaWarning ? '<p class="tc-aviso" role="note">' + esc(r.agendaWarning) + '</p>' : '') + (r.monitorWarning ? '<p class="tc-aviso" role="note">' + esc(r.monitorWarning) + '</p>' : '') + '</section>' +
@@ -323,6 +326,10 @@
       (para ? '<span><span class="tc-dim">Para</span> ' + esc(para) + '</span>' : '') + '</span>';
   }
 
+  function transpCentralLinkDrive(id, nome) {
+    return '<a href="https://drive.google.com/file/d/' + esc(encodeURIComponent(String(id))) + '/view" target="_blank" rel="noopener">' + esc(nome) + '</a>';
+  }
+
   // PDF para imprimir: do resultado da geração ou, em outra sessão, do registro do envio. Envio gerado antes de o
   // registro guardar o PDF: indica a pasta do Drive de quem gerou.
   function transpCentralHtmlPdf(registro, resultado) {
@@ -340,14 +347,24 @@
 
   function transpCentralHtmlEnviar(registro) {
     var r = TC_ENVIO.resultado;
-    // Os documentos gerados são impressos e assinados à mão. A cópia digitalizada vai anexada ao e-mail de agendamento
-    // (com a CE do estudo na MARKEN e na OCASA); a via impressa é entregue ao laboratório e fica junto da caixa de envio.
+    // Os documentos gerados são impressos e todas as vias assinadas à mão. Uma via de cada documento é digitalizada e vai
+    // anexada ao e-mail de agendamento (com a CE do estudo na MARKEN e na OCASA); todas as vias, inclusive a digitalizada,
+    // são entregues ao laboratório e ficam junto da caixa de envio.
     // DHL: o e-mail não leva anexos (nem a CE nem os documentos), então não há o que digitalizar.
     // PINEX (Agendamento): o Formulário só serve ao pré-agendamento; não é impresso, assinado nem digitalizado.
     var courier = String((registro && registro.courier) || '').toUpperCase();
     var soFormulario = courier === 'PINEX (AGENDAMENTO)';
     var dhl = courier.indexOf('DHL') >= 0;
-    var anexo = dhl ? 'O e-mail não leva anexos.' : (courier === 'MARKEN' || courier === 'OCASA' ? 'O rascunho já traz a CE do estudo em anexo.' : '');
+    // A CE so entra no rascunho se for localizada. rascunhoCe: 'sim' ou 'nao'; sem o campo (rascunho de versao
+    // anterior), nao se sabe e a pessoa confere.
+    var ceRascunho = String((r && r.draftCe) || (registro && registro.rascunhoCe) || '');
+    var ceNaoAnexada = (courier === 'MARKEN' || courier === 'OCASA') && ceRascunho === 'nao';
+    // Petição de fiscalização (envio internacional): gerada pelo app no passo Gerar, salva no Drive e anexada ao rascunho.
+    var peticaoNoRascunho = String((r && r.draftPeticao) || (registro && registro.rascunhoPeticao) || '') === 'sim';
+    var peticaoId = String((r && r.peticaoFileId) || (registro && registro.peticaoArquivoId) || '').trim();
+    var peticaoNome = String((r && r.peticaoFileName) || (registro && registro.peticaoArquivoNome) || '').trim() || 'Petição de fiscalização';
+    var anexo = dhl ? 'O e-mail não leva anexos.' : (courier === 'MARKEN' || courier === 'OCASA'
+      ? (ceNaoAnexada ? '' : (ceRascunho === 'sim' ? 'O rascunho já traz a CE do estudo' + (peticaoNoRascunho ? ' e a petição de fiscalização' : '') + ' em anexo.' : 'Confira se o rascunho traz a CE do estudo em anexo; se não trouxer, anexe-a também.')) : '');
     var explicacao = r ? '' : '<p>Os documentos já foram gerados. Falta ' + (soFormulario ? 'enviar o pré-agendamento à courier.' : (dhl ? 'assinar e enviar o pedido de coleta à courier.' : 'assinar, digitalizar e enviar o pedido de coleta à courier.')) + '</p>';
     var avisos = ((TC_ENVIO.dados && TC_ENVIO.dados.avisos) || []).map(function(a) { return '<p class="tc-aviso" role="note">' + esc(a) + '</p>'; }).join('');
     // Envio internacional com a GRU e o extrato prontos: anexar os dois é um passo próprio, antes de enviar.
@@ -356,8 +373,8 @@
     // extra: o que fica abaixo dele (link e assunto do rascunho), fora do rótulo.
     var itens = [];
     if (!soFormulario) {
-      itens.push({ texto: 'Imprima os documentos e assine à mão onde for pedido.', extra: transpCentralHtmlPdf(registro, r) });
-      if (!dhl) itens.push({ texto: 'Digitalize os documentos assinados.' });
+      itens.push({ texto: 'Imprima os documentos e assine à mão todas as vias, onde for pedido.', extra: transpCentralHtmlPdf(registro, r) });
+      if (!dhl) itens.push({ texto: 'Digitalize uma via assinada de cada documento.' });
     }
     // PINEX com os números: o servidor não cria rascunho; os documentos seguem na conversa do agendamento.
     if (courier === 'PINEX') itens.push({ texto: 'No Gmail, abra a conversa do agendamento com a PINEX (a que trouxe os números) e responda nela, anexando os documentos assinados e digitalizados.' });
@@ -368,14 +385,22 @@
       itens.push({ texto: dhl ? 'Abra o rascunho do pedido de coleta no Gmail.' : 'Abra o rascunho do pedido de coleta no Gmail e anexe os documentos assinados e digitalizados.',
         extra: transpCentralHtmlRascunho(registro, r) + (anexo ? '<div class="tc-dim">' + esc(anexo) + '</div>' : '') });
     }
+    // CE nao localizada na geracao: anexar a CE e um item proprio, em destaque.
+    if (ceNaoAnexada) itens.push({ texto: 'A CE do estudo não foi localizada e não está no rascunho. Anexe-a também ao e-mail.', forte: true });
     // Envio internacional com a GRU e o extrato prontos: anexar os dois e a petição de fiscalização é um item próprio,
     // antes de enviar. A OCASA pode bloquear o embarque se faltar qualquer um deles.
-    if (gru) itens.push({ texto: 'Anexe ao e-mail a GRU, o extrato e a petição de fiscalização. A GRU e o extrato estão na pasta deste envio, no servidor; a petição seguiu no e-mail do formulário ANVISA.', forte: true });
+    if (gru && peticaoNoRascunho) itens.push({ texto: 'Anexe ao e-mail a GRU e o extrato. Eles estão na pasta deste envio, no servidor. A petição de fiscalização já está no rascunho.', forte: true });
+    else if (gru) {
+      itens.push({ texto: 'Anexe ao e-mail a GRU, o extrato e a petição de fiscalização. A GRU e o extrato estão na pasta deste envio, no servidor; ' +
+        (peticaoId ? 'a petição está no Drive, junto do PDF dos documentos.' : 'a petição seguiu no e-mail do formulário ANVISA.'), forte: true,
+        extra: peticaoId ? transpCentralLinkDrive(peticaoId, peticaoNome) : '' });
+    }
     itens.push({ texto: 'Clique em Enviar no Gmail e volte aqui.' });
-    if (!soFormulario) itens.push({ texto: 'Entregue as guias ao laboratório e mantenha-as juntas com a caixa de envio das amostras.' });
+    if (!soFormulario) itens.push({ texto: dhl ? 'Entregue ao laboratório todas as vias assinadas e mantenha-as juntas com a caixa de envio das amostras.'
+      : 'Entregue ao laboratório todas as vias assinadas, inclusive a que foi digitalizada, e mantenha-as juntas com a caixa de envio das amostras.' });
     var marcados = TC_ENVIO.checks || (TC_ENVIO.checks = {});
     var faltam = itens.filter(function(_item, i) { return !marcados[i]; }).length;
-    return '<section class="tc-bloco"><h3>' + (gru ? 'Anexar a GRU, o extrato e a petição e enviar à courier' : 'Pedir a coleta à courier') + '</h3>' + explicacao + avisos +
+    return '<section class="tc-bloco"><h3>' + (gru ? (peticaoNoRascunho ? 'Anexar a GRU e o extrato e enviar à courier' : 'Anexar a GRU, o extrato e a petição e enviar à courier') : 'Pedir a coleta à courier') + '</h3>' + explicacao + avisos +
       '<ol class="tc-checklist" data-tc-total="' + itens.length + '">' + itens.map(function(item, i) {
         return '<li class="tc-check' + (marcados[i] ? ' feito' : '') + '"><input type="checkbox" id="tcCheck' + i + '" data-tc-check="' + i + '"' + (marcados[i] ? ' checked' : '') + '>' +
           '<div><label for="tcCheck' + i + '">' + (item.forte ? '<strong>' + esc(item.texto) + '</strong>' : esc(item.texto)) + '</label>' + (item.extra ? '<div class="tc-check-extra">' + item.extra + '</div>' : '') + '</div></li>';

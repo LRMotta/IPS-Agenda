@@ -203,6 +203,63 @@ test('PINEX não registra operação nem promove status; PINEX (Agendamento) ane
   assert.deepEqual(anexados, ['PDF-1']);
 });
 
+function servidorInternacional(opcoes) {
+  opcoes = opcoes || {};
+  const s = servidor();
+  const criados = [];
+  const anexos = [];
+  s.transporteEnvioInternacional_ = () => true;
+  s.transporteCodexEmailAttachments_ = () => [{ getName: () => 'Estudo X_CE.pdf' }];
+  s.transportePeticaoGerar_ = () => (opcoes.erroPeticao ? { ok: false, erros: ['O estudo não tem N° do CE no cadastro.'] } : { ok: true, html: '<p>peticao</p>' });
+  s.transportePeticaoPdfBlob_ = () => ({ getName: () => 'Peticao_Fiscalizacao_111122223333.pdf' });
+  s.transportePdfDestinationFolder_ = () => ({
+    getUrl: () => 'https://drive.example.invalid/pasta', getName: () => 'Estudo X',
+    createFile: (blob) => {
+      const id = criados.length ? 'PET-' + criados.length : 'PDF-1';
+      criados.push(id);
+      return { getId: () => id, getName: () => blob.getName(), getUrl: () => 'https://drive.example.invalid/' + id };
+    }
+  });
+  s.DriveApp.getFileById = (id) => ({ getBlob: () => ({ getName: () => id }) });
+  s.GmailApp.createDraft = (_para, _assunto, _corpo, o) => { anexos.push(o.attachments.map((b) => b.getName())); return { getId: () => 'DRAFT-1' }; };
+  return { s, criados, anexos };
+}
+
+test('envio internacional: petição salva no Drive junto do PDF e anexada ao rascunho com a CE', () => {
+  const { s, criados, anexos } = servidorInternacional();
+  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', abrir(s, { courier: 'OCASA' }).versao, TOKEN));
+  assert.deepEqual(criados, ['PDF-1', 'PET-1']);
+  assert.deepEqual(anexos, [['Estudo X_CE.pdf', 'PET-1']]);
+  assert.deepEqual([r.draftCe, r.draftPeticao, r.peticaoFileId, r.peticaoFileName, r.peticaoWarning], ['sim', 'sim', 'PET-1', 'Peticao_Fiscalizacao_111122223333.pdf', '']);
+  const gravado = plano(s.transporteRegistroLer_('ab12cd34', '1')).registro;
+  assert.deepEqual([gravado.rascunhoPeticao, gravado.peticaoArquivoId, gravado.peticaoArquivoNome], ['sim', 'PET-1', 'Peticao_Fiscalizacao_111122223333.pdf']);
+  // Retomada da mesma geração (token guardado com a petição) reaproveita o arquivo, sem criar outro.
+  assert.deepEqual(plano(s.transporteEnvioGerarPeticao_(registro({ courier: 'OCASA' }), { record: { peticao: { fileId: 'PET-1', fileName: 'x.pdf' } } })), { fileId: 'PET-1', fileName: 'x.pdf' });
+  assert.deepEqual(criados, ['PDF-1', 'PET-1']);
+  // PINEX (Agendamento) só gera o Formulário.
+  assert.equal(s.transporteEnvioGerarPeticao_(registro({ courier: 'PINEX (Agendamento)' }), { record: {} }), null);
+});
+
+test('envio internacional com dado faltando para a petição: gera o resto, avisa e o rascunho sai só com a CE', () => {
+  const { s, criados, anexos } = servidorInternacional({ erroPeticao: true });
+  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', abrir(s, { courier: 'OCASA' }).versao, TOKEN));
+  assert.equal(r.ok, true);
+  assert.deepEqual(criados, ['PDF-1']);
+  assert.deepEqual(anexos, [['Estudo X_CE.pdf']]);
+  assert.equal(r.draftPeticao, 'nao');
+  assert.match(r.peticaoWarning, /Petição de fiscalização não gerada: O estudo não tem N° do CE/);
+  assert.equal(plano(s.transporteRegistroLer_('ab12cd34', '1')).registro.rascunhoPeticao, 'nao');
+});
+
+test('envio nacional não gera petição', () => {
+  const { s, criados, anexos } = servidorInternacional();
+  s.transporteEnvioInternacional_ = () => false;
+  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', abrir(s, { courier: 'OCASA' }).versao, TOKEN));
+  assert.deepEqual(criados, ['PDF-1']);
+  assert.deepEqual(anexos, [['Estudo X_CE.pdf']]);
+  assert.deepEqual([r.draftPeticao, r.peticaoFileId], ['', '']);
+});
+
 test('concluir e sair guardam o passo e liberam o preparo para outra pessoa', () => {
   const s = servidor();
   const v = abrir(s).versao;
@@ -355,14 +412,24 @@ test('assunto e destinatários do rascunho ficam no registro; Agenda alterada de
   assert.equal(r.draftRecipients, 'marken@example.invalid');
   const gravado = plano(s.transporteRegistroLer_('ab12cd34', '1')).registro;
   assert.deepEqual([gravado.rascunhoAssunto, gravado.rascunhoDestinatarios], [r.draftSubject, r.draftRecipients]);
+  // CE não localizada (o simulador não anexa nada): o registro guarda 'nao' para o passo Enviar avisar.
+  assert.deepEqual([r.draftCe, gravado.rascunhoCe], ['nao', 'nao']);
   // O PDF também fica no registro: o passo Enviar mostra o link para imprimir depois de reabrir.
   assert.deepEqual([gravado.pdfArquivoId, gravado.pdfArquivoNome], ['PDF-1', r.fileName]);
   // Sem mudança na Agenda, reabrir preserva; com mudança, a geração seguinte nasce do zero.
   const reaberto = plano(abrir(s)).registro;
-  assert.deepEqual([reaberto.rascunhoAssunto, reaberto.pdfArquivoId], [r.draftSubject, 'PDF-1']);
+  assert.deepEqual([reaberto.rascunhoAssunto, reaberto.pdfArquivoId, reaberto.rascunhoCe], [r.draftSubject, 'PDF-1', 'nao']);
   const mudou = plano(abrir(s, { dataEnvio: '2026-11-30', dataColeta: '2026-11-30' })).registro;
-  assert.deepEqual([mudou.geracaoToken, mudou.rascunhoAssunto, mudou.rascunhoDestinatarios, mudou.pdfArquivoId, mudou.pdfArquivoNome],
-    [undefined, undefined, undefined, undefined, undefined]);
+  assert.deepEqual([mudou.geracaoToken, mudou.rascunhoAssunto, mudou.rascunhoDestinatarios, mudou.rascunhoCe, mudou.pdfArquivoId, mudou.pdfArquivoNome],
+    [undefined, undefined, undefined, undefined, undefined, undefined]);
+});
+
+test('CE anexada pelo sistema fica registrada como sim', () => {
+  const s = servidor();
+  s.transporteCodexEmailAttachments_ = () => [{ getName: () => 'Estudo X_CE.pdf' }];
+  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', abrir(s).versao, TOKEN));
+  assert.equal(r.draftCe, 'sim');
+  assert.equal(plano(s.transporteRegistroLer_('ab12cd34', '1')).registro.rascunhoCe, 'sim');
 });
 
 test('token do registro com outros dados (mudança que não reinicia o preparo): começa outra geração, sem prender o envio', () => {
