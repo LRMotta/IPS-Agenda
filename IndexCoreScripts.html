@@ -3791,12 +3791,15 @@ function renderTabelaPart(lista, filtrado) {
     var items=[];
     if(p.cpf)         items.push(participanteDetalheItemHtml_('badge','CPF',esc(p.cpf)));
     if(p.telefone)    items.push(participanteDetalheItemHtml_('phone','Telefone',esc(formatarTelefoneBrasileiro(p.telefone))));
+    var emergencia = [p.contatoEmergenciaNome, p.contatoEmergenciaGrau, p.contatoEmergenciaTelefone ? formatarTelefoneBrasileiro(p.contatoEmergenciaTelefone) : '']
+      .filter(function(v){ return String(v || '').trim(); }).join(' · ');
+    if(emergencia)    items.push(participanteDetalheItemHtml_('emergency','Contato de emergência',esc(emergencia)));
     if(p.observacoes) items.push(participanteDetalheItemHtml_('notes','Observações',esc(p.observacoes),'par-det-obs'));
     var r2='<tr class="part-detail" id="'+pid+'">'
       +'<td colspan="5">'
       +(items.length
         ?'<div class="par-detail-items">'+items.join('')+'</div>'
-        :'<div class="par-detail-empty">Sem CPF, telefone ou observações cadastrados.</div>')
+        :'<div class="par-detail-empty">Sem CPF, telefone, contato de emergência ou observações cadastrados.</div>')
       +'</td></tr>';
     return r1+r2;
   }).join('');

@@ -7268,7 +7268,11 @@ function participanteDadosDaLinha_(r, header, ultimaVisita, somenteListagem, dto
     telefone:       String(r[9] || ''),
     cpf:            String(r[10] || ''),
     observacoes:    String(r[11] || ''),
-    idPessoa:       String(valueFor(r, ['idpessoa', 'pessoaid', 'idinternopessoa']) || '')
+    idPessoa:       String(valueFor(r, ['idpessoa', 'pessoaid', 'idinternopessoa']) || ''),
+    // Exibido na persiana da listagem, por isso vem também sem os detalhes.
+    contatoEmergenciaNome:     String(valueFor(r, ['contatodeemergencia']) || ''),
+    contatoEmergenciaGrau:     String(valueFor(r, ['graudeproximidadedocontatodeemergencia']) || ''),
+    contatoEmergenciaTelefone: String(valueFor(r, ['telefonedocontatodeemergencia']) || '')
   };
   if (!somenteListagem) {
     var detalhes = {
@@ -7284,9 +7288,6 @@ function participanteDadosDaLinha_(r, header, ultimaVisita, somenteListagem, dto
       contaCorrente:  String(valueFor(r, ['contacorrente', 'conta']) || ''),
       titularConta:   String(valueFor(r, ['titulardacontacorrente', 'titulardaconta']) || ''),
       cpfTitular:     String(valueFor(r, ['cpfdotitular']) || ''),
-      contatoEmergenciaNome:     String(valueFor(r, ['contatodeemergencia']) || ''),
-      contatoEmergenciaGrau:     String(valueFor(r, ['graudeproximidadedocontatodeemergencia']) || ''),
-      contatoEmergenciaTelefone: String(valueFor(r, ['telefonedocontatodeemergencia']) || ''),
       acompanhantes: participanteLerAcompanhantes_(valueFor(r, ['acompanhantesjson']))
     };
     var ctmsColumns = participanteCtmsColumnMapFromHeaders_(header);
