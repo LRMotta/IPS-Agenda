@@ -48,10 +48,27 @@ test('estoque: zero apagado; conservação compatível sem nota; incompatível e
   assert.match(c.farmaciaStorageNote({ status: 'incompatible', message: '<b>x</b>' }), /&#60;b&#62;/);
 });
 
-test('ciclo do lote: contagem de aguardando avaliação concorda em número', () => {
+test('ciclo do lote: aguardando avaliação é um card do grid, com o filtro pending, sem o link solto', () => {
   const fonte = readProjectFile('IndexFarmaciaCiclo.html');
-  assert.match(fonte, /n===1\?' registro':' registros'/);
-  assert.doesNotMatch(fonte, /\.length\+' registros<\/button>/);
+  assert.match(fonte, /\['pending','hourglass_top','Aguardando avaliação',lots\(function\(p\)\{return p\.pending>0;\}\),'lotes \/ kits','amber'\]/);
+  assert.match(fonte, /\.farmacia-life-grid\{display:grid;grid-template-columns:repeat\(7,/);
+  assert.doesNotMatch(fonte, /Aguardando avaliação: '\+/);
+  assert.match(fonte, /filter==='pending'&&p\.pending>0/);
+});
+
+test('estoque: validade com "Vence em breve" até 30 dias; vencido continua vindo do servidor', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext('var FARMACIA_VENCE_EM_BREVE_DIAS = 30;\n' + funcoes('IndexFarmaciaViewScripts.html', ['farmaciaExpiryChip']), ctx);
+  const chip = (expiry, expired) => ctx.farmaciaExpiryChip({ expiry, expired: !!expired }, '2026-11-25');
+  assert.match(chip('2026-09-30', true), /chip-red[^>]*>Vencido</);
+  assert.match(chip('2026-11-30'), /chip-orange[^>]*>Vence em 5 dias</);
+  assert.match(chip('2026-11-25'), />Vence hoje</);
+  assert.match(chip('2026-11-26'), />Vence amanhã</);
+  assert.match(chip('2026-12-25'), />Vence em 30 dias</);
+  assert.equal(chip('2026-12-26'), '');
+  assert.equal(chip('2027-03-31'), '');
+  assert.equal(chip(''), '');
+  assert.equal(chip('2026-11-24'), '', 'data passada sem vencido do servidor não inventa aviso');
 });
 
 test('estoque: "Ver ciclo" fica na mesma linha dos ícones de ação', () => {
@@ -62,4 +79,8 @@ test('estoque: "Ver ciclo" fica na mesma linha dos ícones de ação', () => {
   assert.match(ctx.farmaciaRecordActions('position', { id: 'POS-1', lot: 'L1' }, { farmaciaAccess: 'view' }), /^<div class="action-btns"><button type="button" class="icon-btn"/);
   const view = readProjectFile('IndexFarmaciaViewScripts.html');
   assert.match(view, /farmaciaRecordActions\('position',position,data,typeof farmaciaCycleOpen === 'function' \? '<button type="button" class="btn-txt farmacia-cycle-link"/);
+});
+
+test('estoque: a tabela usa o aviso de validade', () => {
+  assert.match(readProjectFile('IndexFarmaciaViewScripts.html'), /esc\(farmaciaStockDate\(position\.expiry\)\) \+ farmaciaExpiryChip\(position\)/);
 });
