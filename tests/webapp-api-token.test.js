@@ -202,3 +202,15 @@ test('importação privada mantém lookup de LabCentral sem liberar a RPC nem al
   assert.equal(server.transporteLabCentralDestinoPadrao_(), 'LAB TESTE');
   assert.throws(() => server.getLabCentral(), /Sem identidade institucional/);
 });
+
+test('assinatura do Gmail: a RPC pública autoriza; a leitura privada não relê a aba Users', () => {
+  const server = runFiles(['WebApp.gs'], {
+    Gmail: { Users: { Settings: { SendAs: { list: () => ({ sendAs: [{ isDefault: false, signature: 'outra' }, { isDefault: true, signature: 'padrão' }] }) } } } }
+  });
+  let autorizacoes = 0;
+  server.codexAssertCanRead_ = () => { autorizacoes++; return { ok: true }; };
+  assert.equal(server.getGmailSignatureDados_(), 'padrão');
+  assert.equal(autorizacoes, 0);
+  assert.equal(server.getGmailSignature(), 'padrão');
+  assert.equal(autorizacoes, 1);
+});

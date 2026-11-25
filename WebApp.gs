@@ -4426,6 +4426,11 @@ function gerarTabelaEmailGenerica_(rows) {
 
 function getGmailSignature() {
   codexAssertCanRead_();
+  return getGmailSignatureDados_();
+}
+
+// Leitura privada da assinatura do usuario ativo, para fluxos que ja autorizaram a operacao.
+function getGmailSignatureDados_() {
   try {
     var sendAs = Gmail.Users.Settings.SendAs.list('me').sendAs || [];
     for (var i = 0; i < sendAs.length; i++) {

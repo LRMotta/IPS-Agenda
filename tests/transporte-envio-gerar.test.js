@@ -494,3 +494,44 @@ test('resultado repetido devolve a versão atual do registro, não a da época',
   const r2 = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', reaberto.versao, TOKEN));
   assert.deepEqual([r2.recovered, r2.versao], [true, reaberto.versao]);
 });
+
+test('geração não refaz a autorização a cada consulta: médicos, LabCentral e assinatura lidos uma vez, memória descartada ao sair', () => {
+  const s = servidor();
+  const v = abrir(s).versao;
+  const leituras = { medicos: 0, lab: 0, assinatura: 0 };
+  // A entrada da RPC já autorizou (transporteAssertOperador_); as leituras públicas não podem ser usadas no meio.
+  s.codexAssertCanRead_ = () => { throw new Error('autorização refeita no meio da geração'); };
+  s.getMedicosDados_ = () => { leituras.medicos++; return [{ nome: 'Pessoa Investigadora', cremers: '123', cpf: '000' }]; };
+  s.transporteReadLabCentralDireto_ = () => { leituras.lab++; return [{ nomeAbreviado: 'LAB X', nomeCompleto: 'Laboratorio Exemplo' }]; };
+  s.getGmailSignatureDados_ = () => { leituras.assinatura++; return '<p>Assinatura da pessoa</p>'; };
+  let corpo = '';
+  const criar = s.GmailApp.createDraft;
+  s.GmailApp.createDraft = (para, assunto, texto, o) => { corpo = o.htmlBody; return criar(para, assunto, texto, o); };
+  s.transporteDocsDados_ = (registro) => {
+    // As mesmas consultas do preenchimento real: médico na Petição e na Declaração, laboratório nas duas.
+    s.transporteMedicoByNome_(registro.investigador);
+    s.transporteMedicoByNome_(registro.investigador);
+    s.transporteLabCentralByDestino_(registro.destino);
+    s.transporteLabCentralByDestino_(registro.destino);
+    return { ss: {}, abas: () => ({}) };
+  };
+  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', v, TOKEN));
+  assert.equal(r.ok, true);
+  assert.equal(r.draftOk, true);
+  assert.match(corpo, /Assinatura da pessoa/);
+  assert.deepEqual(leituras, { medicos: 1, lab: 1, assinatura: 1 });
+  assert.equal(s.TRANSPORTE_ABERTURA_MEMO_, null);
+  // Fora da geração (sem execução autorizada em memória), a consulta continua passando pela RPC autorizada.
+  s.getMedicos = () => { throw new Error('getMedicos autorizado'); };
+  s.transporteReadMedicosDireto_ = () => [];
+  assert.equal(s.transporteMedicoByNome_('Pessoa Investigadora'), null);
+  assert.equal(leituras.medicos, 1);
+});
+
+test('geração com erro também descarta a memória da execução', () => {
+  const s = servidor();
+  const v = abrir(s).versao;
+  s.transporteValidarObrigatoriosWebApp_ = () => { throw new Error('campo obrigatório'); };
+  assert.throws(() => s.gerarDocumentosTransporteEnvio('ab12cd34', '1', v, TOKEN), /campo obrigatório/);
+  assert.equal(s.TRANSPORTE_ABERTURA_MEMO_, null);
+});

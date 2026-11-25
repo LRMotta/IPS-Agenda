@@ -68,3 +68,32 @@ test('CSS real: contraste, foco de teclado e carregamento com movimento reduzido
     }
   } finally { await browser.close(); }
 });
+
+test('CSS real: texto de carregamento fica junto do spinner em listas e modais', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+    await page.setContent('<!doctype html><html><head>' + readProjectFile('IndexStyles.html') +
+      '</head><body><div style="display:block;width:1500px">' +
+      '<div class="courier-list" data-case="courier"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>' +
+      '<div data-case="div"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>' +
+      '<div class="agenda-recibo-loading" data-case="recibo"><span class="spinner"></span>Carregando dados do recibo...</div>' +
+      '<div style="display:grid" data-case="visitas"><div class="item-visitas-empty"><div class="spinner"></div>Carregando visitas…</div></div>' +
+      '<table class="data-table" style="width:100%" data-case="tabela"><tbody><tr class="loading-row"><td><div class="spinner"></div>Carregando…</td></tr></tbody></table>' +
+      '</div></body></html>');
+    // O body do app usa flex; o wrapper de bloco reproduz a largura real da lista.
+    const gaps = await page.evaluate(() => Array.from(document.querySelectorAll('[data-case]')).map(box => {
+      const spinner = box.querySelector('.spinner').getBoundingClientRect();
+      const node = Array.from(box.querySelectorAll('*')).concat(box)
+        .flatMap(el => Array.from(el.childNodes)).find(n => n.nodeType === 3 && n.textContent.trim());
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const text = range.getBoundingClientRect();
+      // Distância horizontal entre a borda do spinner e o texto (0 quando se sobrepõem).
+      const gap = Math.max(0, text.left - spinner.right, spinner.left - text.right);
+      return { name: box.dataset.case, gap: Math.round(gap) };
+    }));
+    for (const item of gaps) assert.ok(item.gap <= 12, item.name + ': texto afastado do spinner em ' + item.gap + 'px');
+    await page.close();
+  } finally { await browser.close(); }
+});
