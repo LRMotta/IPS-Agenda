@@ -433,3 +433,42 @@ test('Em trânsito: Confirmar entrega tira o item na hora e relê a lista, mesmo
     assert.deepEqual(erros, []);
   } finally { await browser.close(); }
 });
+
+test('Caixa especial no Para fazer e no Em breve: nome, prazo para pedir e alerta quando passou', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  const extreme = { tipo: 'EXTREME_AMBIENT', rotulo: 'Extreme Ambient', pedirAte: '20/11/2026', atrasado: false };
+  const credo = { tipo: 'CREDO_CUBE', rotulo: 'Crēdo Cube', pedirAte: '19/11/2026', atrasado: true };
+  const resposta = JSON.parse(JSON.stringify(RESPOSTA));
+  resposta.tarefas[0].transportes[1].caixa = extreme;
+  resposta.tarefas[1].transportes[0].caixa = credo;
+  resposta.maisAdiante = { transportes: 1, visitas: 1, primeiraData: '30/11/2026', semanas: [
+    { chave: '30/11/2026', rotulo: 'Semana de 30/11 a 06/12', itens: [ITEM({ agendaId: 's1', data: '30/11/2026', viraTarefaEm: '19/11/2026', courier: 'OCASA', temperatura: 'AMBIENTE',
+      caixa: { tipo: 'SEPIO', rotulo: 'Sepio', pedirAte: '', atrasado: false } })] }] };
+  try {
+    for (const width of [1280, 390]) {
+      const { page, erros } = await abrir(browser, width);
+      await page.evaluate(() => transpCentralCarregar(false));
+      await page.evaluate((r) => window.__pedidos[0].ok(r), resposta);
+      // Próxima tarefa: na linha do transporte que pede a caixa, uma vez só.
+      assert.equal(await page.locator('.tc-next .tc-chip-caixa').count(), 1);
+      assert.match(await page.locator('.tc-next .tc-transports li').nth(1).innerText(), /Caixa Extreme Ambient · pedir até 20\/11/);
+      assert.match(await page.locator('.tc-next .tc-chip-caixa').getAttribute('title'), /Confira se ela está disponível e peça à courier até 20\/11\/2026/);
+      // Também para fazer: nas etiquetas, em vermelho quando o prazo passou.
+      const lista = page.locator('.tc-list .tc-chip-caixa');
+      assert.equal(await lista.count(), 1);
+      assert.match(await lista.innerText(), /Caixa Crēdo Cube · prazo para pedir passou \(19\/11\)/);
+      assert.match(await lista.getAttribute('class'), /chip-red/);
+      // Em breve: caixa sem prazo mostra só o nome.
+      await page.evaluate(() => transpCentralAba('adiante'));
+      assert.match(await page.locator('#tcPanelAdiante .tc-chip-caixa').innerText(), /Caixa Sepio$/);
+      await page.evaluate(() => transpCentralAba('fazer'));
+      const overflow = await page.evaluate(() => { const c = document.querySelector('.content'); return c.scrollWidth > c.clientWidth; });
+      assert.equal(overflow, false, 'sem rolagem horizontal em ' + width + 'px');
+      const saida = path.join(process.env.PLAYWRIGHT_ARTIFACTS_DIR || path.join(os.tmpdir(), 'ips-agenda-playwright'));
+      fs.mkdirSync(saida, { recursive: true });
+      await page.screenshot({ path: path.join(saida, 'transporte-caixa-' + width + '.png'), fullPage: true });
+      assert.deepEqual(erros, []);
+      await page.close();
+    }
+  } finally { await browser.close(); }
+});

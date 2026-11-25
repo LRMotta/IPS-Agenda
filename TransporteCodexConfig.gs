@@ -7537,6 +7537,19 @@ function transporteCaixaRegraDoProjeto_(rule, key) {
   return aliases.some(function(alias) { return alias && transporteParticipantKey_(alias) === key; });
 }
 
+// Regra unica de caixa para { projeto, courier, temperatura, destino } (regras sem erro); sem regra unica, null.
+function transporteCaixaRegraPara_(regras, item) {
+  var key = transporteParticipantKey_(item.projeto);
+  var courier = transporteNormalizeCourierFromCodex_(item.courier);
+  var temperatura = transporteNormalizeTemperaturaFromCodex_(item.temperatura);
+  var destino = transporteParticipantKey_(item.destino);
+  var regra = (regras || []).filter(function(candidata) {
+    return transporteCaixaRegraDoProjeto_(candidata, key) && candidata.courier === courier &&
+      candidata.temperatura === temperatura && transporteParticipantKey_(candidata.destino) === destino;
+  });
+  return regra.length === 1 ? regra[0] : null;
+}
+
 // Pendencias citam a caixa especial pela regra do projeto; sem regra unica, nada e inferido.
 function transporteCaixasAnotarPendencias_(pendencias) {
   var rotulos = TRANSPORTE_CAIXA_ROTULOS_;
@@ -7547,15 +7560,8 @@ function transporteCaixasAnotarPendencias_(pendencias) {
     var regras = transporteCaixasRegras_().filter(function(regra) { return !regra.erro; });
     if (!regras.length) return;
     itens.forEach(function(item) {
-      var key = transporteParticipantKey_(item.projeto);
-      var courier = transporteNormalizeCourierFromCodex_(item.courier);
-      var temperatura = transporteNormalizeTemperaturaFromCodex_(item.temperatura);
-      var destino = transporteParticipantKey_(item.destino);
-      var regra = regras.filter(function(candidata) {
-        return transporteCaixaRegraDoProjeto_(candidata, key) && candidata.courier === courier &&
-          candidata.temperatura === temperatura && transporteParticipantKey_(candidata.destino) === destino;
-      });
-      if (regra.length === 1) item.caixa = rotulos[regra[0].tipoCaixa] || '';
+      var regra = transporteCaixaRegraPara_(regras, item);
+      if (regra) item.caixa = rotulos[regra.tipoCaixa] || '';
     });
   } catch (error) {
     // A informacao e auxiliar: falha ao ler regras nao derruba as Pendencias.
