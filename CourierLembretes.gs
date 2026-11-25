@@ -134,14 +134,20 @@ function courierLembreteOperacaoAtual_(item, op) {
   return matches.length === 1 && courierLembreteOperacaoBase_(matches[0]) === courierLembreteOperacaoBase_(op);
 }
 
-function courierLembreteRegistrarBase_(agendaId, slot, gerado, vinculoIniciadoEm) {
+// lap (opcional): subetapas no log, na geracao do envio.
+function courierLembreteRegistrarBase_(agendaId, slot, gerado, vinculoIniciadoEm, lap) {
+  lap = lap || function() {};
   // Chamado somente durante geração nova. Nunca preenche vínculos do histórico.
   // Registrar a base so usa a linha; a verificacao de horarios le os feriados depois.
-  var atual = courierLembreteAgenda_(agendaId, slot, courierLembreteAgendaSnapshot_(true, true));
+  var snapshot = courierLembreteAgendaSnapshot_(true, true);
+  lap('mo_base_ids_agenda');
+  var atual = courierLembreteAgenda_(agendaId, slot, snapshot);
+  lap('mo_base_linha');
   if (!atual) return;
   // Novo vinculo possui base propria; cobrancas antigas, inclusive incertas, permanecem intactas.
   var key = agendaId + ':' + slot + (vinculoIniciadoEm ? ':V' + new Date(vinculoIniciadoEm).getTime() : '');
   var item = courierLembreteRows_().filter(function(r) { return r.key === key; })[0];
+  lap('mo_base_lembretes');
   if (item && ['TENTATIVA', 'ENVIADO', 'INCERTO'].indexOf(item.estado) >= 0) return;
   item = item || { key: key, agendaId: agendaId, slot: slot };
   item.gerado = gerado;
@@ -149,6 +155,7 @@ function courierLembreteRegistrarBase_(agendaId, slot, gerado, vinculoIniciadoEm
   item.thread = '';
   item.message = '';
   courierLembreteSalvar_(item, 'BASE', 'Aguardando envio da solicitação');
+  lap('mo_base_gravar');
 }
 
 function courierLembreteHoraLocal_(date) {

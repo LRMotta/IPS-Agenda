@@ -298,15 +298,23 @@ function transporteEnvioConferirDono_(agendaId, slot, usuario, agora) {
  */
 function transporteAwbReservarEnvio_(agendaId, slot, usuario, opcoes) {
   opcoes = opcoes || {};
+  // Subetapas no log ([CODEX_PERF] transporteAwbReservarEnvio): espera do lock, dono, contexto e reserva.
+  var lap = transporteLapStart_('transporteAwbReservarEnvio');
   return codexWithDocumentLock_('transporteAwbReservarEnvio', function() {
+    lap('aw_lock');
     var atual = transporteEnvioConferirDono_(agendaId, slot, usuario, opcoes.agora || new Date());
+    lap('aw_dono');
     var registro = atual.registro;
     if (!registro) throw new Error('Registro de Transporte não encontrado para este envio.');
     if (!String(registro.awb || '').trim()) return { reservada: false };
     var idAgenda = String(registro.idAgenda || '').trim();
     if (!idAgenda) throw new Error('Envio sem vínculo com a Agenda: a AWB não pode ser reservada.');
-    var context = agendaAwbContextoFocado_(getAgendaSheetForRead_(), registro.awb, [idAgenda]);
+    var agenda = getAgendaSheetForRead_();
+    lap('aw_aba_agenda');
+    var context = agendaAwbContextoFocado_(agenda, registro.awb, [idAgenda]);
+    lap('aw_contexto');
     agendaAwbReservar_(context, [transporteAwbRegistro_(registro)], opcoes.strict !== false);
+    lap('aw_reservar');
     return { reservada: true, awb: registro.awb };
   });
 }
@@ -319,15 +327,22 @@ function transporteAwbReservarEnvio_(agendaId, slot, usuario, opcoes) {
 function transporteOperacaoRegistrarEnvio_(info, usuario, opcoes) {
   opcoes = opcoes || {};
   info = info || {};
+  // Subetapas no log ([CODEX_PERF] transporteOperacaoRegistrarEnvio): locks, dono, operacao e base de cobranca.
+  var lap = transporteLapStart_('transporteOperacaoRegistrarEnvio');
   var resultado = codexWithDocumentLock_('transporteOperacaoRegistrarEnvio', function() {
+    lap('mo_lock');
     transporteEnvioConferirDono_(info.agendaId, info.slot, usuario, opcoes.agora || new Date());
-    return transporteRegistrarDocumentacaoGerada_(Object.assign({}, info, { adiarBaseCobranca: true }));
+    lap('mo_dono');
+    var registrado = transporteRegistrarDocumentacaoGerada_(Object.assign({}, info, { adiarBaseCobranca: true }));
+    lap('mo_operacao');
+    return registrado;
   });
   var base = resultado && resultado.baseCobranca;
   if (base && typeof courierLembreteRegistrarBase_ === 'function') {
     try {
       codexWithDocumentLock_('transporteOperacaoBaseCobranca', function() {
-        courierLembreteRegistrarBase_(base.agendaId, base.slot, base.now, base.vinculoIniciadoEm);
+        lap('mo_base_lock');
+        courierLembreteRegistrarBase_(base.agendaId, base.slot, base.now, base.vinculoIniciadoEm, lap);
       });
     } catch (lembreteError) {
       Logger.log('Base de cobrança não registrada: ' + String(lembreteError.message || lembreteError));

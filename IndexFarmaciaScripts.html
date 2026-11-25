@@ -152,6 +152,14 @@ function farmaciaStockNumber(value) {
   return Number(value).toLocaleString('pt-BR', { maximumFractionDigits:3 });
 }
 
+// Quantidade com a unidade concordando: singular abaixo de 2 (1 caixa, 1,5 frasco), plural de 0 e a partir de 2.
+// Abreviaturas (mL, g) nao variam.
+function farmaciaStockQuantity(value, unit) {
+  var n = Math.abs(Number(value) || 0), nome = String(unit || '').trim();
+  var plural = nome && (n === 0 || n >= 2) && /[a-zà-ú]$/.test(nome) && !/^(mL|g|mg|kg|L|UI)$/.test(nome);
+  return farmaciaStockNumber(value) + (nome ? ' ' + nome + (plural ? 's' : '') : '');
+}
+
 function farmaciaStockDate(value, includeTime) {
   return includeTime ? new Date(value).toLocaleString('pt-BR', { timeZone:'America/Sao_Paulo' }) : String(value).split('-').reverse().join('/');
 }
@@ -287,7 +295,7 @@ function farmaciaAdjustmentLabel(record) {
 }
 
 function farmaciaSignedQuantity(delta, unit) {
-  return (delta > 0 ? '+' : '−') + farmaciaStockNumber(Math.abs(delta)) + ' ' + unit;
+  return (delta > 0 ? '+' : '−') + farmaciaStockQuantity(Math.abs(delta), unit);
 }
 
 function farmaciaStockSave(type, data) {
@@ -504,6 +512,21 @@ function salvarRecebimentoFarmaciaApp(event) {
   return false;
 }
 
+// Topo do histórico do lote: produto como título, dados do lote em linha e um quadro por situação do saldo.
+function farmaciaPositionSummaryHtml(position, product) {
+  var expiry = typeof farmaciaExpiryChip === 'function' ? farmaciaExpiryChip(position) : (position.expired ? ' <span class="chip chip-red farmacia-expiry-chip">Vencido</span>' : '');
+  var meta = [['Lote', esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '')], ['Validade', esc(farmaciaStockDate(position.expiry)) + expiry], ['Localização', esc(position.location)]];
+  var balances = [['physical', 'Físico'], ['available', 'Disponível'], ['pending', 'Aguardando avaliação'], ['blocked', 'Bloqueado']].map(function(item) {
+    var value = position[item[0]] || 0;
+    return '<div class="farmacia-lot-balance' + (value > 0 ? '' : ' is-zero') + '"><span>' + item[1] + '</span><strong>' + esc(farmaciaStockQuantity(value, product.unit)) + '</strong></div>';
+  }).join('');
+  var storage = typeof farmaciaStorageNote === 'function' ? farmaciaStorageNote(position.storageCheck) : '';
+  return '<div class="form-section farmacia-lot-summary"><div class="farmacia-lot-title"><strong>' + esc(product.name) + '</strong><small>' + esc([farmaciaProductCharacteristics(product), product.presentation].filter(Boolean).join(' · ')) + '</small></div>' +
+    '<dl class="farmacia-lot-meta">' + meta.map(function(item) { return '<div><dt>' + item[0] + '</dt><dd>' + item[1] + '</dd></div>'; }).join('') + '</dl>' +
+    (storage ? '<div class="farmacia-lot-storage">' + storage + '</div>' : '') +
+    '<div class="farmacia-lot-balances">' + balances + '</div></div>';
+}
+
 function farmaciaOpenPosition(id) {
   var data = FARMACIA_STOCK.data;
   var position = data && (data.positions || []).find(function(item) { return item.id === id; });
@@ -523,15 +546,15 @@ function farmaciaOpenPosition(id) {
     if (record.type === 'RECEIPT_INVOICE') return '<tr><td>Nota fiscal informada<small>' + esc(event.reason || '') + '</small></td><td>—</td><td>' + esc(farmaciaInvoiceLabel(event.invoice)) + '</td><td>' + esc(record.author) + '<small>' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     var quantity = event.quantity === undefined ? event.physical : event.quantity;
     if (record.type === 'REVALIDATION') return '<tr><td>Revalidação<small>' + esc(event.reason || '') + '</small></td><td>' + esc(farmaciaRevalidationSummary(record, data)) + '</td><td>' + esc(event.document) + '</td><td>' + esc(farmaciaStockDate(event.occurredOn)) + '<small>Registrado por ' + esc(record.author) + ' em ' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
-    if (record.type === 'ADJUSTMENT') return '<tr><td>' + esc(farmaciaAdjustmentLabel(record)) + '<small>' + esc(event.reason || '') + '</small></td><td>' + esc(farmaciaSignedQuantity(record.adjustmentDelta, product.unit)) + '<small>' + esc((event.from === 'blocked' ? 'Bloqueado' : 'Disponível') + (event.kind === 'recount' ? ' · contado: ' + farmaciaStockNumber(event.quantity) + ' ' + product.unit : '')) + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(event.occurredOn)) + '<small>Responsável: ' + esc(event.responsible) + '</small><small>Registrado por ' + esc(record.author) + ' em ' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
+    if (record.type === 'ADJUSTMENT') return '<tr><td>' + esc(farmaciaAdjustmentLabel(record)) + '<small>' + esc(event.reason || '') + '</small></td><td>' + esc(farmaciaSignedQuantity(record.adjustmentDelta, product.unit)) + '<small>' + esc((event.from === 'blocked' ? 'Bloqueado' : 'Disponível') + (event.kind === 'recount' ? ' · contado: ' + farmaciaStockQuantity(event.quantity, product.unit) : '')) + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(event.occurredOn)) + '<small>Responsável: ' + esc(event.responsible) + '</small><small>Registrado por ' + esc(record.author) + ' em ' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     if (event.action === 'transport_arrival') {
       var departure = (data.movements || []).find(function(item) { return item.id === event.departureId; });
       quantity = departure ? departure.data.quantity : undefined;
     }
-    return '<tr><td>' + esc(labels[event.action] || labels[record.type] || record.type) + '<small>' + esc(event.reason || event.note || '') + '</small></td><td>' + (quantity === undefined ? '—' : farmaciaStockNumber(quantity) + ' ' + esc(product.unit)) + '<small>' + esc(event.location || '') + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(record.registeredAt, true)) + '<small>' + esc(record.author) + '</small></td></tr>';
+    return '<tr><td>' + esc(labels[event.action] || labels[record.type] || record.type) + '<small>' + esc(event.reason || event.note || '') + '</small></td><td>' + (quantity === undefined ? '—' : esc(farmaciaStockQuantity(quantity, product.unit))) + '<small>' + esc(event.location || '') + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(record.registeredAt, true)) + '<small>' + esc(record.author) + '</small></td></tr>';
   }).join('');
-  if (!history.length) rows = '<tr><td>Saldo inicial</td><td>' + farmaciaStockNumber(position.physical) + ' ' + esc(product.unit) + '</td><td>Registro anterior</td><td>' + esc(position.author) + '<small>' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
-  var html = '<div class="form-section"><div class="section-label">' + esc(farmaciaProductLabel(product)) + ' · Lote ' + esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '') + '</div><dl class="farmacia-detail-grid"><div class="full"><dt>Localização atual</dt><dd>' + esc(position.location) + '</dd></div><div><dt>Disponível</dt><dd>' + farmaciaStockNumber(position.available) + ' ' + esc(product.unit) + '</dd></div><div><dt>Aguardando avaliação / Bloqueado</dt><dd>' + farmaciaStockNumber(position.pending || 0) + ' / ' + farmaciaStockNumber(position.blocked) + ' ' + esc(product.unit) + '</dd></div></dl></div>';
+  if (!history.length) rows = '<tr><td>Saldo inicial</td><td>' + esc(farmaciaStockQuantity(position.physical, product.unit)) + '</td><td>Registro anterior</td><td>' + esc(position.author) + '<small>' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
+  var html = farmaciaPositionSummaryHtml(position, product);
   html += farmaciaTable(['Evento / Motivo','Quantidade / Localização','Referência documental','Data / Responsável'], rows, 'Histórico do lote');
   if (position.origin === 'receipt') html += farmaciaInvoiceSectionHtml(position, data);
   if (position.inTransit) html += '<p class="farmacia-cycle-help">Conclua o transporte em andamento antes de movimentar esta entrada.</p>';
@@ -604,7 +627,7 @@ function farmaciaAdjustmentFormHtml(position, product) {
 // Revalidação: o saldo restante passa a uma nova entrada com a nova validade; o já usado mantém a antiga.
 function farmaciaRevalidationFormHtml(position, product) {
   var today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-  return '<form id="farmaciaRevalidationForm" onsubmit="return salvarRevalidacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Revalidação do fornecedor</div><p class="farmacia-action-copy">Use quando o fornecedor ou patrocinador estender a validade. O saldo restante (' + esc(farmaciaStockNumber(position.physical) + ' ' + product.unit) + ') passa à nova validade, na mesma localização e situação; o que já foi utilizado continua registrado com a validade anterior (' + esc(farmaciaStockDate(position.expiry)) + ').</p><fieldset class="form-grid farmacia-movement-fields">' +
+  return '<form id="farmaciaRevalidationForm" onsubmit="return salvarRevalidacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Revalidação do fornecedor</div><p class="farmacia-action-copy">Use quando o fornecedor ou patrocinador estender a validade. O saldo restante (' + esc(farmaciaStockQuantity(position.physical, product.unit)) + ') passa à nova validade, na mesma localização e situação; o que já foi utilizado continua registrado com a validade anterior (' + esc(farmaciaStockDate(position.expiry)) + ').</p><fieldset class="form-grid farmacia-movement-fields">' +
     '<div class="field"><label class="field-label" for="farmaciaRevalidationExpiry">Nova validade</label><input class="f-input" id="farmaciaRevalidationExpiry" type="date" min="' + esc(position.expiry > today ? position.expiry : today) + '" required></div>' +
     '<div class="field"><label class="field-label" for="farmaciaRevalidationDate">Data da revalidação</label><input class="f-input" id="farmaciaRevalidationDate" type="date" value="' + today + '" max="' + today + '" required></div>' +
     '<div class="field full"><label class="field-label" for="farmaciaRevalidationLot">Lote</label><input class="f-input" id="farmaciaRevalidationLot" maxlength="100" required value="' + esc(position.lot) + '" aria-describedby="farmaciaRevalidationLotHelp"><div class="field-help" id="farmaciaRevalidationLotHelp">Altere somente se a nova etiqueta trouxer outro número de lote.</div></div>' +
@@ -636,7 +659,7 @@ function farmaciaAdjustmentKindChanged() {
   var kind = document.getElementById('farmaciaAdjustmentKind').value;
   var product = (FARMACIA_STOCK.data.products || []).find(function(item) { return item.id === position.productId; }) || {};
   document.getElementById('farmaciaAdjustmentFrom').innerHTML = (kind === 'consumption' ? ['available'] : ['available','blocked']).map(function(key) {
-    return '<option value="' + key + '">' + ({available:'Disponível',blocked:'Bloqueado'})[key] + ' — ' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</option>';
+    return '<option value="' + key + '">' + ({available:'Disponível',blocked:'Bloqueado'})[key] + ' — ' + esc(farmaciaStockQuantity(position[key] || 0, product.unit)) + '</option>';
   }).join('');
   if (kind !== 'consumption' && position.expired) document.getElementById('farmaciaAdjustmentFrom').value = 'blocked';
   document.querySelector('label[for="farmaciaAdjustmentQuantity"]').textContent = ({consumption:'Quantidade consumida',loss:'Quantidade perdida',recount:'Quantidade contada'})[kind] + ' (' + product.unit + ')';
@@ -656,13 +679,13 @@ function farmaciaAdjustmentQuantityChanged(typing) {
   var value = input.valueAsNumber, help = document.getElementById('farmaciaAdjustmentHelp');
   var situation = from === 'blocked' ? 'bloqueado' : 'disponível';
   if (!typing || !Number.isFinite(value)) {
-    help.textContent = recount ? 'Informe a quantidade encontrada na contagem física do saldo ' + situation + ' (hoje registrado: ' + farmaciaStockNumber(current) + ' ' + product.unit + '). A diferença entra no histórico.' :
-      'Saldo ' + situation + ' atual: ' + farmaciaStockNumber(current) + ' ' + product.unit + '. A quantidade informada sai do estoque e fica registrada no histórico.';
+    help.textContent = recount ? 'Informe a quantidade encontrada na contagem física do saldo ' + situation + ' (hoje registrado: ' + farmaciaStockQuantity(current, product.unit) + '). A diferença entra no histórico.' :
+      'Saldo ' + situation + ' atual: ' + farmaciaStockQuantity(current, product.unit) + '. A quantidade informada sai do estoque e fica registrada no histórico.';
     return;
   }
   var delta = recount ? Math.round((value - current) * 1000) / 1000 : -value;
   help.textContent = !delta ? 'A contagem confere com o saldo registrado; nenhum ajuste é necessário.' :
-    'Ajuste de ' + farmaciaSignedQuantity(delta, product.unit) + '. Saldo ' + situation + ' passará de ' + farmaciaStockNumber(current) + ' para ' + farmaciaStockNumber(Math.round((current + delta) * 1000) / 1000) + ' ' + product.unit + '.';
+    'Ajuste de ' + farmaciaSignedQuantity(delta, product.unit) + '. Saldo ' + situation + ' passará de ' + farmaciaStockNumber(current) + ' para ' + farmaciaStockQuantity(Math.round((current + delta) * 1000) / 1000, product.unit) + '.';
 }
 
 function salvarAjusteFarmaciaApp(event) {
@@ -687,7 +710,7 @@ function farmaciaMovementChanged() {
   var position = FARMACIA_STOCK.positionSnapshot;
   var product = (FARMACIA_STOCK.data.products || []).find(function(item) { return item.id === position.productId; });
   from.innerHTML = (action === 'release' ? ['pending','blocked'] : ['available','pending']).map(function(key) {
-    return '<option value="' + key + '">' + ({pending:'Aguardando avaliação',blocked:'Bloqueado',available:'Disponível'})[key] + ' — ' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</option>';
+    return '<option value="' + key + '">' + ({pending:'Aguardando avaliação',blocked:'Bloqueado',available:'Disponível'})[key] + ' — ' + esc(farmaciaStockQuantity(position[key] || 0, product.unit)) + '</option>';
   }).join('');
   document.querySelector('#farmaciaMovementForm .section-label').textContent = action === 'release' ? 'Liberar saldo para uso' : 'Registrar movimentação';
   document.querySelector('#farmaciaMovementForm button[type=submit]').textContent = ({release:'Confirmar liberação',block:'Confirmar bloqueio',transfer:'Confirmar transferência'})[action];
@@ -709,7 +732,7 @@ function farmaciaMovementQuantityChanged() {
   input.max = String(transfer ? position.physical : position[document.getElementById('farmaciaMovementFrom').value] || 0);
   input.value = transfer ? String(position.physical) : '';
   var product = (FARMACIA_STOCK.data.products || []).find(function(item) { return item.id === position.productId; });
-  var balance = farmaciaStockNumber(Number(input.max)) + ' ' + product.unit;
+  var balance = farmaciaStockQuantity(Number(input.max), product.unit);
   document.querySelector('label[for="farmaciaMovementQuantity"]').textContent = (action === 'release' ? 'Quantidade a liberar' : transfer ? 'Quantidade a transferir' : 'Quantidade a bloquear') + ' (' + product.unit + ')';
   var help = document.getElementById('farmaciaMovementHelp');
   input.setAttribute('aria-describedby', 'farmaciaMovementHelp');
