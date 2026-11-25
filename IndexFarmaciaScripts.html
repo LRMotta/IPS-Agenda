@@ -152,6 +152,14 @@ function farmaciaStockNumber(value) {
   return Number(value).toLocaleString('pt-BR', { maximumFractionDigits:3 });
 }
 
+// Quantidade com a unidade concordando: singular abaixo de 2 (1 caixa, 1,5 frasco), plural de 0 e a partir de 2.
+// Abreviaturas (mL, g) nao variam.
+function farmaciaStockQuantity(value, unit) {
+  var n = Math.abs(Number(value) || 0), nome = String(unit || '').trim();
+  var plural = nome && (n === 0 || n >= 2) && /[a-zà-ú]$/.test(nome) && !/^(mL|g|mg|kg|L|UI)$/.test(nome);
+  return farmaciaStockNumber(value) + (nome ? ' ' + nome + (plural ? 's' : '') : '');
+}
+
 function farmaciaStockDate(value, includeTime) {
   return includeTime ? new Date(value).toLocaleString('pt-BR', { timeZone:'America/Sao_Paulo' }) : String(value).split('-').reverse().join('/');
 }

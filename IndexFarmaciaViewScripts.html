@@ -169,7 +169,7 @@ function farmaciaRenderTables(data) {
   var positionRows = positions.map(function(position) {
     var product = products.find(function(item) { return item.id === position.productId; }) || {};
     return '<tr data-farmacia-row data-farmacia-position="' + esc(position.id) + '"><td class="farmacia-cycle-product"><strong>' + esc(product.name) + '</strong><small>' + esc([farmaciaProductCharacteristics(product),product.presentation].filter(Boolean).join(' · ')) + '</small></td><td>' + esc(position.lot) + (position.kit ? '<small>Kit ' + esc(position.kit) + '</small>' : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) + (position.expired ? ' <span class="chip chip-red farmacia-expiry-chip">Vencido</span>' : '') + '</td><td class="farmacia-cell-detail">' + esc(position.location) + farmaciaStorageNote(position.storageCheck) + '</td>' +
-      ['physical', 'available', 'pending', 'blocked'].map(function(key) { return '<td class="farmacia-quantity">' + farmaciaStockNumber(position[key] || 0) + ' ' + esc(product.unit) + '</td>'; }).join('') +
+      ['physical', 'available', 'pending', 'blocked'].map(function(key) { return farmaciaStockQuantityCell(position[key] || 0, product.unit); }).join('') +
       (lifecycle ? '' : '<td>' + (position.origin === 'return' ? 'Retorno do participante' : position.origin === 'transport' ? 'Chegada de transporte' : position.origin === 'revalidation' ? 'Revalidação' : position.origin === 'receipt' ? 'Recebimento' : 'Saldo inicial') + '<small>' + esc(farmaciaStockDate(position.receivedOn || position.countedOn || position.occurredOn)) + '</small><small>' + esc(position.author) + '</small></td>') + '<td>' + (typeof farmaciaCycleOpen === 'function' ? '<button type="button" class="btn-txt farmacia-cycle-link" data-position-id="' + esc(position.id) + '" onclick="farmaciaCycleOpen(this.dataset.positionId)">Ver ciclo</button>' : '') + farmaciaRecordActions('position',position,data) + '</td></tr>';
   }).join('');
   var missing = farmaciaEmpty('Estoque ainda não configurado', 'O administrador precisa vincular o arquivo deste estoque antes do primeiro cadastro.', 'settings');
@@ -200,9 +200,17 @@ function farmaciaRenderCatalog(data) {
   farmaciaInitialUnitChanged();
 }
 
+// Compativel nao precisa de nota; incompativel ou equipamento indisponivel pede acao e aparece em destaque.
 function farmaciaStorageNote(check) {
   if (check && check.status === 'compatible') return '';
-  return '<small>' + esc((check || {}).message || 'Conservação pendente de conferência.') + '</small>';
+  var alerta = check && (check.status === 'incompatible' || check.status === 'unavailable');
+  return '<small' + (alerta ? ' class="farmacia-storage-alert"' : '') + '>' + esc((check || {}).message || 'Conservação pendente de conferência.') + '</small>';
+}
+
+// Saldo da tabela de estoque: zero fica apagado para os saldos reais se destacarem.
+function farmaciaStockQuantityCell(value, unit) {
+  var zero = !(Number(value) > 0);
+  return '<td class="farmacia-quantity' + (zero ? ' farmacia-quantity-zero' : '') + '">' + esc(farmaciaStockQuantity(value, unit)) + '</td>';
 }
 
 function farmaciaCalibrationBadge(status, historical) {
