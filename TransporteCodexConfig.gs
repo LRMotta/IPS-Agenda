@@ -2172,6 +2172,9 @@ function transporteReadLabCentralDireto_() {
 }
 
 function transporteReadLabCentral_() {
+  // Abertura ou geracao do envio: a operacao ja foi autorizada na entrada da RPC. getLabCentral() refaria a
+  // autorizacao (releitura da aba Users, ~1 s) a cada consulta; a leitura direta sai uma vez por execucao.
+  if (TRANSPORTE_ABERTURA_MEMO_) return transporteAberturaMemo_('labCentral', transporteReadLabCentralDireto_);
   if (typeof getLabCentral === 'function') {
     try {
       return getLabCentral() || [];
@@ -2236,7 +2239,18 @@ function transporteMedicoByNome_(nome) {
   if (!key) return null;
   try {
     var medicos = [];
-    if (typeof getMedicos === 'function') {
+    if (TRANSPORTE_ABERTURA_MEMO_ && typeof getMedicosDados_ === 'function') {
+      // Execucao ja autorizada (abertura ou geracao do envio): sem refazer a autorizacao de getMedicos() a cada
+      // consulta. A geracao consulta o medico na Peticao e na Declaracao; a aba e lida uma vez.
+      medicos = transporteAberturaMemo_('medicos', function() {
+        try {
+          return getMedicosDados_() || [];
+        } catch (eDados) {
+          Logger.log('Cadastro de medicos nao lido no Transporte; usando leitura direta: ' + eDados.message);
+          return [];
+        }
+      });
+    } else if (typeof getMedicos === 'function') {
       try {
         medicos = getMedicos() || [];
       } catch (eGetMedicos) {
@@ -3642,17 +3656,27 @@ function transporteEscreverCamposModelos_(ss, payload, materiaisNote, assinatura
 
 // Automacoes e cadastros aplicados aos modelos (temperatura, caixa, courier, medico,
 // laboratorio, protocolo, Peticao e DHL). Usada pelo salvamento e por transporteDocsDados_.
-function transportePrepararDocumentosModelos_(ss, payload) {
+// lap (opcional): subetapas no log, na geracao do envio (transporteDocsDados_ com medir).
+function transportePrepararDocumentosModelos_(ss, payload, lap) {
+  lap = lap || function() {};
   transporteAplicarAutomacoesTemperatura_(ss, payload);
+  lap('dm_temperatura');
   aplicarSolicitacaoCaixaTransporte_(ss, payload);
+  lap('dm_caixa');
   transporteAplicarCourierConfig_(ss, payload.courier);
+  lap('dm_courier');
   transportePreencherPeticaoMedico_(ss, payload);
+  lap('dm_peticao_medico');
   transportePreencherDeclaracaoCadastros_(ss, payload);
+  lap('dm_declaracao_cadastros');
   if (payload.courier === 'PINEX') atualizarCommercialInvoicePinexB34_(ss);
   preencherDadosProtocoloPeticaoWebApp_(ss, payload);
+  lap('dm_peticao_protocolo');
   preencherPeticaoAnuenciaWebApp_(ss, payload);
+  lap('dm_peticao_anuencia');
   if (payload.courier !== 'MARKEN') atualizarInvoiceMarkenAmostras_(ss);
   preencherDhlWebApp_(ss, payload);
+  lap('dm_invoice_dhl');
 }
 
 function transporteSetEnsaiosPeticao_(peticao, materiais) {

@@ -20,16 +20,28 @@ function transporteEnvioCeStatus_(protocolo) {
   return { checked: true, found: false, message: 'CE não localizada para o estudo.' };
 }
 
+// Assinatura do Gmail: na geracao (execucao ja autorizada), sem refazer a autorizacao de getGmailSignature().
+function transporteEnvioAssinatura_() {
+  if (TRANSPORTE_ABERTURA_MEMO_ && typeof getGmailSignatureDados_ === 'function') {
+    return transporteAberturaMemo_('assinaturaGmail', getGmailSignatureDados_);
+  }
+  return getGmailSignature();
+}
+
 /**
  * Rascunho do e-mail da courier a partir do registro (mesmas regras de criarRascunhoEmail_).
  * opcoes: { requestedByEmail, temperaturaPdf, monitorRef, pdfHash, generationRequestId, pdfFileId }.
  * Nunca lanca por falha de Gmail: devolve { ok:false, ... } para a tela oferecer "Tentar de novo".
  */
 function transporteEnvioCriarRascunho_(registro, opcoes) {
+  // Subetapas no log ([CODEX_PERF] transporteEnvioRascunho): a etapa rascunho da geracao, por partes.
+  var lap = transporteLapStart_('transporteEnvioRascunho');
   try {
     var guard = transporteAssertGmailDraftAllowed_({ requestedByEmail: opcoes.requestedByEmail || '', agendadoPor: registro.agendadoPor });
+    lap('rc_permissao');
     if (!guard.ok) return guard;
     var email = transporteEmailDoRegistro_(registro, { temperaturaPdf: opcoes.temperaturaPdf });
+    lap('rc_email');
     if (email.semRascunho) {
       return { ok: email.ok, skipped: email.ok, message: email.motivo, error: email.erro || '', userEmail: guard.userEmail, activeUserEmail: guard.activeUserEmail, requestedByEmail: guard.requestedByEmail };
     }
@@ -52,12 +64,16 @@ function transporteEnvioCriarRascunho_(registro, opcoes) {
         try { anexos.push(DriveApp.getFileById(opcoes.peticaoFileId).getBlob()); peticaoAnexada = 'sim'; } catch (erroPeticao) { Logger.log('Peticao nao anexada ao rascunho.'); }
       }
     }
-    var corpo = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(email.html + '<p>Atenciosamente,</p>') + getGmailSignature() +
+    lap('rc_anexos', anexos.length);
+    var assinatura = transporteEnvioAssinatura_();
+    lap('rc_assinatura');
+    var corpo = transporteCodexFixMojibakeText_(transporteCodexEmailWrap_(email.html + '<p>Atenciosamente,</p>') + assinatura +
       transporteMonitorRefHtml_(opcoes.monitorRef, opcoes.pdfHash, opcoes.generationRequestId));
     var draftOptions = { htmlBody: corpo, attachments: anexos };
     if (cc.length) draftOptions.cc = cc.join(', ');
     transporteGenerationCheckpoint_({ phase: 'DRAFT_INTENT' });
     var rascunho = GmailApp.createDraft(email.destinatarios.join(', '), email.assunto, '', draftOptions);
+    lap('rc_gmail');
     var draftId = '';
     try { draftId = rascunho && rascunho.getId ? String(rascunho.getId() || '') : ''; } catch (erroId) { draftId = ''; }
     if (!draftId) throw new Error('Rascunho criado sem confirmação do ID. Confira o Gmail.');
@@ -77,7 +93,7 @@ function transporteEnvioGerarPdf_(registro, request, usuario, lap) {
   var courier = registro.courier;
   var temperatura = transporteNormalizeTemperaturaFromCodex_(registro.temperatura);
   if (request.record.pdf && request.record.pdf.fileId) return Object.assign({}, request.record.pdf, { reaproveitado: true });
-  var docs = transporteDocsDados_(registro);
+  var docs = transporteDocsDados_(registro, { medir: true });
   lap('pdf_dados');
   var spec = transportePdfSpec_(courier, temperatura, registro.destino, docs.ss);
   if (!spec.ordem.length) throw new Error('Courier sem configuração de PDF: ' + courier);
@@ -184,6 +200,18 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
   var access = transporteAssertOperador_();
   var usuario = transporteEnvioUsuario_(access);
   lap('acesso');
+  // Execucao autorizada acima: cadastros (medicos, LabCentral, Projetos) e assinatura lidos uma vez, sem refazer a
+  // autorizacao a cada consulta (cada uma relia a aba Users). Descartados ao sair, como em getTransporteEnvio.
+  var memoAnterior = TRANSPORTE_ABERTURA_MEMO_;
+  TRANSPORTE_ABERTURA_MEMO_ = { usuario: { email: usuario, name: access.name || '', firstName: access.firstName || '' } };
+  try {
+    return transporteEnvioGerarDocumentos_(agendaId, slot, versao, generationRequestId, usuario, lap);
+  } finally {
+    TRANSPORTE_ABERTURA_MEMO_ = memoAnterior;
+  }
+}
+
+function transporteEnvioGerarDocumentos_(agendaId, slot, versao, generationRequestId, usuario, lap) {
   var posse = transporteEnvioReivindicar_(agendaId, slot, usuario);
   lap('reivindicar');
   if (!posse.ok) throw transporteRegistroErro_('TRANSPORTE_REGISTRO_EM_PREPARO', 'Este transporte está sendo preparado por outra pessoa agora.', { emPreparoPor: posse.emPreparoPor });

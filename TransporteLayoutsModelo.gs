@@ -745,8 +745,11 @@ function transporteDocsDadosDeclaracaoPadrao_(ss) {
 function transporteDocsDados_(registro, opcoes) {
   opcoes = opcoes || {};
   registro = registro || {};
+  // opcoes.medir: subetapas no log ([CODEX_PERF] transporteDocsDados), usado pela geracao do envio.
+  var lap = opcoes.medir ? transporteLapStart_('transporteDocsDados') : null;
   var arquivo = opcoes.arquivo || transporteLayoutsCarregar_();
   var ss = transporteLayoutsPlanilha_(arquivo);
+  if (lap) lap('dd_layouts');
   var avisosAnteriores = TRANSPORTE_GENERATION_WARNINGS_;
   var avisos = [];
   TRANSPORTE_GENERATION_WARNINGS_ = avisos;
@@ -755,9 +758,11 @@ function transporteDocsDados_(registro, opcoes) {
   try {
     var peticao = transporteGetSheet_(ss, 'peticaoAnuencia', false);
     transporteEscreverCamposModelos_(ss, registro, transporteMateriaisNote_('', registro, peticao));
-    transportePrepararDocumentosModelos_(ss, registro);
+    if (lap) lap('dd_campos');
+    transportePrepararDocumentosModelos_(ss, registro, lap);
     transporteDocsDadosDeclaracaoPadrao_(ss);
     transporteAjustarVolumesDeclaracao_(transporteGetSheet_(ss, 'declaracaoTransp', false), true);
+    if (lap) lap('dd_volumes');
   } catch (e) {
     erro = e;
   } finally {
