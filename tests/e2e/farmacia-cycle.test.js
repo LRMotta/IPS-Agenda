@@ -182,3 +182,30 @@ test('formulários ocultam o que não se aplica: origem/destino no armazenamento
     assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });
+
+test('revalidação no histórico do lote envia nova validade, lote e documento com a revisão atual; recebimento abre como recebimento',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);
+    await page.locator('[data-farmacia-position="IN1"] [data-action="view"]').click();
+    const form=page.locator('#farmaciaRevalidationForm');
+    assert.equal(await form.isVisible(),true);
+    assert.match(await form.textContent(),/110 comprimido/);
+    assert.equal(await page.locator('#farmaciaRevalidationLot').inputValue(),'DEMO-001');
+    await page.locator('#farmaciaRevalidationExpiry').fill('2028-02-29');
+    await page.locator('#farmaciaRevalidationReason').fill('Extensão de validade');
+    await page.locator('#farmaciaRevalidationDocument').fill('Carta do patrocinador 20/10/2026');
+    await capture(page,'revalidacao',1536);
+    await form.locator('[type="submit"]').click();
+    const call=await page.evaluate(()=>window.pending.at(-1));
+    assert.equal(call.method,'registrarRevalidacaoFarmacia');
+    assert.deepEqual(call.args[0].data,{positionId:'IN1',revision:'OP-BLOCK',lot:'DEMO-001',expiry:'2028-02-29',occurredOn:'2026-10-26',reason:'Extensão de validade',document:'Carta do patrocinador 20/10/2026'});
+    await page.evaluate(()=>window.pending.at(-1).failure({message:'O saldo mudou.'}));
+    assert.match(await page.locator('#farmaciaModal-positionDetail .farmacia-dialog-status').textContent(),/preservados/);
+    assert.equal(await page.locator('#farmaciaRevalidationDocument').inputValue(),'Carta do patrocinador 20/10/2026');
+    await page.evaluate(()=>{const data=FARMACIA_STOCK.data;data.positions[0].origin='receipt';renderFarmaciaEstoque(data);});
+    await page.evaluate(()=>window.farmaciaOpenRecordAction('position','IN1','edit'));
+    assert.equal(await page.locator('#farmaciaRecordActionTitle').textContent(),'Editar recebimento');
+    assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
+});

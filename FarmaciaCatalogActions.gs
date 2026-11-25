@@ -36,10 +36,15 @@ function farmaciaApplyCatalogAction_(ledger, record) {
       list[index] = Object.assign({}, current, { data: next, revision: record.id });
     }
   } else {
-    if (current.origin !== 'initial' || ledger.movements.some(function(item) { return ['MOVEMENT', 'LIFECYCLE', 'ADJUSTMENT'].indexOf(item.type) !== -1 && item.data.positionId === current.id; })) throw new Error('Recebimentos e registros com movimentações preservam seu histórico. Use uma movimentação documentada.');
+    // Recebimento sem movimentações aceita correção de lote/validade/observação (erro de digitação na entrada);
+    // a exclusão continua restrita ao inventário inicial.
+    var receipt = current.origin === 'receipt';
+    if (current.origin !== 'initial' && !(receipt && !deleting)) throw new Error(receipt ? 'Recebimentos não podem ser excluídos. Corrija o lote, a validade ou a observação, ou use uma movimentação documentada.' : 'Entradas de retorno, transporte ou revalidação preservam seu histórico. Use uma movimentação documentada.');
+    if (ledger.movements.some(function(item) { return ['MOVEMENT', 'LIFECYCLE', 'ADJUSTMENT', 'REVALIDATION'].indexOf(item.type) !== -1 && item.data.positionId === current.id; })) throw new Error('Registros com movimentações preservam seu histórico. Este lote já tem liberação, bloqueio, transferência, dispensação, ajuste ou revalidação registrado; use uma movimentação documentada.');
     if (!deleting) {
       var corrected = Object.assign({}, current, data.data);
       if (ledger.positions.some(function(item) { return item.id !== current.id && farmaciaSamePosition_(item, corrected); })) throw new Error('Esta posição já possui saldo.');
+      if (receipt && ledger.positions.some(function(item) { return item.id !== current.id && item.origin === 'receipt' && farmaciaReceiptKey_(item) === farmaciaReceiptKey_(corrected); })) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
       list[index] = Object.assign(corrected, { revision: record.id });
     }
   }

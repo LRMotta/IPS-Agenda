@@ -324,8 +324,8 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
       // Nunca desserializar payloads de outros estudos/classes na consulta autorizada.
       if (scope !== context.studyId || row[3] !== context.restricted) return;
       var registeredAt = JSON.parse(row[5]), author = JSON.parse(row[6]), data = JSON.parse(row[7]);
-      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', LIFECYCLE: 'FLC-', ADJUSTMENT: 'FAJ-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-', RECEIPT_INVOICE: 'FNF-' };
-      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA|LC|AJ|NF)-[A-Za-z0-9_-]+$/.test(row[0]) ||
+      var prefixes = { PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-', LIFECYCLE: 'FLC-', ADJUSTMENT: 'FAJ-', REVALIDATION: 'FRV-', PRODUCT_EDIT: 'FCA-', PRODUCT_DELETE: 'FCA-', INITIAL_EDIT: 'FCA-', INITIAL_DELETE: 'FCA-', RECEIPT_INVOICE: 'FNF-' };
+      if (typeof row[0] !== 'string' || !/^F(?:PR|IN|RC|MV|CA|LC|AJ|NF|RV)-[A-Za-z0-9_-]+$/.test(row[0]) ||
           !prefixes[row[1]] || row[0].indexOf(prefixes[row[1]]) !== 0 || scope !== context.studyId || row[3] !== context.restricted ||
           typeof row[4] !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(row[4]) ||
           typeof registeredAt !== 'string' || isNaN(Date.parse(registeredAt)) || new Date(registeredAt).toISOString() !== registeredAt ||
@@ -359,6 +359,9 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
       } else if (record.type === 'ADJUSTMENT') {
         if (context.studyId !== FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaAdjustmentData_(data)) !== record.dataJson) throw new Error('Ajuste de quantidade inválido.');
         farmaciaApplyAdjustment_({ products: products, positions: positions, movements: movements }, record);
+      } else if (record.type === 'REVALIDATION') {
+        if (JSON.stringify(farmaciaRevalidationData_(data)) !== record.dataJson) throw new Error('Revalidação inválida.');
+        farmaciaApplyRevalidation_({ positions: positions, movements: movements }, record);
       } else if (record.type !== 'MOVEMENT') {
         if (JSON.stringify(farmaciaCatalogActionData_(record.type, data)) !== record.dataJson ||
             (record.type === 'PRODUCT_EDIT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.data.supplySource === 'sponsor')) throw new Error('Correção inválida.');
@@ -509,9 +512,12 @@ function farmaciaWrite_(payload, type) {
         ((type === 'INITIAL' && farmaciaSamePosition_(record.data, data)) || (data.kit && record.data.kit === data.kit));
     })) throw new Error('Esta posição ou kit já possui inventário inicial. Não repita a contagem como nova entrada.');
     if (type === 'INITIAL' && ledger.positions.some(function(position) { return farmaciaSamePosition_(position, data); })) throw new Error('Esta posição já possui saldo. Não repita a contagem como nova entrada.');
-    if (type === 'RECEIPT' && ledger.records.some(function(record) {
+    if (type === 'RECEIPT' && (ledger.records.some(function(record) {
       return record.type === 'RECEIPT' && farmaciaReceiptKey_(record.data) === farmaciaReceiptKey_(data);
-    })) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
+    }) || ledger.positions.some(function(position) {
+      // Lote corrigido depois do recebimento: a chave atual também identifica o mesmo recebimento.
+      return position.origin === 'receipt' && farmaciaReceiptKey_(position) === farmaciaReceiptKey_(data);
+    }))) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
     var id = ({ PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-' })[type] + Utilities.getUuid();
     if (ledger.records.some(function(record) { return record.id === id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
     if (type === 'MOVEMENT') {

@@ -16,7 +16,7 @@ function fixture(realLocations = false) {
   const stores = { [STANDARD]:new FakeSpreadsheet({}), [RESTRICTED]:new FakeSpreadsheet({}) };
   const lock = fakeDocumentLock();
   const state = { config:'', opened:[], today:'2026-10-21', uuid:0 };
-  const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'FarmaciaLocais.gs', 'FarmaciaLocationActions.gs', 'MedicamentosNotasFiscais.gs'], {
+  const server = runFiles(['WebApp.gs', 'FarmaciaEstoque.gs', 'FarmaciaLocais.gs', 'FarmaciaLocationActions.gs', 'MedicamentosNotasFiscais.gs', 'FarmaciaCatalogActions.gs'], {
     LockService:lock.LockService,
     PropertiesService:{ getScriptProperties:() => ({ getProperty:() => state.config }) },
     SpreadsheetApp:{ openById:id => { state.opened.push(id); if (!stores[id]) throw new Error('Arquivo desconhecido'); return stores[id]; } },
@@ -752,6 +752,22 @@ test('recebimento valida data, documento, produto, kit e localização antes de 
   assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt(),requestId:'receipt-request-newid'}),/já foi registrado/);
   assert.throws(()=>f.server.registrarInventarioInicialFarmacia({...f.initial(f.productId),data:{...f.initial(f.productId).data,lot:'L2'}}),/já possui/);
   assert.equal(f.stock().positions.length,1);
+});
+
+test('recebimento sem movimentações aceita correção de lote e validade; exclusão e lote movimentado continuam bloqueados', () => {
+  const f=lifecycleFixture(), received=f.server.registrarRecebimentoFarmacia(f.receipt());
+  const action=(type,revision,data,requestId)=>({studyId:'P1',restricted:false,requestId,type,data:{entityId:received.id,revision,reason:'Lote digitado incorretamente',...(data?{data}:{})}});
+  assert.throws(()=>f.server.alterarRegistroFarmacia(action('INITIAL_DELETE',received.id,null,'receipt-delete-00001')),/Recebimentos não podem ser excluídos/);
+  const saved=f.server.alterarRegistroFarmacia(action('INITIAL_EDIT',received.id,{lot:'L9',expiry:'2027-03-31',note:''},'receipt-edit-000001'));
+  let position=f.stock().positions[0];
+  assert.equal(position.origin,'receipt'); assert.equal(position.lot,'L9'); assert.equal(position.expiry,'2027-03-31');
+  assert.equal(position.physical,10); assert.equal(position.pending,10); assert.equal(position.document,'REMESSA-001'); assert.equal(position.revision,saved.id);
+  assert.equal(f.stock().movements[0].data.lot,'L2');
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt({lot:'L9'}),requestId:'receipt-after-correction'}),/já foi registrado/);
+  f.server.registrarMovimentacaoFarmacia(f.move(position));
+  position=f.stock().positions[0];
+  assert.throws(()=>f.server.alterarRegistroFarmacia(action('INITIAL_EDIT',position.revision,{lot:'L10',expiry:'2027-03-31',note:''},'receipt-edit-000002')),/movimentações preservam/);
+  assert.equal(f.stock().positions[0].lot,'L9');
 });
 
 test('kit recebido é único entre recebimentos e inventário e produto local não recebe ciclo do patrocinador', () => {

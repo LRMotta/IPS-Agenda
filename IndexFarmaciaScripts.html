@@ -320,7 +320,7 @@ function farmaciaStockSave(type, data) {
     modal.dataset.extraSaving = '0';
     if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges(modal.id);
     fecharOverlay(modal.id);
-    if (type !== 'status' && type !== 'calibration' && type !== 'movement' && type !== 'adjustment' && type !== 'invoice') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
+    if (type !== 'status' && type !== 'calibration' && type !== 'movement' && type !== 'adjustment' && type !== 'revalidation' && type !== 'invoice') document.getElementById(type === 'product' ? 'farmaciaProductForm' : type === 'location' ? 'farmaciaLocationForm' : type === 'probe' ? 'farmaciaProbeForm' : type === 'receipt' ? 'farmaciaReceiptForm' : 'farmaciaInitialForm').reset();
     farmaciaProductControlChanged();
     farmaciaProductCategoryChanged();
     if (catalogAction && result && result.catalog && Array.isArray(result.catalog.storageUnits)) {
@@ -362,6 +362,7 @@ function farmaciaStockSave(type, data) {
   else if (type === 'receipt') runner.registrarRecebimentoFarmacia(payload);
   else if (type === 'movement') runner.registrarMovimentacaoFarmacia(payload);
   else if (type === 'adjustment') runner.registrarAjusteFarmacia(payload);
+  else if (type === 'revalidation') runner.registrarRevalidacaoFarmacia(payload);
   else if (type === 'invoice') runner.registrarNotaRecebimentoFarmacia(payload);
   else runner.registrarInventarioInicialFarmacia(payload);
 }
@@ -513,6 +514,7 @@ function farmaciaOpenPosition(id) {
   FARMACIA_STOCK.positionSnapshot = Object.assign({}, position);
   FARMACIA_STOCK.movementToken = '';
   FARMACIA_STOCK.adjustmentToken = '';
+  FARMACIA_STOCK.revalidationToken = '';
   FARMACIA_STOCK.invoiceToken = '';
   var labels = {INITIAL:'Saldo inicial',RECEIPT:'Recebimento',block:'Bloqueio',release:'Liberação',transfer:'Transferência',dispense:'Dispensação',return:'Retorno do participante',transport_departure:'Saída para transporte',transport_arrival:'Chegada do transporte',destination:'Destinação final'};
   var history = (data.movements || []).filter(function(record) { return record.id === id || record.data.positionId === id || (record.type === 'RECEIPT_INVOICE' && record.data.receiptId === id); });
@@ -520,6 +522,7 @@ function farmaciaOpenPosition(id) {
     var event = record.data;
     if (record.type === 'RECEIPT_INVOICE') return '<tr><td>Nota fiscal informada<small>' + esc(event.reason || '') + '</small></td><td>—</td><td>' + esc(farmaciaInvoiceLabel(event.invoice)) + '</td><td>' + esc(record.author) + '<small>' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     var quantity = event.quantity === undefined ? event.physical : event.quantity;
+    if (record.type === 'REVALIDATION') return '<tr><td>Revalidação<small>' + esc(event.reason || '') + '</small></td><td>' + esc(farmaciaRevalidationSummary(record, data)) + '</td><td>' + esc(event.document) + '</td><td>' + esc(farmaciaStockDate(event.occurredOn)) + '<small>Registrado por ' + esc(record.author) + ' em ' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     if (record.type === 'ADJUSTMENT') return '<tr><td>' + esc(farmaciaAdjustmentLabel(record)) + '<small>' + esc(event.reason || '') + '</small></td><td>' + esc(farmaciaSignedQuantity(record.adjustmentDelta, product.unit)) + '<small>' + esc((event.from === 'blocked' ? 'Bloqueado' : 'Disponível') + (event.kind === 'recount' ? ' · contado: ' + farmaciaStockNumber(event.quantity) + ' ' + product.unit : '')) + '</small></td><td>' + esc(event.document || 'Não informada') + '</td><td>' + esc(farmaciaStockDate(event.occurredOn)) + '<small>Responsável: ' + esc(event.responsible) + '</small><small>Registrado por ' + esc(record.author) + ' em ' + esc(farmaciaStockDate(record.registeredAt, true)) + '</small></td></tr>';
     if (event.action === 'transport_arrival') {
       var departure = (data.movements || []).find(function(item) { return item.id === event.departureId; });
@@ -541,6 +544,7 @@ function farmaciaOpenPosition(id) {
     '<div class="field full"><label class="field-label" for="farmaciaMovementReason">Motivo (obrigatório)</label><input class="f-input" id="farmaciaMovementReason" maxlength="500" required></div>' +
     '<div class="field full"><label class="field-label" for="farmaciaMovementDocument">Documento de suporte (obrigatório)</label><input class="f-input" id="farmaciaMovementDocument" maxlength="200" required aria-describedby="farmaciaMovementDocumentHelp"><div class="field-help" id="farmaciaMovementDocumentHelp">Qual documento autoriza esta ação? Informe o nome ou número e a versão ou data. Ex.: e-mail do patrocinador de 26/10/2026.</div></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar movimentação</button></div></form>';
   if (FARMACIA_STOCK.studyId === '@IPS_COMMON' && product.supplySource !== 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += farmaciaAdjustmentFormHtml(position, product);
+  if (data.farmaciaAccess === 'manage' && !position.inTransit && !position.returned && position.physical > 0) html += farmaciaRevalidationFormHtml(position, product);
   document.getElementById('farmaciaPositionDetail').innerHTML = html;
   if (document.getElementById('farmaciaAdjustmentForm')) farmaciaAdjustmentKindChanged();
   if (document.getElementById('farmaciaInvoiceForm')) farmaciaReceiptLoadSenders();
@@ -595,6 +599,35 @@ function farmaciaAdjustmentFormHtml(position, product) {
     '<div class="field full"><label class="field-label" for="farmaciaAdjustmentResponsible">Responsável</label><input class="f-input" id="farmaciaAdjustmentResponsible" maxlength="120" required value="' + esc((typeof CURRENT_ACCESS === 'object' && CURRENT_ACCESS && CURRENT_ACCESS.name) || '') + '"></div>' +
     '<div class="field full"><label class="field-label" for="farmaciaAdjustmentReason">Justificativa (obrigatória)</label><input class="f-input" id="farmaciaAdjustmentReason" maxlength="500" required placeholder="Ex.: uso no procedimento da visita, frasco quebrado, contagem mensal"></div>' +
     '<div class="field full"><label class="field-label" for="farmaciaAdjustmentDocument">Referência documental (opcional)</label><input class="f-input" id="farmaciaAdjustmentDocument" maxlength="200"></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar ajuste</button></div></form>';
+}
+
+// Revalidação: o saldo restante passa a uma nova entrada com a nova validade; o já usado mantém a antiga.
+function farmaciaRevalidationFormHtml(position, product) {
+  var today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  return '<form id="farmaciaRevalidationForm" onsubmit="return salvarRevalidacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Revalidação do fornecedor</div><p class="farmacia-action-copy">Use quando o fornecedor ou patrocinador estender a validade. O saldo restante (' + esc(farmaciaStockNumber(position.physical) + ' ' + product.unit) + ') passa à nova validade, na mesma localização e situação; o que já foi utilizado continua registrado com a validade anterior (' + esc(farmaciaStockDate(position.expiry)) + ').</p><fieldset class="form-grid farmacia-movement-fields">' +
+    '<div class="field"><label class="field-label" for="farmaciaRevalidationExpiry">Nova validade</label><input class="f-input" id="farmaciaRevalidationExpiry" type="date" min="' + esc(position.expiry > today ? position.expiry : today) + '" required></div>' +
+    '<div class="field"><label class="field-label" for="farmaciaRevalidationDate">Data da revalidação</label><input class="f-input" id="farmaciaRevalidationDate" type="date" value="' + today + '" max="' + today + '" required></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaRevalidationLot">Lote</label><input class="f-input" id="farmaciaRevalidationLot" maxlength="100" required value="' + esc(position.lot) + '" aria-describedby="farmaciaRevalidationLotHelp"><div class="field-help" id="farmaciaRevalidationLotHelp">Altere somente se a nova etiqueta trouxer outro número de lote.</div></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaRevalidationReason">Motivo (obrigatório)</label><input class="f-input" id="farmaciaRevalidationReason" maxlength="500" required placeholder="Ex.: extensão de validade comunicada pelo patrocinador"></div>' +
+    '<div class="field full"><label class="field-label" for="farmaciaRevalidationDocument">Documento da revalidação (obrigatório)</label><input class="f-input" id="farmaciaRevalidationDocument" maxlength="200" required placeholder="Ex.: carta de extensão de validade de 20/11/2026"></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar revalidação</button></div></form>';
+}
+
+function farmaciaRevalidationSummary(record, data) {
+  var source = (data.positions || []).find(function(item) { return item.id === record.data.positionId; }) || {};
+  var target = (data.positions || []).find(function(item) { return item.id === record.id; }) || {};
+  var previousLot = target.previousLot || source.lot, previousExpiry = target.previousExpiry || source.expiry;
+  return 'Validade ' + farmaciaStockDate(previousExpiry) + ' → ' + farmaciaStockDate(record.data.expiry) + (previousLot && previousLot !== record.data.lot ? ' · Lote ' + previousLot + ' → ' + record.data.lot : '');
+}
+
+function salvarRevalidacaoFarmaciaApp(event) {
+  event.preventDefault();
+  var position = FARMACIA_STOCK.positionSnapshot;
+  if (!position) return false;
+  farmaciaStockSave('revalidation', {positionId:position.id, revision:position.revision,
+    lot:document.getElementById('farmaciaRevalidationLot').value, expiry:document.getElementById('farmaciaRevalidationExpiry').value,
+    occurredOn:document.getElementById('farmaciaRevalidationDate').value, reason:document.getElementById('farmaciaRevalidationReason').value,
+    document:document.getElementById('farmaciaRevalidationDocument').value});
+  return false;
 }
 
 function farmaciaAdjustmentKindChanged() {
