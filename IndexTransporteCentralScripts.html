@@ -620,7 +620,32 @@
       .getTransporteTarefas({});
   }
 
+  // "Gerar docs" da Agenda: abre o passo a passo deste transporte, em qualquer status. Com a Agenda mudada depois dos
+  // documentos (data, materiais…), a abertura volta a Conferir e descarta o PDF antigo; o servidor decide.
+  function transpCentralAbrirEnvioPelaAgenda(agendaId, slot) {
+    if (!agendaId || !slot) { snackErro('Transporte não encontrado.'); return; }
+    if (!appConfirmNavigationIfDirty(null, function() {
+      appClearUnsavedChanges();
+      transpCentralAbrirEnvioPelaAgenda(agendaId, slot);
+    })) return;
+    TRANSP_CENTRAL_STATE.abrirEnvio = { agendaId: String(agendaId), slot: String(slot) };
+    irPara('transporte-central');
+    // Navegação recusada (acesso, outro módulo): o pedido não fica para a próxima visita à tela.
+    if (getCurrentPage() !== 'transporte-central') TRANSP_CENTRAL_STATE.abrirEnvio = null;
+  }
+
   function carregarTransporteCentral() {
+    var pedido = TRANSP_CENTRAL_STATE.abrirEnvio;
+    TRANSP_CENTRAL_STATE.abrirEnvio = null;
+    if (pedido) {
+      // Uma geração em curso não é interrompida: a resposta dela ainda precisa chegar à tela.
+      if (typeof TC_ENVIO !== 'undefined' && TC_ENVIO.aberto && TC_ENVIO.gerando) {
+        snack('Há documentos sendo gerados nesta tela. Aguarde terminar e use Gerar docs de novo.');
+      } else {
+        transpCentralAbrirEnvio(pedido.agendaId, pedido.slot);
+        return;
+      }
+    }
     // Voltando da Agenda ("Corrigir") com um envio aberto: relê os dados corrigidos, preservando o que a pessoa preencheu.
     if (typeof TC_ENVIO !== 'undefined' && TC_ENVIO.aberto && TC_ENVIO.agendaId && TC_ENVIO.passo !== 'fim' && !TC_ENVIO.gerando) {
       transpCentralAbrirEnvio(TC_ENVIO.agendaId, TC_ENVIO.slot);

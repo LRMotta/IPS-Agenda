@@ -3538,14 +3538,12 @@
     dados._editFieldVersions = _agendaEditFieldVersions;
     dados._editMergeToken = _agendaEditMergeToken;
     var editRequestId = _agendaEditOpenRequestId;
-    var transporteContext = transporteAgendaContextFromDados(dados, slot, _agendaEditId);
-    var transporteWindow = prepararJanelaTransporte(transporteContext);
 
     var btn = document.getElementById(btnId);
     var originalHtml = btn ? btn.innerHTML : '';
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Gerando...';
+      btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Abrindo...';
     }
     function resetBtn() {
       if (!btn) return;
@@ -3558,7 +3556,6 @@
         resetBtn();
         if (res && (res.erro || res.conflito)) {
           if (dados.id === _agendaEditId && editRequestId === _agendaEditOpenRequestId && res.conflito) agendaPreservarConflito_(res);
-          atualizarJanelaTransporteErro(transporteWindow, res.erro);
           snackErro(res.erro);
           return;
         }
@@ -3570,13 +3567,12 @@
           _agendaConflictDraftActive = String(_agendaEditId);
           agendaConflictDraftSave_();
           var pendingMsg = 'O agendamento foi salvo com as atualizações simultâneas. Você fez novas alterações nesta tela; salve-as antes de abrir o Transporte.';
-          atualizarJanelaTransporteErro(transporteWindow, pendingMsg);
           snack(pendingMsg);
           agendaRecarregarJanelaAtual_();
           return;
         }
-        snack('Abrindo Transporte e sincronizando dados da Agenda...');
-        if (dados.id === _agendaEditId && editRequestId === _agendaEditOpenRequestId &&
+        var mesmoRegistro = dados.id === _agendaEditId && editRequestId === _agendaEditOpenRequestId;
+        if (mesmoRegistro &&
             (!res || !res.merged || JSON.stringify(coletarAgendaEvento()) === formAtSend)) {
           if (res && res.mergedEvent) abrirAgendaEdicaoComRegistro_(res.mergedEvent);
           agendaConflictDraftClear_(dados.id);
@@ -3589,13 +3585,18 @@
           if (typeof appClearUnsavedChanges === 'function') appClearUnsavedChanges('agendaCreatePanel');
         }
         agendaRecarregarJanelaAtual_();
-        abrirTransporteModulo(transporteWindow, transporteContext);
+        // Outro agendamento aberto no modal durante o salvamento: não fecha a edição de outro registro.
+        if (!mesmoRegistro) {
+          snack('Agendamento salvo. Use Gerar docs neste transporte para abrir o passo a passo.');
+          return;
+        }
+        snack('Abrindo o transporte…');
+        // Os documentos são feitos no passo a passo da tela Transporte (o módulo antigo não sabe do preparo novo).
+        fecharAgendaModal(function() { transpCentralAbrirEnvioPelaAgenda(dados.id, slot); });
       })
       .withFailureHandler(function(e) {
         resetBtn();
-        var msg = appErrorMessage(e);
-        atualizarJanelaTransporteErro(transporteWindow, msg);
-        snackErro(msg);
+        snackErro(appErrorMessage(e));
       })
       .atualizarAgendaEventoCompleto(dados);
   }
@@ -3780,32 +3781,9 @@
     var courier = ({ '1': evento.courier1, '2': evento.courier2, '3': evento.courier3, '4': evento.courier4, backup: evento.backup, backup2: evento.backup2 })[slot];
     if (!courier) { snackErro('Atualize a Agenda para carregar este transporte.'); return; }
     if (!agendaValidarAwbDocumentos_(courier)) return;
-    var transporteContext = transporteAgendaContextFromDados(evento, slot, agendaId);
-    var transporteWindow = prepararJanelaTransporte(transporteContext);
-    var btn = document.getElementById(btnId);
-    var originalHtml = btn ? btn.innerHTML : '';
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<span class="material-symbols-outlined">hourglass_empty</span> Gerando...';
-    }
-    function resetBtn() {
-      if (!btn) return;
-      btn.disabled = false;
-      btn.innerHTML = originalHtml || '<span class="material-symbols-outlined">description</span> Gerar docs';
-    }
-    abrirTransporteModulo(transporteWindow, transporteContext);
-    resetBtn();
-  }
-
-  function transporteAgendaContextFromDados(dados, slot, agendaId) {
-    dados = dados || {};
-    return {
-      agendaId: agendaId || dados.id || '',
-      slot: slot || '',
-      paciente: dados.participante || dados.paciente || '',
-      protocolo: dados.projeto || dados.protocolo || '',
-      visita: dados.visita || dados.nomeVisita || dados.tipo || ''
-    };
+    // Passo a passo da tela Transporte, também para transporte já agendado: se a Agenda mudou depois dos documentos,
+    // ele volta a Conferir e os documentos são refeitos.
+    transpCentralAbrirEnvioPelaAgenda(agendaId, slot);
   }
 
   function agendaDisplayPayload(r) {

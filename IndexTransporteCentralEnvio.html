@@ -118,6 +118,8 @@
         TC_ENVIO.aberto = false;
         transpCentralMostrarWizard(false);
         snackErro(erro);
+        // Aberto pelo Gerar docs da Agenda (perfil só leitura, falha de rede): a lista ainda não foi lida.
+        if (!TRANSP_CENTRAL_STATE.dados) transpCentralCarregar(false);
       })
       .getTransporteEnvio(agendaId, slot);
   }

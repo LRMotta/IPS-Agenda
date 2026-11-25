@@ -2628,9 +2628,12 @@ function renderAuditPager() {
 }
 
 var _configApp = [];
+// Chaves oferecidas no formulário mesmo sem nenhuma linha cadastrada (a primeira nasce pelo app, com auditoria).
 var CONFIG_APP_CHAVES_DISPONIVEIS = {
   Principal: {
-    Participantes: ['Status', 'Bancos']
+    Participantes: ['Status', 'Bancos'],
+    // Lista de quem recebe o e-mail [PETICIONAMENTO] e marca GRU e extrato (TRANSPORTE_PETICIONAMENTO_CHAVE_).
+    Transporte: ['Autorizado a peticionar']
   }
 };
 

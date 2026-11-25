@@ -589,3 +589,25 @@ test('rascunho pelo assunto, dica da AWB só no pacote do estudo e confirmação
     assert.deepEqual(erros.concat(p2.erros, p3.erros, p4.erros, p5.erros), []);
   } finally { await browser.close(); }
 });
+
+test('Gerar docs da Agenda: abre o passo a passo do transporte já agendado e volta a Conferir quando a Agenda mudou', async () => {
+  const browser = await loadPlaywright().chromium.launch({ headless: true });
+  try {
+    const { page, erros } = await abrir(browser, 1280);
+    await page.evaluate(() => {
+      window.appConfirmNavigationIfDirty = () => true;
+      // irPara real troca de página e carrega a tela na mesma chamada.
+      window.irPara = (pagina) => { window.__irPara = pagina; if (pagina === 'transporte-central') window.carregarTransporteCentral(); };
+      window.transpCentralAbrirEnvioPelaAgenda('a1', '1');
+    });
+    assert.equal(await page.evaluate(() => window.__irPara), 'transporte-central');
+    // Vai direto ao envio pedido, sem passar pela lista de tarefas (transporte agendado não está nela).
+    assert.deepEqual(await page.evaluate(() => window.__rpc.map((p) => p.rpc)), ['getTransporteEnvio']);
+    assert.deepEqual(await page.evaluate(() => window.__rpc[0].args), ['a1', '1']);
+    await responder(page, 'getTransporteEnvio', envio({ dadosAtualizados: true, avisos: ['O e-mail à courier pode ter saído com os documentos antigos.'] }));
+    assert.equal(await page.locator('#tcWizard').isVisible(), true);
+    assert.match(await page.locator('.tc-wiz-progress').innerText(), /Passo 1 de 3 · Conferir/);
+    assert.match(await page.evaluate(() => window.__msgs.join('|')), /mudaram na Agenda/);
+    assert.deepEqual(erros, []);
+  } finally { await browser.close(); }
+});
