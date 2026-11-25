@@ -2385,7 +2385,7 @@ test('salvamento de novo evento registra etapas sem incluir dados do participant
     assert.match(save, new RegExp("codexMeasurePerformance_\\(operation, '" + stage + "'"));
   });
   ['participant_sync', 'initial_row_write', 'initial_flush_verify', 'transport_fields',
-    'format_row', 'notifications', 'sort_agenda', 'final_flush'].forEach((stage) => {
+    'format_row', 'notifications', 'backup_link', 'sort_agenda', 'final_flush'].forEach((stage) => {
     assert.match(write, new RegExp("agendaMeasureSaveStage_\\(performanceOperation, '" + stage + "'"));
   });
   assert.match(functionBody(source, 'codexWithDocumentLock_'), /'document_lock'/);

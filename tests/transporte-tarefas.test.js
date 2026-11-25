@@ -342,3 +342,64 @@ test('envio internacional parado no formulário ANVISA com status "Docs gerados"
   assert.equal(titulo('enviar', true), 'Anexar a GRU e o extrato e enviar à courier');
   assert.equal(titulo('enviar'), 'Enviar o pedido de coleta à courier');
 });
+
+test('caixa especial pela regra do projeto no Para fazer e no Em breve, com o prazo para pedir à courier', () => {
+  const s = servidor();
+  const regra = (courier, temperatura, tipoCaixa) => ({ nomeAbreviado: 'Estudo X', codigo: '', courier, temperatura, destino: 'LAB X', tipoCaixa });
+  const regras = [regra('MARKEN', 'AMBIENTE', 'EXTREME_AMBIENT'), regra('MARKEN', 'REFRIGERADO', 'CREDO_CUBE'), regra('OCASA', 'AMBIENTE', 'SEPIO'),
+    { nomeAbreviado: 'Outro', erro: 'Revise as caixas especiais no cadastro do projeto.' }];
+  const r = construir(s, [
+    // Hoje: sexta 02/10; segunda 05/10 é feriado.
+    linha(s, 'x1', '08/10/2026', [{ nome: 'MARKEN', temp: 'AMBIENTE' }]),
+    linha(s, 'x2', '07/10/2026', [{ nome: 'MARKEN', temp: 'AMBIENTE' }, { nome: 'DHL', temp: 'AMBIENTE' }]),
+    linha(s, 'x3', '06/10/2026', [{ nome: 'MARKEN', temp: 'REFRIGERADO' }]),
+    linha(s, 'x4', '30/11/2026', [{ nome: 'OCASA', temp: 'AMBIENTE' }])
+  ]);
+  s.transporteTarefasAnotarCaixas_(r, regras, { '2026-10-05': true }, new FakeDate());
+  Object.assign(r, plano(r));
+  const porId = Object.fromEntries(r.tarefas.map((t) => [t.agendaId, t.transportes.map((x) => x.caixa || null)]));
+  // Extreme Ambient (3 dias úteis): na quinta 08/10, pedir até sexta 02/10 (terça, quarta e quinta depois dela).
+  assert.deepEqual(porId.x1, [{ tipo: 'EXTREME_AMBIENT', rotulo: 'Extreme Ambient', pedirAte: '02/10/2026', atrasado: false }]);
+  // Na quarta 07/10 o prazo era quinta 01/10 (o feriado não conta): passou. A DHL não tem regra.
+  assert.deepEqual(porId.x2, [{ tipo: 'EXTREME_AMBIENT', rotulo: 'Extreme Ambient', pedirAte: '01/10/2026', atrasado: true }, null]);
+  // Crēdo Cube (2 dias úteis) na terça 06/10: pedir até quinta 01/10.
+  assert.deepEqual(porId.x3, [{ tipo: 'CREDO_CUBE', rotulo: 'Crēdo Cube', pedirAte: '01/10/2026', atrasado: true }]);
+  // Sepio não tem prazo; o Em breve também recebe a caixa.
+  assert.deepEqual(plano(r.maisAdiante.semanas[0].itens[0].caixa), { tipo: 'SEPIO', rotulo: 'Sepio', pedirAte: '', atrasado: false });
+});
+
+test('caixa especial: regra duplicada não é resolvida por palpite e sem regras nada muda', () => {
+  const s = servidor();
+  const r = construir(s, [linha(s, 'y1', '08/10/2026', [{ nome: 'MARKEN', temp: 'AMBIENTE' }])]);
+  const regra = { nomeAbreviado: 'Estudo X', courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'LAB X', tipoCaixa: 'EXTREME_AMBIENT' };
+  s.transporteTarefasAnotarCaixas_(r, [regra, regra], {}, new FakeDate());
+  s.transporteTarefasAnotarCaixas_(r, [], {}, new FakeDate());
+  assert.equal(r.tarefas[0].transportes[0].caixa, undefined);
+});
+
+test('RPC: regras de caixa lidas uma vez e só com transportes na lista; falha na leitura não derruba a lista', () => {
+  const s = servidor();
+  let linhas = [linha(s, 'z1', '08/10/2026', [{ nome: 'MARKEN', temp: 'AMBIENTE' }]), linha(s, 'z2', '30/11/2026', [{ nome: 'MARKEN', temp: 'AMBIENTE' }])];
+  let leituras = 0;
+  s.codexBootstrapTraceId_ = () => 't';
+  s.codexMeasureReadPerformance_ = (_a, _b, _c, fn) => fn();
+  s.codexAssertCanRead_ = () => ({ ok: true, userEmail: 'a@example.invalid' });
+  s.getDashboardAgendaSheetForRead_ = () => ({});
+  s.getDashboardAgendaDisplayRows_ = () => linhas;
+  s.getAgendaFeriadosPendenciasMap_ = () => ({});
+  s.transporteOperacoesRows_ = () => [];
+  s.transporteRegistrosResumo_ = () => ({});
+  s.codexGetAllowedUsers_ = () => ({});
+  s.transporteCaixasRegras_ = () => { leituras++; return [{ nomeAbreviado: 'Estudo X', courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'LAB X', tipoCaixa: 'BIOSYSTEM' }]; };
+  const r = plano(s.getTransporteTarefas({}));
+  assert.equal(leituras, 1);
+  assert.equal(r.tarefas[0].transportes[0].caixa.rotulo, 'BioSystem');
+  assert.equal(r.maisAdiante.semanas[0].itens[0].caixa.rotulo, 'BioSystem');
+  linhas = [];
+  plano(s.getTransporteTarefas({}));
+  assert.equal(leituras, 1, 'sem transportes, as regras não são lidas');
+  linhas = [linha(s, 'z3', '08/10/2026', [{ nome: 'MARKEN', temp: 'AMBIENTE' }])];
+  s.transporteCaixasRegras_ = () => { throw new Error('Projetos indisponível'); };
+  const semCaixa = plano(s.getTransporteTarefas({}));
+  assert.deepEqual([semCaixa.ok, semCaixa.tarefas.length, semCaixa.tarefas[0].transportes[0].caixa], [true, 1, undefined]);
+});

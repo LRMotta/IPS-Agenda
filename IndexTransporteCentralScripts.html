@@ -24,6 +24,16 @@
 
   var TC_SITUACAO = { preparar: 'Preparar', pinex_pedir: 'Pedir a coleta', pinex_numeros: 'Informar os números', enviar_doc: 'Enviar pedido de coleta' };
 
+  // Caixa especial pela regra do projeto: o nome e, na Crēdo Cube e na Extreme Ambient, até quando pedir à courier.
+  // Lembra de conferir se a caixa está disponível antes do envio.
+  function transpCentralChipCaixa(caixa) {
+    if (!caixa || !caixa.rotulo) return '';
+    var texto = 'Caixa ' + caixa.rotulo + (caixa.pedirAte ? (caixa.atrasado ? ' · prazo para pedir passou (' : ' · pedir até ') + caixa.pedirAte.slice(0, 5) + (caixa.atrasado ? ')' : '') : '');
+    var dica = 'Caixa especial pela regra do projeto. Confira se ela está disponível' + (caixa.pedirAte ? ' e peça à courier até ' + caixa.pedirAte : '') + '.';
+    return '<span class="chip ' + (caixa.atrasado ? 'chip-red' : 'chip-blue') + ' tc-chip tc-chip-caixa" title="' + esc(dica) + '">' +
+      '<span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>' + esc(texto) + '</span>';
+  }
+
   // Um transporte em linha: tipo (chip), courier e temperatura em destaque, destino e AWB discretos.
   // O tipo (Transporte I, Backup…) só aparece aqui; nunca no título da tarefa.
   function transpCentralHtmlTransporteLinha(t, acoes, detalheExtra) {
@@ -31,6 +41,7 @@
       (t.situacao && TC_SITUACAO[t.situacao] ? '<span class="tc-situacao">' + esc(TC_SITUACAO[t.situacao]) + '</span>' : '') +
       '<span class="tc-acomp-courier">' + esc([t.courier, t.temperatura].filter(Boolean).join(' · ')) + '</span>' +
       '<span class="tc-acomp-detalhe">' + esc([t.destino, t.awb ? 'AWB ' + t.awb : '', detalheExtra || ''].filter(Boolean).join(' · ')) + '</span>' +
+      transpCentralChipCaixa(t.caixa) +
       (acoes ? '<span class="tc-acomp-acao-transp">' + acoes + '</span>' : '') + '</li>';
   }
 
@@ -41,9 +52,11 @@
       '<span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' + esc(texto) + '</button>';
   }
 
-  function transpCentralEtiquetas(tarefa) {
+  // comCaixas: a lista "Também para fazer" não mostra as linhas dos transportes, então a caixa vai nas etiquetas.
+  function transpCentralEtiquetas(tarefa, comCaixas) {
     var etiquetas = [];
     if (tarefa.prazoLabel) etiquetas.push('<span class="chip chip-red tc-chip"><span class="material-symbols-outlined" aria-hidden="true">schedule</span>' + esc(tarefa.prazoLabel) + '</span>');
+    if (comCaixas) (tarefa.transportes || []).forEach(function(t) { var chip = transpCentralChipCaixa(t.caixa); if (chip && etiquetas.indexOf(chip) < 0) etiquetas.push(chip); });
     // "Parou no passo Enviar": o nome do passo diz algo a quem so acompanha; o numero fica so se o nome nao vier.
     var rotuloPasso = tarefa.parouNoPassoNome && typeof TC_PASSOS_ROTULO !== 'undefined' ? TC_PASSOS_ROTULO[tarefa.parouNoPassoNome] : '';
     if (tarefa.parouNoPasso) etiquetas.push('<span class="chip chip-orange tc-chip"><span class="material-symbols-outlined" aria-hidden="true">bookmark</span>Parou no passo ' + esc(rotuloPasso || tarefa.parouNoPasso) + '</span>');
@@ -110,7 +123,7 @@
               var rotulo = [x.slotRotulo, [x.courier, x.temperatura].filter(Boolean).join(' · ')].filter(Boolean).join(': ');
               return varios ? transpCentralBotaoTransporte(t, x, rotulo, 'tc-pilula') : '<span class="tc-item-meta">' + esc(rotulo) + '</span>';
             }).join('') + '</span>' +
-            transpCentralEtiquetas(t) + '</span>' +
+            transpCentralEtiquetas(t, true) + '</span>' +
             '<span class="tc-trans-acoes"><button type="button" class="tc-acao" data-tc-comecar="' + esc(t.agendaId) + '" aria-label="' +
             esc((varios ? 'Começar os transportes de ' : 'Começar a tarefa de ') + t.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
             (varios ? 'Começar todos' : 'Começar') + '</button></span></div>';

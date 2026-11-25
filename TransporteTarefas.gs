@@ -312,6 +312,52 @@ function transporteTarefasConstruir_(ctx) {
   return { tarefas: tarefas, maisAdiante: adiante, acompanhar: { peticionamento: acompanhar.peticionamento, confirmacao: acompanhar.confirmacao, pinex: acompanhar.pinex, transito: acompanhar.transito, confirmadas: acompanhar.confirmadas }, backups: acompanhar.backups };
 }
 
+// Antecedencia para pedir a caixa a courier, em dias uteis ate a coleta (a coleta conta). As demais caixas nao tem prazo.
+var TRANSPORTE_CAIXA_PRAZO_DIAS_UTEIS_ = { CREDO_CUBE: 2, EXTREME_AMBIENT: 3 };
+
+// Ultimo dia util em que ainda ha `dias` dias uteis depois dele ate a coleta (mesma conta de diasUteisAtePendencia_).
+function transporteCaixaPedirAte_(coleta, dias, feriados) {
+  function anterior(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1); }
+  // Conta para tras a partir da coleta (inclusive) ate o dia util de numero `dias`; o prazo e o dia util antes dele.
+  var cursor = new Date(coleta.getFullYear(), coleta.getMonth(), coleta.getDate());
+  var contados = isDiaOperacionalPendencia_(cursor, feriados || {}) ? 1 : 0;
+  for (var voltas = 0; voltas < 400 && contados < dias; voltas++) {
+    cursor = anterior(cursor);
+    if (isDiaOperacionalPendencia_(cursor, feriados || {})) contados++;
+  }
+  cursor = anterior(cursor);
+  for (var extra = 0; extra < 400 && !isDiaOperacionalPendencia_(cursor, feriados || {}); extra++) cursor = anterior(cursor);
+  return cursor;
+}
+
+/**
+ * Caixa especial de cada transporte do Para fazer e do Em breve, pela regra do projeto (como nas Pendencias):
+ * { tipo, rotulo, pedirAte, atrasado }. Serve para conferir a disponibilidade antes do envio; nao le a nota da Agenda.
+ */
+function transporteTarefasAnotarCaixas_(resultado, regras, feriados, hoje) {
+  regras = (regras || []).filter(function(regra) { return !regra.erro; });
+  if (!regras.length) return;
+  var inicio = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  function anotar(t, projeto, dataOrdem) {
+    var regra = transporteCaixaRegraPara_(regras, { projeto: projeto, courier: t.courier, temperatura: t.temperatura, destino: t.destino });
+    if (!regra || !TRANSPORTE_CAIXA_ROTULOS_[regra.tipoCaixa]) return;
+    var caixa = { tipo: regra.tipoCaixa, rotulo: TRANSPORTE_CAIXA_ROTULOS_[regra.tipoCaixa], pedirAte: '', atrasado: false };
+    var dias = TRANSPORTE_CAIXA_PRAZO_DIAS_UTEIS_[regra.tipoCaixa];
+    if (dias && typeof dataOrdem === 'number' && isFinite(dataOrdem)) {
+      var coleta = new Date(dataOrdem);
+      caixa.pedirAte = transporteTarefaFmtData_(transporteCaixaPedirAte_(coleta, dias, feriados));
+      caixa.atrasado = diasUteisAtePendencia_(inicio, coleta, feriados, dias) < dias;
+    }
+    t.caixa = caixa;
+  }
+  (resultado.tarefas || []).forEach(function(tarefa) {
+    (tarefa.transportes || []).forEach(function(t) { anotar(t, tarefa.projeto, tarefa.dataOrdem); });
+  });
+  ((resultado.maisAdiante && resultado.maisAdiante.semanas) || []).forEach(function(semana) {
+    (semana.itens || []).forEach(function(item) { anotar(item, item.projeto, item.dataOrdem); });
+  });
+}
+
 function transporteTarefasNomes_() {
   var nomes = {};
   try {
@@ -347,6 +393,18 @@ function getTransporteTarefas(request) {
       return transporteTarefasConstruir_({ hoje: agora, agora: agora, feriados: feriados, linhas: linhas, operacoes: operacoes,
         preparos: preparos, nomes: transporteTarefasNomes_() });
     });
+    // Regras de caixa (Projetos, couriers e laboratorios) so quando ha transporte a anotar. Informacao auxiliar:
+    // falha na leitura nao derruba a lista.
+    var comItens = resultado.tarefas.length || (resultado.maisAdiante.semanas || []).length;
+    if (comItens) {
+      medir('caixas', 0, function() {
+        try {
+          transporteTarefasAnotarCaixas_(resultado, transporteCaixasRegras_(), feriados, agora);
+        } catch (erroCaixas) {
+          Logger.log('Caixas especiais nao anotadas nas tarefas de Transporte: ' + erroCaixas.message);
+        }
+      });
+    }
     var usuario = String(access.userEmail || access.email || '').trim().toLowerCase();
     return {
       ok: true, usuario: usuario, geradoEm: agora.toISOString(),

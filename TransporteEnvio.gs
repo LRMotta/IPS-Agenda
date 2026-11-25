@@ -129,7 +129,12 @@ function transporteEnvioPassos_(registro) {
 // Campos que a pessoa preenche no passo a passo e que a reconstrucao pela Agenda nao pode apagar.
 var TRANSPORTE_ENVIO_CAMPOS_LOCAIS_ = ['agendadoPor', 'pinexAgendadoPor', 'responsavelEntrega', 'horaEnvio', 'solicitarCaixa',
   'pinexColeta', 'pinexProtocolo', 'observacoes', 'fasePinex', 'passoNumero', 'peticionamentoEnviadoEm', 'peticionamentoEnviadoPor', 'gruPronta', 'gruProntaEm', 'gruProntaPor',
-  'geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios', 'rascunhoCe', 'rascunhoPeticao', 'pdfArquivoId', 'pdfArquivoNome', 'peticaoArquivoId', 'peticaoArquivoNome'];
+  'geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios', 'rascunhoCe', 'rascunhoPeticao', 'pdfArquivoId', 'pdfArquivoNome', 'peticaoArquivoId', 'peticaoArquivoNome',
+  'envioDesatualizadoEm', 'envioDesatualizadoPasso'];
+
+// A Agenda mudou depois do passo Enviar: o e-mail que talvez ja tenha ido a courier traz os documentos anteriores.
+// Fica no registro ate "Pronto, enviei" e nao entra no token da geracao (nao e dado do documento).
+var TRANSPORTE_ENVIO_CAMPOS_DESATUALIZADO_ = ['envioDesatualizadoEm', 'envioDesatualizadoPasso'];
 
 // Dados da geracao em curso (token de recuperacao, rascunho e PDF criados). Valem para um conjunto de dados: quando a
 // Agenda muda e o preparo recomeca, sao descartados e a geracao seguinte nasce do zero.
@@ -206,6 +211,11 @@ function transporteEnvioMontarRegistro_(agendaId, slot) {
 function transporteEnvioAvisos_(registro) {
   var avisos = [];
   var courier = transporteNormalizeCourierFromCodex_(registro.courier);
+  if (registro.envioDesatualizadoPasso === 'concluido') {
+    avisos.push('Os dados mudaram na Agenda depois do e-mail à courier: ela recebeu os documentos anteriores. Gere os documentos de novo, envie o novo e-mail à courier avisando da correção e clique em "Pronto, enviei".');
+  } else if (registro.envioDesatualizadoPasso) {
+    avisos.push('Os dados mudaram na Agenda depois de gerar os documentos. Se o e-mail à courier já foi enviado, ela recebeu a versão anterior: gere de novo, envie o novo e-mail avisando da correção e clique em "Pronto, enviei".');
+  }
   if (!String(registro.destino || '').trim()) avisos.push('Destino não definido na Agenda.');
   if (courier === 'PINEX' && String(registro.pinexColeta || '').trim() && !/^\d{5,6}$/.test(String(registro.pinexColeta))) {
     avisos.push('PINEX COL. N° deve conter 5 ou 6 dígitos.');
@@ -344,6 +354,11 @@ function transporteEnvioAbrir_(agendaId, slot, usuario, lap) {
       passoInicial = 'conferir';
       dadosAtualizados = true;
       TRANSPORTE_ENVIO_CAMPOS_GERACAO_.forEach(function(campo) { delete registro[campo]; });
+      // Do passo Enviar em diante o e-mail pode ter ido a courier com os documentos antigos. A primeira marca vale.
+      if (['enviar', 'concluido'].indexOf(lido.passo) >= 0 && !registro.envioDesatualizadoPasso) {
+        registro.envioDesatualizadoEm = new Date().toISOString();
+        registro.envioDesatualizadoPasso = lido.passo;
+      }
     }
     if (!lido.registro || dadosAtualizados || JSON.stringify(lido.registro) !== JSON.stringify(registro)) {
       registro.passoNumero = transporteEnvioNumeroPasso_(registro, passoInicial);

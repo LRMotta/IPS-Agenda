@@ -202,7 +202,7 @@ function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationReques
   // mudam a cada gravacao e nao entram no hash.
   var dadosDoToken = JSON.parse(JSON.stringify(registro));
   delete dadosDoToken.passoNumero;
-  TRANSPORTE_ENVIO_CAMPOS_GERACAO_.forEach(function(campo) { delete dadosDoToken[campo]; });
+  TRANSPORTE_ENVIO_CAMPOS_GERACAO_.concat(TRANSPORTE_ENVIO_CAMPOS_DESATUALIZADO_).forEach(function(campo) { delete dadosDoToken[campo]; });
   // O token mora no registro do envio: outro navegador ou computador retoma a mesma geracao. O da tela so vale
   // na primeira tentativa, quando o registro ainda nao tem um.
   var inicio = transporteEnvioIniciarGeracao_(String(lido.registro.geracaoToken || generationRequestId || ''), dadosDoToken, usuario);
@@ -325,7 +325,10 @@ function concluirEnvioTransporte(agendaId, slot, versao) {
   if (lido.registro && transporteEnvioPassos_(lido.registro).indexOf('enviar') < 0) {
     throw new Error('Este transporte ainda não está no passo de envio à courier. Conclua o formulário ANVISA e aguarde a GRU e o extrato.');
   }
-  var resposta = salvarTransporteEnvio(agendaId, slot, versao, {}, 'concluido');
+  // "Pronto, enviei" encerra o aviso de documentos desatualizados: o e-mail novo seguiu para a courier.
+  var resposta = transporteEnvioSalvar_(agendaId, slot, versao, {}, 'concluido', usuario, function(registro) {
+    TRANSPORTE_ENVIO_CAMPOS_DESATUALIZADO_.forEach(function(campo) { delete registro[campo]; });
+  });
   transporteEnvioLiberar_(agendaId, slot, usuario);
   return { ok: true, versao: resposta.versao };
 }
