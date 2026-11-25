@@ -112,3 +112,18 @@ test('os dados vêm dos cadastros e a planilha de Transporte não é aberta', ()
   // Estudo sem N° do CE no cadastro.
   assert.deepEqual(plano(s.transportePeticaoGerar_(registro({ protocolo: 'Sem CE' }))).erros, ['O estudo não tem N° do CE no cadastro.']);
 });
+
+test('N° do CE do estudo com código: protocolo como o envio guarda ("nome (código)"), só o nome ou só o código', () => {
+  const s = servidor();
+  s.transporteReadProjetosDireto_ = () => [
+    { nomeAbreviado: 'CLEOPATTRA', codigo: 'NN6019-4958', numeroCE: '150/2025' },
+    { nomeAbreviado: 'BGB-43395-101', codigo: '', numeroCE: '48/2024' }
+  ];
+  // Antes, só o nome abreviado casava: estudo com código parava em "O estudo não tem N° do CE no cadastro".
+  for (const protocolo of ['CLEOPATTRA (NN6019-4958)', 'CLEOPATTRA', 'NN6019-4958', 'NN6019-4958 (CLEOPATTRA)', ' cleopattra (nn6019-4958) ']) {
+    assert.equal(s.transportePeticaoNumeroCE_(protocolo), '150/2025', protocolo);
+  }
+  assert.equal(s.transportePeticaoNumeroCE_('BGB-43395-101'), '48/2024');
+  assert.equal(s.transportePeticaoNumeroCE_('CLEOPATTRA (OUTRO-CODIGO)'), '');
+  assert.equal(s.transportePeticaoNumeroCE_(''), '');
+});

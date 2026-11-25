@@ -88,11 +88,17 @@ function transportePeticaoDados_(registro, fontes) {
   };
 }
 
+// O envio guarda o protocolo como exibido ("CLEOPATTRA (NN6019-4958)"); o cadastro tem nome e código separados.
+// Mesmos apelidos de transporteProjetoInfo_ (nome, código, "nome (código)", "código (nome)"), só pela aba Projetos.
 function transportePeticaoNumeroCE_(protocolo) {
-  var chave = transporteParticipantKey_(transporteProjetoDisplay_(protocolo));
+  var alvo = transporteParticipantKey_(protocolo);
+  if (!alvo) return '';
   var projetos = transporteReadProjetosDireto_() || [];
   for (var i = 0; i < projetos.length; i++) {
-    if (transporteParticipantKey_(projetos[i].nomeAbreviado) === chave) return String(projetos[i].numeroCE || '').trim();
+    var nome = String(projetos[i].nomeAbreviado || '').trim();
+    var codigo = String(projetos[i].codigo || '').trim();
+    var apelidos = [nome, codigo, nome && codigo ? nome + ' (' + codigo + ')' : '', nome && codigo ? codigo + ' (' + nome + ')' : ''];
+    if (apelidos.filter(Boolean).map(transporteParticipantKey_).indexOf(alvo) >= 0) return String(projetos[i].numeroCE || '').trim();
   }
   return '';
 }
