@@ -1131,7 +1131,7 @@ test('data de envio anterior a hoje e rejeitada antes da documentacao', () => {
     agendaCourierMeaningful: () => true,
     agendaFindEventoLocal_: () => ({ courier1: { nome: 'OCASA', awb: '' } }),
     snackErro: message => { assert.match(message, /AWB/); },
-    prepararJanelaTransporte: () => { throw new Error('Janela não pode abrir'); }
+    transpCentralAbrirEnvioPelaAgenda: () => { throw new Error('Transporte não pode abrir'); }
   });
   vm.runInContext(sourceBetween(source, '  function agendaValidarAwbDocumentos_(', '  function gerarTransporteAgenda(slot'), context);
   // Recorta cada declaração pela próxima função no mesmo nível.

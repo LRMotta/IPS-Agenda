@@ -30,28 +30,30 @@ function client() {
   return { context, nodes, calls, advance: (ms) => { now += ms; } };
 }
 
-test('Gerar docs envia linha e versoes, respeita conflito e atualiza a versao apos sucesso', () => {
+test('Gerar docs envia linha e versoes, respeita conflito e abre o passo a passo do transporte apos sucesso', () => {
   const { context: c, calls } = client();
   const errors = [];
-  let opened = 0;
+  const opened = [];
   c._agendaEditId = 'A'; c._agendaEditRecordVersion = 'vA'; c._agendaEditEditableVersion = 'eA';
   c.agendaEventoAtualEditado_ = () => ({ id: 'A', rowIndex: 7 });
   c.coletarAgendaEvento = () => ({ participante: 'Pessoa', courier1: { nome: 'Courier', awb: '123' } });
   for (const name of ['agendaMeaningfulValue', 'agendaCourierMeaningful', 'agendaValidarAwbDocumentos_', 'validateAgendaAwb', 'agendaMatBioValidateAll']) c[name] = () => true;
-  c.transporteAgendaContextFromDados = () => ({}); c.prepararJanelaTransporte = () => ({});
-  c.atualizarJanelaTransporteErro = (_window, message) => errors.push(message);
-  c.snackErro = () => {}; c.snack = () => {}; c.agendaRecarregarJanelaAtual_ = () => {};
-  c.abrirTransporteModulo = () => { opened += 1; };
+  c.snackErro = (message) => errors.push(message); c.snack = () => {}; c.agendaRecarregarJanelaAtual_ = () => {};
+  c.agendaPreservarConflito_ = () => {};
+  // O modal fecha antes de ir para a tela Transporte; o modulo antigo (janela nova) nao e mais aberto.
+  c.fecharAgendaModal = (depois) => { opened.push('fechou'); depois(); };
+  c.transpCentralAbrirEnvioPelaAgenda = (agendaId, slot) => opened.push(agendaId + '|' + slot);
+  c.abrirTransporteModulo = c.prepararJanelaTransporte = () => { throw new Error('Modulo antigo nao deve abrir'); };
   c.gerarTransporteAgenda('1', 'button');
   assert.equal(calls[0].method, 'atualizarAgendaEventoCompleto');
   assert.equal(calls[0].args[0]._rowIndex, 7);
   assert.equal(calls[0].args[0]._recordVersion, 'vA');
   assert.equal(calls[0].args[0]._editRecordVersion, 'eA');
   calls[0].success({ conflito: true, erro: 'Alterado' });
-  assert.equal(opened, 0); assert.deepEqual(errors, ['Alterado']);
+  assert.deepEqual(opened, []); assert.deepEqual(errors, ['Alterado']);
   c.gerarTransporteAgenda('1', 'button');
   calls[1].success({ recordVersion: 'vB', editRecordVersion: 'eB' });
-  assert.equal(opened, 1); assert.equal(c._agendaEditRecordVersion, 'vB');
+  assert.deepEqual(opened, ['fechou', 'A|1']); assert.equal(c._agendaEditRecordVersion, 'vB');
   assert.equal(c._agendaEditEditableVersion, 'eB');
 });
 
@@ -313,11 +315,10 @@ test('Gerar docs sincroniza registro combinado; edicao durante RPC conserva refe
     let observation = 'Original';
     c.coletarAgendaEvento = () => ({ obs: observation, participante: 'Pessoa', courier1: { nome: 'Courier', awb: '123' } });
     for (const name of ['agendaMeaningfulValue', 'agendaCourierMeaningful', 'agendaValidarAwbDocumentos_', 'validateAgendaAwb', 'agendaMatBioValidateAll']) c[name] = () => true;
-    c.transporteAgendaContextFromDados = () => ({}); c.prepararJanelaTransporte = () => ({});
-    c.snack = c.snackErro = c.agendaRecarregarJanelaAtual_ = c.abrirTransporteModulo = () => {};
+    c.snack = c.snackErro = c.agendaRecarregarJanelaAtual_ = () => {};
     let reopened, cleared = 0, opened = 0;
-    c.abrirTransporteModulo = () => { opened++; };
-    c.atualizarJanelaTransporteErro = () => {};
+    c.fecharAgendaModal = (depois) => depois();
+    c.transpCentralAbrirEnvioPelaAgenda = () => { opened++; };
     c.abrirAgendaEdicaoComRegistro_ = record => { reopened = record; };
     c.appClearUnsavedChanges = () => { cleared++; };
     c.gerarTransporteAgenda('1', 'button');
