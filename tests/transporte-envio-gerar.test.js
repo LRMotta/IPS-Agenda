@@ -535,3 +535,40 @@ test('geração com erro também descarta a memória da execução', () => {
   assert.throws(() => s.gerarDocumentosTransporteEnvio('ab12cd34', '1', v, TOKEN), /campo obrigatório/);
   assert.equal(s.TRANSPORTE_ABERTURA_MEMO_, null);
 });
+
+test('geração: "Agendado por" resolvido com a aba Users lida na autorização, sem reler; subetapas de AWB, monitor e status no log', () => {
+  const s = servidor();
+  const v = abrir(s).versao;
+  s.transporteAssertOperador_ = (leitura) => {
+    if (leitura) leitura.users = { [A]: { name: 'Ana Exemplo', firstName: 'Ana' } };
+    return { ok: true, role: 'admin', userEmail: A };
+  };
+  s.codexGetAllowedUsers_ = () => { throw new Error('Users relida no meio da geração'); };
+  const etapas = [];
+  s.codexLogPerformance_ = (operacao, etapa) => etapas.push(operacao + ':' + etapa);
+  let resolvido = '';
+  s.transporteDocsDados_ = () => { resolvido = s.transporteResolveUserEmail_('Ana'); return { ss: {}, abas: () => ({}) }; };
+  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', v, TOKEN));
+  assert.equal(r.ok, true);
+  assert.equal(resolvido, A);
+  for (const etapa of ['transporteAwbReservarEnvio:aw_lock', 'transporteAwbReservarEnvio:aw_dono', 'transporteAwbReservarEnvio:aw_contexto',
+    'transporteAwbReservarEnvio:aw_reservar', 'transporteOperacaoRegistrarEnvio:mo_lock', 'transporteOperacaoRegistrarEnvio:mo_dono',
+    'transporteOperacaoRegistrarEnvio:mo_operacao', 'transporteEnvioDocsGerados:st_lock']) {
+    assert.ok(etapas.includes(etapa), etapa);
+  }
+  // Fora da geração, a resolução volta a ler a aba Users.
+  assert.equal(s.TRANSPORTE_ABERTURA_MEMO_, null);
+  assert.equal(s.transporteResolveUserEmail_('Ana'), '');
+});
+
+test('transporteAssertOperador_ entrega a leitura de Users da própria autorização', () => {
+  const s = runFiles(['TransporteEnvio.gs'], {});
+  const users = { [A]: { name: 'Ana' } };
+  s.codexAuthorizeWebAppRequest_ = (_e, leitura) => { if (leitura) leitura.users = users; return { ok: true, role: 'user', userEmail: A }; };
+  const leitura = {};
+  assert.equal(s.transporteAssertOperador_(leitura).userEmail, A);
+  assert.equal(leitura.users, users);
+  assert.equal(s.transporteAssertOperador_().role, 'user');
+  s.codexAuthorizeWebAppRequest_ = () => ({ ok: true, role: 'readonly', userEmail: A });
+  assert.throws(() => s.transporteAssertOperador_({}), /somente leitura/);
+});

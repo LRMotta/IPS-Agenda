@@ -40,12 +40,14 @@ test('Transporte (piloto): admin no servidor e no cliente, includes na ordem e p
       if (m[1].endsWith('_')) continue;
       // A lista de peticionamento autoriza, além do perfil, as ações dos autorizados.
       const porLista = ['marcarGruExtratoProntosTransporte', 'getTransportePeticionamentos'].includes(m[1]);
-      assert.match(m[3], porLista ? /transportePeticionamentoAssertAutorizado_\(\)/ : /transporteAssertOperador_\(\)/, m[1]);
+      // O argumento opcional so recebe a leitura de Users feita na autorizacao (reuso na mesma execucao).
+      assert.match(m[3], porLista ? /transportePeticionamentoAssertAutorizado_\(\)/ : /transporteAssertOperador_\(\w*\)/, m[1]);
     }
   }
   const envio = readProjectFile('TransporteEnvio.gs');
   const operador = envio.slice(envio.indexOf('function transporteAssertOperador_('));
-  assert.match(operador, /codexAuthorizeWebAppRequest_\(\)[\s\S]*?access\.role !== 'admin' && access\.role !== 'user'/);
+  // Sem evento nem ACL de abertura: so a saida opcional da leitura de Users.
+  assert.match(operador, /codexAuthorizeWebAppRequest_\((?:undefined, \w+)?\)[\s\S]*?access\.role !== 'admin' && access\.role !== 'user'/);
   assert.match(readProjectFile('TransportePeticionamento.gs'), /function transportePeticionamentoAssertAutorizado_\(\) \{\n  var acesso = transporteAssertOperador_\(\);/);
 
   const servidor = readProjectFile('TransporteTarefas.gs');

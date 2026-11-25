@@ -4878,7 +4878,9 @@ function transporteGenerationReplay_(record) {
 }
 
 // Executado sob o lock da geração; o ID do PDF confirma a criação no Drive.
-function transporteMarcarDocsGeradosAgenda_(payload, result) {
+// lap (opcional): subetapas no log, na geracao do envio.
+function transporteMarcarDocsGeradosAgenda_(payload, result, lap) {
+  lap = lap || function() {};
   if (!result || result.type !== 'pdf' || !String(result.fileId || '').trim()) return null;
   payload = payload || {};
   var idAgenda = String(payload.idAgenda || '').trim();
@@ -4888,9 +4890,12 @@ function transporteMarcarDocsGeradosAgenda_(payload, result) {
   var idx = { '1': AGENDA_CFG.idx.c1, '2': AGENDA_CFG.idx.c2, '3': AGENDA_CFG.idx.c3, '4': AGENDA_CFG.idx.c4, backup: AGENDA_CFG.idx.cb }[slot];
   if (!idx) return null;
   var agenda = getAgendaSheet_();
+  lap('st_aba_agenda');
   var linha = encontrarLinhaPorId(agenda, idAgenda);
+  lap('st_lookup');
   if (!linha) throw new Error('PDF gerado, mas o agendamento vinculado não foi encontrado.');
   var values = agenda.getRange(linha, 1, 1, agenda.getLastColumn()).getDisplayValues()[0];
+  lap('st_linha');
   if (AgendaServerRules_.isCancelled(values[AGENDA_CFG.col.status - 1])) return null;
   var statusAnterior = String(values[idx.status] || '').trim();
   var statusKey = AgendaServerRules_.courierStatusKey(statusAnterior);
@@ -4900,8 +4905,10 @@ function transporteMarcarDocsGeradosAgenda_(payload, result) {
   if (normText_(payload.courier) !== normText_(values[idx.nome])) return null;
   agenda.getRange(linha, idx.status + 1).setValue('Docs gerados');
   if (typeof agendaInvalidateDateIndexCache_ === 'function') agendaInvalidateDateIndexCache_();
+  lap('st_escrita');
   if (typeof codexWriteAuditChanges_ === 'function') codexWriteAuditChanges_('Agenda', 'gerarPdfTransporte', idAgenda,
     [{ field: 'Transporte ' + slot + ' - Status', oldValue: statusAnterior, newValue: 'Docs gerados' }], 'PDF confirmado no Drive');
+  lap('st_auditoria');
   return { atualizado: true, idAgenda: idAgenda, slot: slot, awb: payload.awb, campos: ['Transporte ' + slot + ' - Status'] };
 }
 
@@ -6424,8 +6431,10 @@ function transporteResolveUserEmail_(value) {
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(direct)) return direct;
   var wanted = transporteNorm_(raw);
   try {
-    if (typeof codexGetAllowedUsers_ === 'function') {
-      var acl = codexGetAllowedUsers_() || {};
+    // Na geracao do envio, a aba Users ja lida na autorizacao da RPC (mesma execucao) resolve o nome sem reler.
+    var daExecucao = TRANSPORTE_ABERTURA_MEMO_ && TRANSPORTE_ABERTURA_MEMO_.usuarios;
+    if (daExecucao || typeof codexGetAllowedUsers_ === 'function') {
+      var acl = daExecucao || codexGetAllowedUsers_() || {};
       var keys = Object.keys(acl);
       for (var j = 0; j < keys.length; j++) {
         var item = acl[keys[j]] || {};

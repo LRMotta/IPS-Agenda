@@ -263,8 +263,9 @@ function transporteEnvioAvisoLastCall_(registro, passo) {
 
 // Acoes do Transporte: qualquer perfil que edita (admin ou user); somente leitura nao age.
 // Sem auditoria por chamada, como no piloto: o registro do envio ja guarda quem fez cada passo.
-function transporteAssertOperador_() {
-  var access = codexAuthorizeWebAppRequest_();
+// leitura (opcional): recebe em .users a aba Users lida nesta autorizacao, para reuso na mesma execucao.
+function transporteAssertOperador_(leitura) {
+  var access = codexAuthorizeWebAppRequest_(undefined, leitura);
   if (!access || !access.ok) throw new Error((access && access.message) || 'Acesso negado.');
   if (access.role !== 'admin' && access.role !== 'user') {
     throw new Error('Seu perfil é somente leitura. Esta ação do Transporte não está autorizada.');

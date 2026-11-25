@@ -197,13 +197,18 @@ function transporteEnvioRespostaGerar_(resposta) {
 function gerarDocumentosTransporteEnvio(agendaId, slot, versao, generationRequestId) {
   // Etapas no log ([CODEX_PERF] gerarDocumentosTransporteEnvio): so nome e duracao, para medir a geracao em producao.
   var lap = transporteLapStart_('gerarDocumentosTransporteEnvio');
-  var access = transporteAssertOperador_();
+  var leituraAcesso = {};
+  var access = transporteAssertOperador_(leituraAcesso);
   var usuario = transporteEnvioUsuario_(access);
   lap('acesso');
   // Execucao autorizada acima: cadastros (medicos, LabCentral, Projetos) e assinatura lidos uma vez, sem refazer a
   // autorizacao a cada consulta (cada uma relia a aba Users). Descartados ao sair, como em getTransporteEnvio.
+  // usuarios: a aba Users lida nessa autorizacao, para achar o e-mail de "Agendado por" no rascunho. Nao autoriza nada.
   var memoAnterior = TRANSPORTE_ABERTURA_MEMO_;
-  TRANSPORTE_ABERTURA_MEMO_ = { usuario: { email: usuario, name: access.name || '', firstName: access.firstName || '' } };
+  TRANSPORTE_ABERTURA_MEMO_ = {
+    usuario: { email: usuario, name: access.name || '', firstName: access.firstName || '' },
+    usuarios: leituraAcesso.users || null
+  };
   try {
     return transporteEnvioGerarDocumentos_(agendaId, slot, versao, generationRequestId, usuario, lap);
   } finally {
@@ -314,7 +319,12 @@ function transporteEnvioGerarDocumentos_(agendaId, slot, versao, generationReque
     }
     lap('monitor');
     try {
-      var sincronia = codexWithDocumentLock_('transporteEnvioDocsGerados', function() { return transporteMarcarDocsGeradosAgenda_(registro, pdf); });
+      // Subetapas no log ([CODEX_PERF] transporteEnvioDocsGerados): espera do lock e partes da gravacao do status.
+      var lapStatus = transporteLapStart_('transporteEnvioDocsGerados');
+      var sincronia = codexWithDocumentLock_('transporteEnvioDocsGerados', function() {
+        lapStatus('st_lock');
+        return transporteMarcarDocsGeradosAgenda_(registro, pdf, lapStatus);
+      });
       if (sincronia) resultado.agendaSync = sincronia;
     } catch (erroAgenda) {
       resultado.agendaWarning = 'Documentos gerados, mas o status da Agenda não foi atualizado: ' + String(erroAgenda && erroAgenda.message || erroAgenda);
