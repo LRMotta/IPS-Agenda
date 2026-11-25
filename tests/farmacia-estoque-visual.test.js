@@ -10,8 +10,9 @@ function funcoes(arquivo, nomes) {
   return nomes.map((nome) => {
     const inicio = fonte.indexOf('function ' + nome + '(');
     assert.ok(inicio >= 0, nome);
-    const fim = fonte.indexOf('\n}\n', inicio);
-    return fonte.slice(inicio, fim + 2);
+    const fim = /\r?\n\}\r?\n/.exec(fonte.slice(inicio));
+    assert.ok(fim, nome);
+    return fonte.slice(inicio, inicio + fim.index + fim[0].length);
   }).join('\n');
 }
 
@@ -51,4 +52,14 @@ test('ciclo do lote: contagem de aguardando avaliação concorda em número', ()
   const fonte = readProjectFile('IndexFarmaciaCiclo.html');
   assert.match(fonte, /n===1\?' registro':' registros'/);
   assert.doesNotMatch(fonte, /\.length\+' registros<\/button>/);
+});
+
+test('estoque: "Ver ciclo" fica na mesma linha dos ícones de ação', () => {
+  const ctx = vm.createContext({ esc: (v) => String(v === undefined || v === null ? '' : v), FARMACIA_STOCK: { studyId: 'P1' } });
+  vm.runInContext(funcoes('IndexFarmaciaActions.html', ['farmaciaRecordActions']), ctx);
+  const html = ctx.farmaciaRecordActions('position', { id: 'POS-1', lot: 'L1' }, { farmaciaAccess: 'manage' }, '<button class="farmacia-cycle-link">Ver ciclo</button>');
+  assert.match(html, /^<div class="action-btns"><button class="farmacia-cycle-link">Ver ciclo<\/button><button type="button" class="icon-btn"/);
+  assert.match(ctx.farmaciaRecordActions('position', { id: 'POS-1', lot: 'L1' }, { farmaciaAccess: 'view' }), /^<div class="action-btns"><button type="button" class="icon-btn"/);
+  const view = readProjectFile('IndexFarmaciaViewScripts.html');
+  assert.match(view, /farmaciaRecordActions\('position',position,data,typeof farmaciaCycleOpen === 'function' \? '<button type="button" class="btn-txt farmacia-cycle-link"/);
 });

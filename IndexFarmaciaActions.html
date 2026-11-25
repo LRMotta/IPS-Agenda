@@ -1,10 +1,11 @@
 <script>
-function farmaciaRecordActions(kind, record, data) {
+// lead (opcional): HTML ja escapado posto antes dos icones, na mesma linha (ex.: "Ver ciclo" no estoque).
+function farmaciaRecordActions(kind, record, data, lead) {
   var manage = data.farmaciaAccess === 'manage';
   var label = kind === 'product' ? (farmaciaProductCharacteristics(record) ? farmaciaProductLabel(record) : record.name) : 'lote ' + record.lot;
   // Saída / ajuste de quantidade: somente entradas do estoque Geral, sem transporte em andamento.
   var adjustable = kind === 'position' && manage && FARMACIA_STOCK.studyId === '@IPS_COMMON' && !record.inTransit;
-  return '<div class="action-btns">' + ['view', 'adjust', 'edit', 'delete'].filter(function(action) { return action === 'view' || (action === 'adjust' ? adjustable : manage); }).map(function(action) {
+  return '<div class="action-btns">' + (lead || '') + ['view', 'adjust', 'edit', 'delete'].filter(function(action) { return action === 'view' || (action === 'adjust' ? adjustable : manage); }).map(function(action) {
     var accessibleLabel = kind === 'position' && action === 'view' ? 'Ver histórico do lote ' + record.lot : action === 'adjust' ? 'Saída ou ajuste de quantidade do lote ' + record.lot : ({view:'Visualizar ',edit:'Editar ',delete:'Excluir '})[action] + label;
     return '<button type="button" class="icon-btn' + (action === 'delete' ? ' del' : '') + '" data-kind="' + kind + '" data-record-id="' + esc(record.id) + '"' + (kind === 'position' && action === 'view' ? ' data-position-id="' + esc(record.id) + '"' : '') + ' data-action="' + action + '" onclick="farmaciaOpenRecordAction(this.dataset.kind,this.dataset.recordId,this.dataset.action)" aria-label="' + esc(accessibleLabel) + '" title="' + ({view:'Visualizar',adjust:'Saída / ajuste de quantidade',edit:'Editar',delete:'Excluir'})[action] + '"><span class="material-symbols-outlined" aria-hidden="true">' + ({view:'visibility',adjust:'exposure',edit:'edit',delete:'delete'})[action] + '</span></button>';
   }).join('') + '</div>';
