@@ -301,6 +301,44 @@ test('reabrir com documentos gerados: só a Agenda alterada reinicia o preparo',
   assert.deepEqual(mudou.passos, ['conferir', 'gerar', 'enviar']);
 });
 
+test('Agenda alterada depois de "Pronto, enviei": o aviso de e-mail desatualizado fica até enviar de novo', () => {
+  const s = servidor();
+  const g = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', abrir(s).versao, TOKEN));
+  plano(s.concluirEnvioTransporte('ab12cd34', '1', g.versao));
+  assert.equal(plano(abrir(s)).avisos.some((a) => /desatualiz|documentos anteriores/.test(a)), false, 'sem mudança, sem aviso');
+  // Materiais alterados depois do e-mail (caso KANDELA: 1 tubo enviado, 2 tubos na Agenda).
+  const mudou = plano(abrir(s, { materiais: [{ ativo: true, material: 'Sangue', quantidade: 2 }] }));
+  assert.equal(mudou.passo, 'conferir');
+  assert.equal(mudou.registro.envioDesatualizadoPasso, 'concluido');
+  assert.match(mudou.avisos.join(' '), /ela recebeu os documentos anteriores/);
+  // Gerar de novo mantém o aviso no passo Enviar; o token não depende da marca.
+  const g2 = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', mudou.versao, TOKEN));
+  assert.equal(g2.ok, true);
+  const noEnviar = plano(abrir(s, { materiais: [{ ativo: true, material: 'Sangue', quantidade: 2 }] }));
+  assert.deepEqual([noEnviar.passo, noEnviar.registro.envioDesatualizadoPasso], ['enviar', 'concluido']);
+  assert.match(noEnviar.avisos.join(' '), /ela recebeu os documentos anteriores/);
+  // "Pronto, enviei" encerra o aviso.
+  plano(s.concluirEnvioTransporte('ab12cd34', '1', noEnviar.versao));
+  const fim = plano(s.transporteRegistroLer_('ab12cd34', '1'));
+  assert.deepEqual([fim.passo, fim.registro.envioDesatualizadoPasso, fim.registro.envioDesatualizadoEm], ['concluido', undefined, undefined]);
+  assert.equal(plano(abrir(s, { materiais: [{ ativo: true, material: 'Sangue', quantidade: 2 }] })).avisos.some((a) => /documentos anteriores/.test(a)), false);
+});
+
+test('Agenda alterada no passo Enviar avisa que o e-mail pode ter saído; antes de gerar, não', () => {
+  const s = servidor();
+  const g = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', abrir(s).versao, TOKEN));
+  assert.equal(g.passo, 'enviar');
+  const mudou = plano(abrir(s, { dataEnvio: '2026-11-30', dataColeta: '2026-11-30' }));
+  assert.equal(mudou.registro.envioDesatualizadoPasso, 'enviar');
+  assert.match(mudou.avisos.join(' '), /Se o e-mail à courier já foi enviado/);
+
+  const t = servidor();
+  const aberto = abrir(t);
+  plano(t.salvarTransporteEnvio('ab12cd34', '1', aberto.versao, {}, 'gerar'));
+  const antes = plano(abrir(t, { dataEnvio: '2026-11-30', dataColeta: '2026-11-30' }));
+  assert.deepEqual([antes.dadosAtualizados, antes.registro.envioDesatualizadoPasso], [true, undefined]);
+});
+
 test('reabrir com o formulário ANVISA já enviado: a Agenda alterada só avisa, sem refazer sozinho', () => {
   const s = servidor();
   const aberto = abrir(s);
