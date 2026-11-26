@@ -145,6 +145,7 @@ test('reserva de AWB usa o registro gravado, sob lock curto, sem a planilha de T
   const chamadas = [];
   s.getTransporteSpreadsheetCodex_ = () => { throw new Error('planilha de Transporte aberta'); };
   s.getAgendaSheetForRead_ = () => ({ nome: 'agenda' });
+  s.getAgendaSheet_ = () => ({ nome: 'agenda' });
   s.agendaAwbContextoFocado_ = (_aba, awb, ids) => { chamadas.push(['contexto', s.lockAtivo(), awb, ids.join()]); return { entries: [] }; };
   s.transporteAwbRegistro_ = (reg) => ({ owner: reg.idAgenda, awb: reg.awb });
   s.agendaAwbReservar_ = (_contexto, entradas, strict) => { chamadas.push(['reservar', s.lockAtivo(), entradas[0].awb, strict]); };

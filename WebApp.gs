@@ -17956,25 +17956,39 @@ function agendaAwbContextoFocado_(agenda, awb, ids) {
   if (!encontradas || encontradas.length > CODEX_AWB_FOCO_MAX_LINHAS_) return agendaAwbContexto_(agenda);
   var linhas = Object.create(null);
   var conhecidos = Object.create(null);
+  // Subetapas de awb_linhas, somadas: leitura das linhas e localizacao dos IDs (coluna inteira quando preciso).
+  var tempoLinhas = 0, tempoIds = 0, leiturasColunaIds = 0;
   function carregar(linha) {
     if (linhas[linha]) return;
+    var inicioLinha = Date.now();
     linhas[linha] = agenda.getRange(linha, 1, 1, width).getValues()[0];
+    tempoLinhas += Date.now() - inicioLinha;
+    // A linha lida fica lembrada: a sincronizacao da Agenda, no mesmo lock, nao rele a coluna de IDs para acha-la.
+    if (typeof codexLinhaPorIdLembrar_ === 'function') codexLinhaPorIdLembrar_(agenda, String(linhas[linha][AGENDA_CFG.idx.id]), linha);
     agendaAwbIdsNormalizados_([linhas[linha][AGENDA_CFG.idx.id]]).forEach(function(id) { conhecidos[id] = true; });
     pendentes = pendentes.concat(agendaAwbIdsDaLinha_(linhas[linha]));
   }
   encontradas.forEach(carregar);
   var indiceIds = null;
   // ID em outra caixa nao passa pela busca exata: a coluna so e lida nesse caso raro.
+  // Depois da primeira leitura da coluna, todos os IDs seguintes saem do indice: um ID do historico que nao
+  // existe mais na Agenda custava duas leituras da coluna inteira cada.
   function linhaDoId(id) {
-    var linha = encontrarLinhaPorId(agenda, id);
-    if (linha) return linha;
-    if (!indiceIds) {
+    var inicioId = Date.now();
+    try {
+      if (indiceIds) return indiceIds[String(id).trim().toUpperCase()] || null;
+      var linha = encontrarLinhaPorId(agenda, id);
+      if (linha) return linha;
       indiceIds = Object.create(null);
+      leiturasColunaIds++;
       agenda.getRange(2, AGENDA_CFG.col.id, n, 1).getValues().forEach(function(valor, indice) {
-        agendaAwbIdsNormalizados_([valor[0]]).forEach(function(chave) { indiceIds[chave] = indice + 2; });
+        // Primeira ocorrencia, como encontrarLinhaPorId.
+        agendaAwbIdsNormalizados_([valor[0]]).forEach(function(chave) { if (!indiceIds[chave]) indiceIds[chave] = indice + 2; });
       });
+      return indiceIds[String(id).trim().toUpperCase()] || null;
+    } finally {
+      tempoIds += Date.now() - inicioId;
     }
-    return indiceIds[String(id).trim().toUpperCase()] || null;
   }
   // Segue os vinculos: cada linha nova pode citar outro envio.
   while (pendentes.length) {
@@ -17987,6 +18001,14 @@ function agendaAwbContextoFocado_(agenda, awb, ids) {
     if (Object.keys(linhas).length > CODEX_AWB_FOCO_MAX_LINHAS_) return agendaAwbContexto_(agenda);
   }
   lap('awb_linhas', Object.keys(linhas).length);
+  if (typeof codexLogPerformance_ === 'function') {
+    try {
+      codexLogPerformance_('salvarTransporte', 'awb_linhas_leitura', tempoLinhas, { rowCount: Object.keys(linhas).length }, true);
+      codexLogPerformance_('salvarTransporte', 'awb_linhas_ids', tempoIds, { rowCount: leiturasColunaIds }, true);
+    } catch (erroLog) {
+      // A telemetria nunca altera a conferencia da AWB.
+    }
+  }
   var backupEntries = [];
   Object.keys(linhas).map(Number).sort(function(a, b) { return a - b; }).forEach(function(linha) {
     agendaAwbContextoLinha_(context, backupEntries, linhas[linha]);

@@ -39,18 +39,20 @@ function farmaciaOpenRecordAction(kind, id, action) {
     return '<div class="field' + (name === 'name' || name === 'presentation' || name === 'brand' ? ' full' : '') + '"><label class="field-label" for="farmaciaAction-' + name + '">' + label + '</label><input class="f-input" id="farmaciaAction-' + name + '" name="' + name + '" type="' + (type || 'text') + '" value="' + esc(value || '') + '" maxlength="' + (max || 160) + '"' + (optional ? '' : ' required') + '></div>';
   }
   if (viewing && kind === 'product') {
-    var detailFields = [['name','Produto',record.name],['category','Tipo de produto',farmaciaProductCategoryLabel(record.category)],
+    var detailFields = [['name','Produto',record.name],['category','Tipo de produto',farmaciaProductCategoryLabel(record.category)]].concat(
+      record.category === 'material' ? [['materialUse','Uso do material',farmaciaMaterialUseLabel(record.materialUse)]] : [], [
       ['brand','Marca do produto',record.brand],['barcode','Código de barras do produto',record.barcode],
       ['dosageForm','Forma farmacêutica',record.dosageForm],['strength','Dosagem / concentração',record.strength],
-      ['route','Via de administração',record.route],['presentation','Apresentação / embalagem',record.presentation]];
+      ['route','Via de administração',record.route],['presentation','Apresentação / embalagem',record.presentation]]);
     fields = '<dl class="farmacia-detail-grid full">' + detailFields.filter(function(field) {
       return record.category !== 'material' || ['dosageForm','strength','route'].indexOf(field[0]) === -1;
     }).map(function(field) {
       return '<div><dt>' + field[1] + '</dt><dd>' + esc(field[2] || 'Não informado') + '</dd></div>';
     }).join('') + '<div><dt>Unidade / Controle</dt><dd>' + esc(record.unit) + ' · ' + esc(record.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</dd></div><div><dt>Conservação</dt><dd>' + farmaciaConservationHtml(record.storage) + '</dd></div></dl>';
-  } else if (viewing) fields = '<dl class="farmacia-detail-grid full"><div><dt>Lote</dt><dd>' + esc(record.lot || 'Não informado') + '</dd></div><div><dt>Validade</dt><dd>' + esc(record.expiry || 'Não informada') + '</dd></div></dl>';
+  } else if (viewing) fields = '<dl class="farmacia-detail-grid full"><div><dt>Lote</dt><dd>' + esc(farmaciaLotLabel(record.lot)) + '</dd></div><div><dt>Validade</dt><dd>' + esc(farmaciaExpiryLabel(record.expiry)) + '</dd></div></dl>';
   else if (!deleting && kind === 'product') {
     var categoryField = '<div class="field"><label class="field-label" for="farmaciaAction-category">Tipo de produto</label><select class="f-input f-select" id="farmaciaAction-category" name="category" required onchange="farmaciaProductCategoryChanged(this.form)">' + farmaciaProductCategoryOptionsHtml(record.category) + '</select></div>';
+    var materialUseField = '<div class="field" data-farmacia-material-field><label class="field-label" for="farmaciaAction-materialUse">Uso do material</label><select class="f-input f-select" id="farmaciaAction-materialUse" name="materialUse">' + farmaciaMaterialUseOptionsHtml(record.materialUse) + '</select></div>';
     var barcodeField = '<div class="field full"><label class="field-label" for="farmaciaAction-barcode">Código de barras do produto (opcional)</label><input class="f-input" id="farmaciaAction-barcode" name="barcode" type="text" value="' + esc(record.barcode || '') + '" maxlength="80" inputmode="numeric" autocomplete="off" spellcheck="false" onkeydown="if(event.key===\'Enter\')event.preventDefault()"><div class="field-help">Código geral da embalagem; não use o número de um kit individualizado.</div></div>';
     var dosageFormField = '<div class="field" data-farmacia-medication-field><label class="field-label" for="farmaciaAction-dosageForm">Forma farmacêutica (opcional)</label><select class="f-input f-select" id="farmaciaAction-dosageForm" name="dosageForm">' + farmaciaProductDosageFormOptionsHtml(record.dosageForm) + '</select></div>';
     var strengthField = '<div class="field" data-farmacia-medication-field><label class="field-label" for="farmaciaAction-strength">Dosagem / concentração (opcional)</label><input class="f-input" id="farmaciaAction-strength" name="strength" value="' + esc(record.strength || '') + '" maxlength="120"></div>';
@@ -61,8 +63,8 @@ function farmaciaOpenRecordAction(kind, id, action) {
       return '<option value="' + esc(option.value) + '"' + (option.value === record.unit ? ' selected' : '') + '>' + esc(option.textContent) + '</option>';
     }).join('');
     var unitField = '<div class="field full"><label class="field-label" for="farmaciaAction-unit">Unidade de controle</label><select class="f-input f-select" id="farmaciaAction-unit" name="unit" required aria-describedby="farmaciaAction-unitHelp"' + (unitLocked ? ' disabled' : '') + '>' + unitOptions + '</select><div class="field-help" id="farmaciaAction-unitHelp">' + unitHelp + '</div></div>';
-    fields = categoryField + input('name','Nome ou descrição do produto',record.name) + input('brand','Marca do produto (opcional)',record.brand,'text',120,true) + barcodeField + dosageFormField + strengthField + routeField + input('presentation','Apresentação / embalagem',record.presentation) + '<p class="profile-helper full">Informe o que identifica o produto e a embalagem controlada no estoque.</p>' + unitField;
-  } else if (!deleting) fields = input('lot', 'Lote', record.lot, 'text', 100) + input('expiry', 'Validade', record.expiry, 'date') + '<div class="field full"><label class="field-label" for="farmaciaAction-note">Observação</label><textarea class="f-input" id="farmaciaAction-note" name="note" maxlength="500">' + esc(record.note || '') + '</textarea></div>';
+    fields = categoryField + materialUseField + input('name','Nome ou descrição do produto',record.name) + input('brand','Marca do produto (opcional)',record.brand,'text',120,true) + barcodeField + dosageFormField + strengthField + routeField + input('presentation','Apresentação / embalagem',record.presentation) + '<p class="profile-helper full">Informe o que identifica o produto e a embalagem controlada no estoque.</p>' + unitField;
+  } else if (!deleting) fields = farmaciaEntryLotFieldsHtml(record, input) + '<div class="field full"><label class="field-label" for="farmaciaAction-note">Observação</label><textarea class="f-input" id="farmaciaAction-note" name="note" maxlength="500">' + esc(record.note || '') + '</textarea></div>';
   if (!viewing) fields += '<div class="field full"><label class="field-label" for="farmaciaAction-reason">Motivo da ' + (deleting ? 'exclusão' : 'correção') + '</label><textarea class="f-input" id="farmaciaAction-reason" name="reason" maxlength="500" required></textarea></div>';
   if (deleting) fields += '<label class="farmacia-confirm"><input type="checkbox" name="confirmed" required><span>Confirmo a exclusão deste cadastro incorreto. O histórico será preservado.</span></label>';
   var copy = deleting ? kind === 'position' ? 'Recebimentos e inventários com movimentações não podem ser excluídos.' : 'Produtos com estoque lançado não podem ser excluídos. Exclua antes os inventários iniciais sem movimentações; recebimentos mantêm o bloqueio.' : kind === 'position' ? 'A correção preserva quantidades, produto, kit e localização. Lotes já liberados, bloqueados, transferidos, dispensados ou ajustados devem usar os fluxos de movimentação.' : '';
@@ -81,6 +83,8 @@ function farmaciaSaveRecordAction(event, form) {
   var data = {entityId:snapshot.record.id,revision:snapshot.record.revision || snapshot.record.id,reason:form.elements.reason.value};
   if (!deleting) data.data = product ? Object.assign({}, snapshot.record, {category:form.elements.category.value,name:form.elements.name.value,presentation:form.elements.presentation.value}) : {lot:form.elements.lot.value,expiry:form.elements.expiry.value,note:form.elements.note.value};
   if (!deleting && product) ['barcode','dosageForm','strength','route','unit','brand'].forEach(function(key) { data.data[key] = form.elements[key].value; });
+  // Uso do material só acompanha material; ao virar medicamento, sai do cadastro.
+  if (!deleting && product) { if (data.data.category === 'material') data.data.materialUse = form.elements.materialUse.value; else delete data.data.materialUse; }
   var payload = {studyId:snapshot.studyId,restricted:snapshot.restricted,requestId:snapshot.requestId,
     type:(product ? 'PRODUCT_' : 'INITIAL_') + (deleting ? 'DELETE' : 'EDIT'),data:data};
   function current() { return farmaciaStockCurrent(snapshot.epoch, snapshot.studyId, snapshot.restricted) && modal.farmaciaSnapshot === snapshot; }

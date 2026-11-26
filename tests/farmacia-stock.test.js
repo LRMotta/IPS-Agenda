@@ -963,12 +963,12 @@ test('categoria, código de barras e características farmacêuticas persistem n
     assert.throws(()=>f.server.cadastrarProdutoFarmacia(f.product({requestId:'invalid-strength-0001',data:{...characteristics,[key]:{text:'inválido'}}})));
   }
   assert.equal(sheet.writes,writes);
-  const material=fixture(), equipo=material.product({data:{category:'material',name:'Equipo macrogotas',presentation:'Unidade',unit:'equipo',barcode:'07891234567890'}});
+  const material=fixture(), equipo=material.product({data:{category:'material',materialUse:'site',name:'Equipo macrogotas',presentation:'Unidade',unit:'equipo',barcode:'07891234567890'}});
   const materialId=material.server.cadastrarProdutoFarmacia(equipo).id;
   const listedMaterial=material.server.getFarmaciaEstoque('P1',false).products.find(item=>item.id===materialId);
   assert.equal(listedMaterial.category,'material'); assert.equal(listedMaterial.unit,'equipo');
   assert.equal(listedMaterial.barcode,'07891234567890'); assert.equal(listedMaterial.dosageForm,'');
-  const kitId=material.server.cadastrarProdutoFarmacia(material.product({requestId:'kit-product-request-0001',data:{category:'material',name:'Kit de material',presentation:'Kit individualizado',unit:'kit',control:'kit',barcode:'7891111111111'}})).id;
+  const kitId=material.server.cadastrarProdutoFarmacia(material.product({requestId:'kit-product-request-0001',data:{category:'material',materialUse:'participant',name:'Kit de material',presentation:'Kit individualizado',unit:'kit',control:'kit',barcode:'7891111111111'}})).id;
   const kitInitial=material.initial(kitId,{requestId:'kit-initial-request-0001',data:{...material.initial(kitId).data,kit:'KIT-INDIVIDUAL-001',physical:1,blocked:0}});
   material.server.registrarInventarioInicialFarmacia(kitInitial);
   const individual=material.server.getFarmaciaEstoque('P1',false).positions.find(item=>item.productId===kitId);

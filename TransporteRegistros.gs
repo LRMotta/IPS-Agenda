@@ -309,7 +309,9 @@ function transporteAwbReservarEnvio_(agendaId, slot, usuario, opcoes) {
     if (!String(registro.awb || '').trim()) return { reservada: false };
     var idAgenda = String(registro.idAgenda || '').trim();
     if (!idAgenda) throw new Error('Envio sem vínculo com a Agenda: a AWB não pode ser reservada.');
-    var agenda = getAgendaSheetForRead_();
+    // Mesma aba (mesmo objeto) que a sincronizacao da Agenda usa logo depois, no mesmo lock: a linha do
+    // agendamento achada aqui fica lembrada (CODEX_LINHA_POR_ID_MEMO_ e por objeto de aba) e a aba nao e reaberta.
+    var agenda = getAgendaSheet_();
     lap('aw_aba_agenda');
     var context = agendaAwbContextoFocado_(agenda, registro.awb, [idAgenda]);
     lap('aw_contexto');

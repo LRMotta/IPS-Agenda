@@ -383,3 +383,30 @@ test('farmácia: nota informada ou corrigida depois do recebimento move o item p
   const chaves = Array.from(server.getMedicamentosNotasFiscais().notas).map((n) => n.chave).sort();
   assert.deepEqual(chaves, ['112|ALMAC', '900|MARKEN']);
 });
+
+test('farmácia: todos os ledgers são lidos numa única chamada em lote, com o mesmo resultado da leitura aba a aba', () => {
+  const ledger = [receipt('FRC-1', false, '777', 'Marken'), receipt('FRC-2', true, '888', 'Almac')];
+  const porAba = setupFarmacia([], ledger);
+  const esperado = JSON.stringify(Array.from(porAba.server.getMedicamentosNotasFiscais().notas));
+  const lote = setupFarmacia([], ledger);
+  const nome = lote.server.farmaciaLedgerSheetName_('P1');
+  const vazio = lote.server.farmaciaLedgerSheetName_('@IPS_COMMON');
+  lote.ss.sheets[vazio] = new FakeSheet(vazio, [Array.from(lote.server.FARMACIA_LEDGER_HEADERS_)]);
+  lote.ss.getId = () => 'planilha-teste';
+  const chamadas = [];
+  lote.server.Sheets = { Spreadsheets: { Values: { batchGet: (id, opcoes) => {
+    chamadas.push({ id, opcoes });
+    // A API omite células vazias no fim da linha e não lê abas inexistentes.
+    return { valueRanges: opcoes.ranges.map((faixa) => ({ range: faixa, values: lote.ss.sheets[faixa.slice(1, faixa.indexOf("'!"))].rows.map((r) => r.slice()) })) };
+  } } } };
+  // Leitura aba a aba não pode mais acontecer.
+  lote.ss.sheets[nome].getDataRange = () => { throw new Error('leitura aba a aba'); };
+  assert.equal(JSON.stringify(Array.from(lote.server.getMedicamentosNotasFiscais().notas)), esperado);
+  assert.equal(chamadas.length, 1);
+  assert.equal(chamadas[0].id, 'planilha-teste');
+  assert.equal(chamadas[0].opcoes.valueRenderOption, 'UNFORMATTED_VALUE');
+  assert.deepEqual(Array.from(chamadas[0].opcoes.ranges).sort(), ["'" + nome + "'!A:H", "'" + vazio + "'!A:H"].sort());
+  // Resposta incompleta não vira lista parcial em silêncio.
+  lote.server.Sheets.Spreadsheets.Values.batchGet = () => ({ valueRanges: [] });
+  assert.throws(() => lote.server.getMedicamentosNotasFiscais(), /recebimentos da Farmácia/);
+});

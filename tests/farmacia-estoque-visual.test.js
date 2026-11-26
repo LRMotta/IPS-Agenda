@@ -82,7 +82,7 @@ test('estoque: "Ver ciclo" fica na mesma linha dos ícones de ação', () => {
 });
 
 test('estoque: a tabela usa o aviso de validade', () => {
-  assert.match(readProjectFile('IndexFarmaciaViewScripts.html'), /esc\(farmaciaStockDate\(position\.expiry\)\) \+ farmaciaExpiryChip\(position\)/);
+  assert.match(readProjectFile('IndexFarmaciaViewScripts.html'), /esc\(farmaciaExpiryLabel\(position\.expiry\)\) \+ farmaciaExpiryChip\(position\)/);
 });
 
 test('histórico do lote: modal largo, botões no próprio cartão e quantidades no plural', () => {
@@ -97,7 +97,7 @@ test('histórico do lote: modal largo, botões no próprio cartão e quantidades
 test('histórico do lote: topo com produto como título, dados do lote e um quadro por saldo', () => {
   const ctx = vm.createContext({ esc: (v) => String(v === undefined || v === null ? '' : v).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';'),
     farmaciaProductCharacteristics: () => 'Medicamento · 100mg', farmaciaStockDate: (v) => String(v).split('-').reverse().join('/') });
-  vm.runInContext(funcoes('IndexFarmaciaScripts.html', ['farmaciaStockNumber', 'farmaciaStockQuantity', 'farmaciaPositionSummaryHtml']), ctx);
+  vm.runInContext(funcoes('IndexFarmaciaScripts.html', ['farmaciaStockNumber', 'farmaciaStockQuantity', 'farmaciaLotLabel', 'farmaciaExpiryLabel', 'farmaciaPositionSummaryHtml']), ctx);
   vm.runInContext('var FARMACIA_VENCE_EM_BREVE_DIAS = 30;\n' + funcoes('IndexFarmaciaViewScripts.html', ['farmaciaExpiryChip', 'farmaciaStorageNote']), ctx);
   const html = ctx.farmaciaPositionSummaryHtml({ lot: '23951/47', expiry: '2027-03-31', location: 'IPS RB-04 → Gaveta 3', physical: 2, available: 2, pending: 0, blocked: 0,
     storageCheck: { status: 'compatible' } }, { name: 'MB12 <b>', unit: 'caixa', presentation: 'Caixa com 2 frascos' });
@@ -105,8 +105,32 @@ test('histórico do lote: topo com produto como título, dados do lote e um quad
   assert.match(html, /<dt>Lote<\/dt><dd>23951\/47<\/dd>.*<dt>Validade<\/dt><dd>31\/03\/2027<\/dd>.*<dt>Localização<\/dt>/);
   assert.match(html, /farmacia-lot-balance"><span>Físico<\/span><strong>2 caixas<\/strong>/);
   assert.match(html, /farmacia-lot-balance is-zero"><span>Bloqueado<\/span><strong>0 caixas<\/strong>/);
+  // Material sem lote e sem validade: rótulos no lugar do vazio, sem aviso de vencimento.
+  const semLote = ctx.farmaciaPositionSummaryHtml({ lot: '', expiry: '', location: 'IPS AF-01 → Gaveta 01', physical: 1, available: 1, pending: 0, blocked: 0,
+    storageCheck: { status: 'compatible' } }, { name: 'Mochila', unit: 'unidade' });
+  assert.match(semLote, /<dt>Lote<\/dt><dd>Sem lote<\/dd>.*<dt>Validade<\/dt><dd>Sem validade<\/dd>/);
+  assert.doesNotMatch(semLote, /farmacia-expiry-chip/);
   assert.doesNotMatch(html, /farmacia-lot-storage|section-label/);
   const alerta = ctx.farmaciaPositionSummaryHtml({ lot: 'L', expiry: '2020-01-01', expired: true, location: 'X', physical: 1, storageCheck: { status: 'incompatible', message: 'Faixa incompatível.' } }, { name: 'P', unit: 'frasco' });
   assert.match(alerta, /Vencido/);
   assert.match(alerta, /farmacia-lot-storage"><small class="farmacia-storage-alert">⚠ Faixa incompatível\./);
+});
+
+test('estoque: linhas em ordem alfabética do produto, depois validade mais próxima e lote', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(funcoes('IndexFarmaciaViewScripts.html', ['farmaciaSortPositions']), ctx);
+  const products = [{ id: 'K', name: 'MB12 ou Keytruda' }, { id: 'C', name: 'Carboplatina' }, { id: 'P', name: 'pemetrexed' }, { id: 'S', name: 'Cisplatina' }];
+  const positions = [
+    { id: '1', productId: 'K', lot: '23951/47', expiry: '2026-09-30' },
+    { id: '2', productId: 'K', lot: '23951/47 - Revalidado', expiry: '2027-03-31' },
+    { id: '3', productId: 'C', lot: '87250076AH', expiry: '2027-02-28' },
+    { id: '4', productId: 'P', lot: '87250505AA', expiry: '2027-10-31' },
+    { id: '5', productId: 'S', lot: '106768', expiry: '2026-07-31' },
+    { id: '6', productId: 'C', lot: '87240356AI', expiry: '2026-08-31' },
+    { id: '7', productId: 'K', lot: '23951/44', expiry: '2027-04-30' },
+    { id: '8', productId: 'K', lot: '23951/47', expiry: '2027-03-31' }
+  ];
+  const ordem = Array.from(ctx.farmaciaSortPositions(positions, products)).map((p) => p.id);
+  assert.deepEqual(ordem, ['6', '3', '5', '1', '8', '2', '7', '4']);
+  assert.deepEqual(positions.map((p) => p.id), ['1', '2', '3', '4', '5', '6', '7', '8'], 'não altera a lista original');
 });

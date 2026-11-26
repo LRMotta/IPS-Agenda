@@ -784,6 +784,7 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       assert.equal(await page.locator('#farmaciaProductSupply option[value=sponsor]').isDisabled(),true);
       await page.locator('#farmaciaProductSupply').selectOption('site');
       await page.locator('#farmaciaProductCategory').selectOption('material');
+      await page.locator('#farmaciaProductMaterialUse').selectOption('site');
       await page.locator('#farmaciaProductName').fill('Seringa fictícia');
       await page.locator('#farmaciaProductBrand').fill('Marca de material');
       await page.locator('#farmaciaProductBarcode').fill('07891234567890');
@@ -800,6 +801,7 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       const commonProduct=await page.evaluate(() => window.pending.at(-1).args[0]);
       assert.equal(commonProduct.studyId,'@IPS_COMMON');
       assert.equal(commonProduct.data.category,'material');
+      assert.equal(commonProduct.data.materialUse,'site');
       assert.equal(commonProduct.data.brand,'Marca de material');
       assert.equal(commonProduct.data.barcode,'07891234567890');
       assert.equal(Object.hasOwn(commonProduct.data.storage,'source'),false);
@@ -1467,5 +1469,30 @@ test('recebimento sem nota permite informar a nota depois, com motivo, pelo deta
       assert.deepEqual(errors,[]); assert.deepEqual(second.errors,[]);
       await page.close(); await second.page.close();
     }
+  } finally {await browser.close();}
+});
+
+test('inventário de material aceita lote e validade em branco; medicamento continua exigindo', async () => {
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    await openStock(page,stockData({products:[{id:'MAT1',name:'Mochila fictícia',presentation:'1 mochila',category:'material',materialUse:'loan',unit:'unidade',control:'quantity'},{id:'MED1',name:'Medicamento fictício',presentation:'Caixa',category:'medicine',unit:'caixa',control:'quantity'}],positions:[]}));
+    await openForm(page,'stock');
+    await page.locator('#farmaciaInitialProduct').selectOption('MED1');
+    assert.equal(await page.locator('#farmaciaInitialLot').getAttribute('required'),'');
+    assert.equal(await page.locator('label[for="farmaciaInitialLot"]').innerText(),'LOTE');
+    await page.locator('#farmaciaInitialProduct').selectOption('MAT1');
+    assert.equal(await page.locator('#farmaciaInitialLot').getAttribute('required'),null);
+    assert.equal(await page.locator('#farmaciaInitialExpiry').getAttribute('required'),null);
+    assert.match(await page.locator('label[for="farmaciaInitialExpiry"]').innerText(),/em branco: sem validade/i);
+    await page.locator('#farmaciaInitialPhysical').fill('1');
+    await page.locator('#farmaciaInitialUnit').selectOption('UNIT-1');
+    await page.locator('#farmaciaInitialLocation').selectOption('Prateleira 1');
+    await page.locator('#farmaciaInitialCountedOn').fill('2026-10-21');
+    await page.locator('#farmaciaInitialConfirmed').check();
+    await page.locator('#farmaciaInitialForm').getByRole('button',{name:'Registrar inventário inicial'}).click();
+    const payload=await page.evaluate(()=>window.pending.at(-1).args[0]);
+    assert.equal(payload.data.lot,''); assert.equal(payload.data.expiry,'');
+    assert.deepEqual(errors,[]); await page.close();
   } finally {await browser.close();}
 });

@@ -472,3 +472,134 @@ test('memorando dispensa a observação geral, exceto quando o motivo é Outro',
   assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]],{reasonCategory:'other'})),/observação/);
   assert.equal(f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]],{reasonCategory:'other',reason:'Frasco sem rótulo legível'})).repeated,false);
 });
+
+// Materiais do patrocinador: uso do material no cadastro decide se entram no ciclo.
+function materialLot(f,use,suffix,extra={}){
+  const data={category:'material',name:'Mochila '+suffix,presentation:'1 mochila',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''},...extra};
+  if(use!==undefined)data.materialUse=use;
+  const product=f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'material-product-'+suffix,data}).id;
+  const id=f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'material-initial-'+suffix,data:{productId:product,lot:'N/A',expiry:'2026-11-01',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Gaveta 1'},kit:'',physical:3,blocked:0,countedOn:'2026-10-12',confirmed:true,note:''}}).id;
+  f.movement({positionId:id,revision:id,quantity:3});
+  return {product,id};
+}
+
+test('material exige o uso no cadastro; medicamento não aceita uso',()=>{
+  const f=fixture(),base={category:'material',name:'Bag',presentation:'1 bag',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''}};
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'material-no-use-0001',data:base}),/uso do material/);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'material-bad-use-0001',data:{...base,materialUse:'gift'}}),/uso do material/);
+  assert.throws(()=>f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'medicine-use-00001',data:{...base,category:'medicine',name:'Outro',materialUse:'loan'}}),/uso do material/);
+  f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'material-loan-00001',data:{...base,materialUse:'loan'}});
+  assert.equal(f.stock().products.find(p=>p.name==='Bag').materialUse,'loan');
+});
+
+test('guia dispensa medicamento e materiais do participante juntos; material não confere validade do período de uso',()=>{
+  const f=fixture(),delivered=materialLot(f,'participant','entregue'),loan=materialLot(f,'loan','emprestada');
+  // Validade dos materiais (01/11) é anterior ao último dia de uso (05/11): só o medicamento confere.
+  const result=f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,30],[delivered.id,1],[loan.id,1]]));
+  assert.equal(result.ids.length,3);
+  assert.equal(f.stock().positions.find(p=>p.id===loan.id).available,2);
+  f.state.today='2026-11-02';
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[[delivered.id,1]],{occurredOn:'2026-11-02',validThrough:'2026-11-05'},'guide-expired-0001')),/vencido/);
+});
+
+test('material consumido no centro e produto sem uso não entram no ciclo',()=>{
+  const f=fixture(),site=materialLot(f,'site','centro');
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[[site.id,1]])),/ciclo exige/);
+});
+
+test('material emprestado conferido volta ao disponível da posição e pode sair de novo; avariado é segregado',()=>{
+  const f=fixture(),loan=materialLot(f,'loan','emprestada'),location={unitId:'UNIT-1',position:'Quarentena'};
+  const [dispenseId]=f.server.registrarDispensacaoFarmacia(guide(f,[[loan.id,2]])).ids;
+  const at=()=>f.stock().positions.find(p=>p.id===loan.id);
+  assert.equal(at().available,1);assert.equal(at().physical,1);
+  const back=f.payload({action:'return',positionId:loan.id,revision:loan.id,dispenseId,quantity:1,occurredOn:'2026-10-26',returnTo:'stock'},'loan-return-request-01');
+  f.server.registrarCicloFarmacia(back);
+  assert.equal(at().available,2);assert.equal(at().physical,2);
+  assert.equal(f.stock().positions.filter(p=>p.returned).length,0);
+  assert.equal(f.stock().movements.at(-1).data.locationRef,undefined);
+  const writes=f.sheet().writes;
+  assert.equal(f.server.registrarCicloFarmacia(back).repeated,true);assert.equal(f.sheet().writes,writes);
+  // A outra unidade voltou avariada: segregada, como qualquer retorno.
+  f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId,quantity:1,occurredOn:'2026-10-26',locationRef:location});
+  assert.equal(f.stock().positions.filter(p=>p.returned).length,1);assert.equal(at().available,2);
+  assert.throws(()=>f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId,quantity:1,occurredOn:'2026-10-26',returnTo:'stock'}),/excede/);
+  // O que voltou ao estoque é emprestado de novo.
+  assert.equal(f.server.registrarDispensacaoFarmacia(guide(f,[[loan.id,2]],{},'guide-request-0002')).ids.length,1);
+  assert.equal(at().available,0);
+});
+
+test('volta ao estoque só vale para material emprestado e dentro da validade',()=>{
+  const f=fixture(),delivered=materialLot(f,'participant','entregue'),loan=materialLot(f,'loan','emprestada'),location={unitId:'UNIT-1',position:'Quarentena'};
+  const [medicineDispense,deliveredDispense,loanDispense]=f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,30],[delivered.id,1],[loan.id,1]])).ids;
+  assert.throws(()=>f.write({action:'return',dispenseId:medicineDispense,quantity:1,returnTo:'stock'}),/Só material emprestado/);
+  assert.throws(()=>f.write({action:'return',positionId:delivered.id,revision:delivered.id,dispenseId:deliveredDispense,quantity:1,returnTo:'stock'}),/Só material emprestado/);
+  assert.throws(()=>f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId:loanDispense,quantity:1,returnTo:'shelf'}),/destino/);
+  f.write({action:'return',positionId:delivered.id,revision:delivered.id,dispenseId:deliveredDispense,quantity:1,locationRef:location});
+  assert.equal(f.stock().positions.filter(p=>p.returned).length,1);
+  // Vencido (validade 01/11) não volta ao disponível.
+  f.state.today='2026-11-02';
+  assert.throws(()=>f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId:loanDispense,quantity:1,occurredOn:'2026-11-02',returnTo:'stock'}),/vencido/);
+});
+
+test('material antigo sem uso: fora do ciclo até a correção, que exige o uso e depois o preserva',()=>{
+  const f=fixture(),legacy=materialLot(f,undefined,'antiga',{materialUse:'site'});
+  // Simula o cadastro anterior à chave: reescreve o registro do produto sem materialUse.
+  const sheet=f.sheet(),row=sheet.rows.findIndex(r=>r[0]===legacy.product);
+  const data=JSON.parse(sheet.rows[row][7]);delete data.materialUse;sheet.rows[row][7]=JSON.stringify(data);
+  assert.equal(f.stock().products.find(p=>p.id===legacy.product).materialUse,undefined);
+  assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[[legacy.id,1]])),/ciclo exige/);
+  const edit=(values,requestId,revision=legacy.product)=>f.server.alterarRegistroFarmacia({studyId:'P1',restricted:false,requestId,type:'PRODUCT_EDIT',data:{entityId:legacy.product,revision,reason:'Uso do material',data:{...data,...values}}});
+  assert.throws(()=>edit({},'legacy-edit-request-01'),/uso do material/);
+  const first=edit({materialUse:'loan'},'legacy-edit-request-02');
+  // Correção seguinte sem a chave preserva o uso.
+  edit({presentation:'1 mochila azul'},'legacy-edit-request-03',first.id);
+  assert.equal(f.stock().products.find(p=>p.id===legacy.product).materialUse,'loan');
+  assert.equal(f.server.registrarDispensacaoFarmacia(guide(f,[[legacy.id,1]])).ids.length,1);
+});
+
+// Material sem lote e sem validade: texto vazio no registro, nunca tratado como vencido.
+function noLotMaterial(f,suffix,extra={}){
+  const product=f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'nolot-product-'+suffix,data:{category:'material',materialUse:'loan',name:'Bag '+suffix,presentation:'1 bag',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''}}}).id;
+  const id=f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'nolot-initial-'+suffix,data:{productId:product,lot:'',expiry:'',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Gaveta 1'},kit:'',physical:2,blocked:0,countedOn:'2026-10-12',confirmed:true,note:'',...extra}}).id;
+  return {product,id};
+}
+
+test('material sem lote e sem validade entra, nunca vence, é dispensado e volta ao estoque',()=>{
+  const f=fixture(),bag=noLotMaterial(f,'semlote');
+  const at=()=>f.stock().positions.find(p=>p.id===bag.id);
+  assert.deepEqual([at().lot,at().expiry,at().expired],['','',false]);
+  f.movement({positionId:bag.id,revision:bag.id,quantity:2});
+  // Anos depois continua utilizável: sem validade não entra em comparação de datas.
+  f.state.today='2035-01-10';
+  assert.equal(at().expired,false);
+  const [dispenseId]=f.server.registrarDispensacaoFarmacia(guide(f,[[bag.id,1]],{occurredOn:'2035-01-10',validThrough:'2035-02-10'})).ids;
+  f.write({action:'return',positionId:bag.id,revision:bag.id,dispenseId,quantity:1,occurredOn:'2035-01-10',returnTo:'stock'});
+  assert.equal(at().available,2);
+});
+
+test('sem lote / sem validade só vale para material',()=>{
+  const f=fixture(),entry=data=>f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'medicine-nolot-'+(++f.state.uuid),data:{productId:f.product,lot:'L9',expiry:'2027-08-31',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Quarentena'},kit:'',physical:1,blocked:0,countedOn:'2026-10-12',confirmed:true,note:'',...data}});
+  assert.throws(()=>entry({lot:''}),/lote/);
+  assert.throws(()=>entry({expiry:''}),/validade/);
+  // Material com uma entrada sem lote não vira medicamento.
+  const bag=noLotMaterial(f,'categoria');
+  const edit=values=>f.server.alterarRegistroFarmacia({studyId:'P1',restricted:false,requestId:'nolot-edit-'+(++f.state.uuid),type:'PRODUCT_EDIT',data:{entityId:bag.product,revision:bag.product,reason:'Teste',data:{name:'Bag categoria',presentation:'1 bag',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''},...values}}});
+  assert.throws(()=>edit({category:'medicine'}),/não pode virar medicamento/);
+});
+
+test('correção do inventário apaga lote e validade fictícios de material, mas não de medicamento',()=>{
+  const f=fixture(),bag=noLotMaterial(f,'correcao',{lot:'N/A',expiry:'2030-12-31'});
+  const fix=(id,data)=>f.server.alterarRegistroFarmacia({studyId:'P1',restricted:false,requestId:'nolot-fix-request-'+(++f.state.uuid),type:'INITIAL_EDIT',data:{entityId:id,revision:f.stock().positions.find(p=>p.id===id).revision,reason:'Material sem lote',data}});
+  fix(bag.id,{lot:'',expiry:'',note:''});
+  const at=f.stock().positions.find(p=>p.id===bag.id);
+  assert.deepEqual([at.lot,at.expiry],['','']);
+  const medicine=f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'medicine-fix-entry-01',data:{productId:f.product,lot:'L7',expiry:'2027-08-31',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Quarentena'},kit:'',physical:1,blocked:0,countedOn:'2026-10-12',confirmed:true,note:''}}).id;
+  assert.throws(()=>fix(medicine,{lot:'',expiry:'',note:''}),/Só material/);
+});
+
+test('recebimento de material sem lote e sem validade entra aguardando avaliação, sem bloqueio por vencimento',()=>{
+  const f=fixture(),material=f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'nolot-receipt-product',data:{category:'material',materialUse:'participant',name:'Kit de coleta',presentation:'1 kit',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:15,max:25,instructions:''}}}).id;
+  const id=f.server.registrarRecebimentoFarmacia({studyId:'P1',restricted:false,requestId:'nolot-receipt-0001',data:{productId:material,lot:'',expiry:'',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Gaveta 1'},kit:'',physical:5,receivedOn:'2026-10-20',document:'Shipment 1',note:''}}).id;
+  const at=f.stock().positions.find(p=>p.id===id);
+  assert.deepEqual([at.lot,at.expiry,at.pending,at.blocked],['','',5,0]);
+});
