@@ -14,7 +14,7 @@ test('ciclo visual filtra sem somar unidades e mostra contabilidade de origem e 
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try{for(const width of [1536,390]){
     const {page,errors}=await cycleFixture(browser,width);
-    assert.equal(await page.locator('#farmaciaLifecycleSummary .farmacia-life-card').count(),6);
+    assert.equal(await page.locator('#farmaciaLifecycleSummary .farmacia-life-card').count(),7);
     assert.equal(await page.locator('#farmaciaSummary').isVisible(),false);
     assert.match(await page.locator('[data-filter="all"]').textContent(),/1 lote/);
     await capture(page,'estoque',width);
@@ -22,7 +22,7 @@ test('ciclo visual filtra sem somar unidades e mostra contabilidade de origem e 
     await page.locator('[data-filter="blocked"]').click();assert.equal(await page.locator('#farmaciaInventoryResults tr[data-farmacia-row]:visible').count(),2);
     await page.locator('[data-filter="all"]').click();await page.locator('#farmaciaSearch').fill('inexistente');assert.equal(await page.locator('#farmaciaSearchEmpty').isVisible(),true);
     await page.locator('#farmaciaSearch').fill('');await page.locator('[data-farmacia-position="IN1"] .farmacia-cycle-link').click();
-    assert.equal(await page.locator('.farmacia-cycle-event').count(),4);assert.equal(await page.locator('#farmaciaLifecycleSummary').isVisible(),false);assert.match(await page.locator('.farmacia-cycle-balances').textContent(),/115/);await capture(page,'historico',width);
+    assert.equal(await page.locator('.farmacia-cycle-event').count(),4);assert.equal(await page.locator('#farmaciaLifecycleSummary').isVisible(),true);assert.equal(await page.locator('#farmaciaLifecycleSummary [aria-pressed="true"]').count(),0);assert.match(await page.locator('.farmacia-cycle-balances').textContent(),/115/);await capture(page,'historico',width);
     await page.getByRole('tab',{name:'Contabilidade',exact:true}).click();assert.match(await page.locator('#farmaciaCyclePane tbody tr').last().textContent(),/115 comprimido/);
     await page.locator('#farmaciaCyclePosition').selectOption('RET1');assert.match(await page.locator('#farmaciaCyclePane tbody tr').last().textContent(),/115 comprimido/);
     await page.getByRole('tab',{name:'Documentos',exact:true}).click();assert.match(await page.locator('#farmaciaCyclePane').textContent(),/RET-DEMO-01/);
@@ -45,6 +45,7 @@ test('dispensação preserva formulário e requestId em falha e descarta respost
     await page.getByRole('button',{name:'Adicionar medicamento',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),2);
     assert.match(await page.locator('.farmacia-guide-item').nth(1).locator('[data-guide-label]').textContent(),/Medicamento 2/);
     await page.locator('[name="guidePosition"]').nth(1).selectOption('IN1');await page.locator('[name="guideQuantity"]').nth(1).fill('5');await page.locator('[name="validThrough"]').fill('2026-11-10');await page.locator('[name="prescription"]').fill('PRESC-NOVA');await page.locator('[name="platformReference"]').fill('IRT-NOVA');await page.locator('[name="document"]').fill('DOC-NOVO');await page.locator('[name="confirmed"]').check();
+    assert.equal(await page.locator('#farmaciaLifecycleSummary').isVisible(),false);
     await capture(page,'dispensacao',1536);const before=await page.evaluate(()=>window.pending.length);await page.locator('#farmaciaCycleForm [type="submit"]').click();
     assert.match(await page.locator('#farmaciaCycleSaveStatus').textContent(),/mais de uma vez/);assert.equal(await page.evaluate(()=>window.pending.length),before);
     await page.getByRole('button',{name:'Remover medicamento 2',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),1);
