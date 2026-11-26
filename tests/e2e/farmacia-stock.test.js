@@ -1229,7 +1229,7 @@ test('ciclo de vida: transferência envia o saldo físico integral para uma posi
     await page.locator('#farmaciaInventoryResults button[data-position-id="IN1"]').click();
     await page.locator('#farmaciaMovementAction').selectOption('transfer');
     assert.equal(await page.getByRole('button',{name:'Confirmar transferência',exact:true}).isVisible(),true);
-    assert.match(await page.locator('#farmaciaMovementHelp').innerText(),/Todo o saldo físico \(10 frasco\)/);
+    assert.match(await page.locator('#farmaciaMovementHelp').innerText(),/Todo o saldo físico \(10 frascos\)/);
     assert.equal(await page.locator('#farmaciaMovementQuantity').inputValue(),'10');
     assert.equal(await page.locator('#farmaciaMovementQuantity').getAttribute('readonly'),'');
     await page.locator('#farmaciaMovementUnit').selectOption('UNIT-1');
@@ -1385,7 +1385,7 @@ test('estoque Geral registra saída / ajuste de quantidade com motivo, data e re
       assert.equal(await page.locator('#farmaciaMovementForm').count(),0,'estoque Geral não usa movimentação do patrocinador');
       assert.equal(await page.locator('#farmaciaAdjustmentResponsible').inputValue(),'Pessoa Fictícia');
       assert.equal(await page.locator('#farmaciaAdjustmentDate').inputValue(),'2026-10-21');
-      assert.match(await page.locator('#farmaciaAdjustmentFrom').innerText(),/^Disponível — 8 frasco$/);
+      assert.match(await page.locator('#farmaciaAdjustmentFrom').innerText(),/^Disponível — 8 frascos$/);
       await page.locator('#farmaciaAdjustmentQuantity').fill('3');
       assert.match(await page.locator('#farmaciaAdjustmentHelp').innerText(),/−3 frasco.*de 8 para 5 frasco/);
       await page.locator('#farmaciaAdjustmentKind').selectOption('recount');
