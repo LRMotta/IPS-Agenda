@@ -35,7 +35,9 @@ rascunho e envio de e-mail rodam fora dele, para que outro envio possa ser prepa
 ## Ordem sugerida para gerar (Etapa 6)
 
 1. Reivindicar o envio e gravar o registro (lock curto cada).
-2. Reservar a AWB (lock curto); duplicidade bloqueia antes de qualquer arquivo.
+2. Reservar a AWB e sincronizar a Agenda no mesmo lock curto; duplicidade bloqueia antes de qualquer arquivo.
+   Juntas, a gravação da AWB na Agenda reaproveita o contexto focado da reserva; em locks separados esse
+   contexto era descartado e a conferência lia a Agenda inteira (~3 s, medido na versão 404).
 3. Gerar dados e PDF em memória e criar o rascunho, **sem lock**, com `generationRequestId`
    (o mecanismo `transporteGeneration*` por token já impede PDF ou rascunho duplicado na reexecução).
 4. Registrar em `Transporte_Operacoes` (lock curto, só para o dono; idempotente por Agenda ID e slot para o mesmo PDF)
@@ -63,7 +65,7 @@ Todas exigem administrador no servidor (`codexAssertAdmin_`). Arquivos: `Transpo
 | `renovarPreparoTransporteEnvio(agendaId, slot)` | Sinal de atividade: renova ou retoma o preparo; com outra pessoa ativa devolve `{ ok: false, comPessoa }`. |
 | `registrarRespostaPinexEnvio(agendaId, slot, versao, texto)` | Lê a linha da PINEX: Coleta (5 ou 6 dígitos) em PINEX COL. Nº, Frete na AWB, Protocolo no registro; avisa se a data difere. HAWB = Frete segue como suposição a confirmar no primeiro envio real. |
 | `getTransporteAwbUltima(projeto, courier, temperatura)` | Última AWB do estudo e da courier em `AWB_Utilizadas`, sem lock e sem escrita. DHL: só Ambiente (a AWB do congelado vem na resposta da courier); outra temperatura devolve `null`. |
-| `gerarDocumentosTransporteEnvio(agendaId, slot, versao, token)` | AWB e Agenda em lock curto; documentos, PDF e rascunho fora do lock com recuperação por token; depois `Transporte_Operacoes` e status da Agenda. O token fica no registro (`geracaoToken`, gravado sem mudar a versão): o da tela só vale na primeira tentativa, e outro navegador retoma a mesma geração. Token de outros dados começa outra geração. Assunto e destinatários do rascunho ficam em `rascunhoAssunto` e `rascunhoDestinatarios`; os três são descartados quando a Agenda muda e o preparo recomeça. |
+| `gerarDocumentosTransporteEnvio(agendaId, slot, versao, token)` | AWB e Agenda juntas, num único lock curto; documentos, PDF e rascunho fora do lock com recuperação por token; depois `Transporte_Operacoes` e status da Agenda. O token fica no registro (`geracaoToken`, gravado sem mudar a versão): o da tela só vale na primeira tentativa, e outro navegador retoma a mesma geração. Token de outros dados começa outra geração. Assunto e destinatários do rascunho ficam em `rascunhoAssunto` e `rascunhoDestinatarios`; os três são descartados quando a Agenda muda e o preparo recomeça. |
 | `sairEnvioTransporte` / `concluirEnvioTransporte` | Guardam o passo e liberam o preparo. Sair libera mesmo quando não consegue guardar o passo. Se o registro muda de versão durante a geração sem mudar os dados dos documentos, a geração grava sobre a versão atual. |
 
 Ainda fora desta parte: a interface do passo a passo, a edição explícita de materiais com a nota na Agenda e a

@@ -375,3 +375,18 @@ test('aba com esquema garantido na execucao nao rele o cabecalho, exceto na leit
   assert.equal(c.getAgendaSheetForRead_(), aba, 'memoria de outra planilha nao vale');
   assert.equal(buscas, 1);
 });
+
+test('mesmo lock: a gravacao da AWB na Agenda reaproveita o contexto da reserva; em locks separados le a Agenda inteira', () => {
+  const junto = fixture();
+  cenario(junto);
+  junto.comLock(() => {
+    const reserva = junto.c.agendaAwbContextoFocado_(junto.agenda, '620X77777777', ['LIVRE']);
+    assert.equal(junto.c.agendaAwbContextoReusar_(junto.agenda, '620X77777777', 'LIVRE'), reserva);
+  });
+  assert.equal(junto.agenda.leiturasCompletas, 0);
+  const separado = fixture();
+  cenario(separado);
+  separado.comLock(() => separado.c.agendaAwbContextoFocado_(separado.agenda, '620X77777777', ['LIVRE']));
+  separado.comLock(() => separado.c.agendaAwbContextoReusar_(separado.agenda, '620X77777777', 'LIVRE'));
+  assert.equal(separado.agenda.leiturasCompletas, 1);
+});
