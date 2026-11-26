@@ -41,8 +41,8 @@ test('estoque: zero apagado; conservação compatível sem nota; incompatível e
   assert.match(c.farmaciaStockQuantityCell(0, 'caixa'), /farmacia-quantity farmacia-quantity-zero">0 caixas</);
   assert.doesNotMatch(c.farmaciaStockQuantityCell(8, 'caixa'), /quantity-zero/);
   assert.equal(c.farmaciaStorageNote({ status: 'compatible', message: 'Faixas cadastradas compatíveis.' }), '');
-  assert.match(c.farmaciaStorageNote({ status: 'incompatible', message: 'Faixa incompatível.' }), /class="farmacia-storage-alert">Faixa incompatível\./);
-  assert.match(c.farmaciaStorageNote({ status: 'unavailable', message: 'Em manutenção.' }), /farmacia-storage-alert/);
+  assert.match(c.farmaciaStorageNote({ status: 'incompatible', message: 'Faixa incompatível.' }), /class="farmacia-storage-alert">⚠ Faixa incompatível\./);
+  assert.match(c.farmaciaStorageNote({ status: 'unavailable', message: 'Em manutenção.' }), /farmacia-storage-alert">⚠ Em manutenção\./);
   assert.equal(c.farmaciaStorageNote({ status: 'pending', message: 'Conferir.' }), '<small>Conferir.</small>');
   assert.equal(c.farmaciaStorageNote(null), '<small>Conservação pendente de conferência.</small>');
   assert.match(c.farmaciaStorageNote({ status: 'incompatible', message: '<b>x</b>' }), /&#60;b&#62;/);
@@ -108,5 +108,5 @@ test('histórico do lote: topo com produto como título, dados do lote e um quad
   assert.doesNotMatch(html, /farmacia-lot-storage|section-label/);
   const alerta = ctx.farmaciaPositionSummaryHtml({ lot: 'L', expiry: '2020-01-01', expired: true, location: 'X', physical: 1, storageCheck: { status: 'incompatible', message: 'Faixa incompatível.' } }, { name: 'P', unit: 'frasco' });
   assert.match(alerta, /Vencido/);
-  assert.match(alerta, /farmacia-lot-storage"><small class="farmacia-storage-alert">Faixa incompatível\./);
+  assert.match(alerta, /farmacia-lot-storage"><small class="farmacia-storage-alert">⚠ Faixa incompatível\./);
 });
