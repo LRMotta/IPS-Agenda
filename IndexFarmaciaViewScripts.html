@@ -166,7 +166,7 @@ function farmaciaRenderTables(data) {
   var productRows = products.map(function(product) {
     return '<tr data-farmacia-row><td><div class="farmacia-product-heading"><strong>' + esc(product.name) + '</strong><span class="chip ' + (product.category === 'medicine' ? 'chip-blue' : product.category === 'material' ? 'chip-green' : 'chip-gray') + '">' + esc(farmaciaProductCategoryLabel(product.category)) + '</span></div><small>' + esc([product.brand ? 'Marca: ' + product.brand : '', product.strength, product.dosageForm, product.route].filter(Boolean).join(' · ')) + '</small><small>' + esc(product.barcode ? 'GTIN ' + product.barcode : '') + '</small></td><td>' + esc(product.presentation) + '<small>' + farmaciaSupplyLabel(product) + '</small></td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td><td>' + farmaciaRecordActions('product',product,data) + '</td></tr>';
   }).join('');
-  var positionRows = positions.map(function(position) {
+  var positionRows = farmaciaSortPositions(positions, products).map(function(position) {
     var product = products.find(function(item) { return item.id === position.productId; }) || {};
     return '<tr data-farmacia-row data-farmacia-position="' + esc(position.id) + '"><td class="farmacia-cycle-product"><strong>' + esc(product.name) + '</strong><small>' + esc([farmaciaProductCharacteristics(product),product.presentation].filter(Boolean).join(' · ')) + '</small></td><td>' + esc(position.lot) + (position.kit ? '<small>Kit ' + esc(position.kit) + '</small>' : '') + '</td><td>' + esc(farmaciaStockDate(position.expiry)) + farmaciaExpiryChip(position) + '</td><td class="farmacia-cell-detail">' + esc(position.location) + farmaciaStorageNote(position.storageCheck) + '</td>' +
       ['physical', 'available', 'pending', 'blocked'].map(function(key) { return farmaciaStockQuantityCell(position[key] || 0, product.unit); }).join('') +
@@ -198,6 +198,18 @@ function farmaciaRenderCatalog(data) {
     if (units.some(function(unit) { return unit.id === selected; })) select.value = selected;
   });
   farmaciaInitialUnitChanged();
+}
+
+// Ordem de exibicao do estoque: produto (alfabetica, sem diferenciar acentos e maiusculas), validade mais proxima
+// primeiro, lote e kit. Ordena uma copia; os dados do estoque seguem na ordem do historico.
+function farmaciaSortPositions(positions, products) {
+  var nomes = {};
+  (products || []).forEach(function(product) { nomes[product.id] = String(product.name || ''); });
+  function texto(a, b) { return String(a || '').localeCompare(String(b || ''), 'pt-BR', { sensitivity: 'base', numeric: true }); }
+  return (positions || []).slice().sort(function(a, b) {
+    return texto(nomes[a.productId], nomes[b.productId]) || String(a.expiry || '9999-12-31').localeCompare(String(b.expiry || '9999-12-31')) ||
+      texto(a.lot, b.lot) || texto(a.kit, b.kit);
+  });
 }
 
 // Compativel nao precisa de nota; incompativel ou equipamento indisponivel pede acao e aparece em destaque, com o icone de aviso.

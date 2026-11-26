@@ -110,3 +110,22 @@ test('histórico do lote: topo com produto como título, dados do lote e um quad
   assert.match(alerta, /Vencido/);
   assert.match(alerta, /farmacia-lot-storage"><small class="farmacia-storage-alert">⚠ Faixa incompatível\./);
 });
+
+test('estoque: linhas em ordem alfabética do produto, depois validade mais próxima e lote', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(funcoes('IndexFarmaciaViewScripts.html', ['farmaciaSortPositions']), ctx);
+  const products = [{ id: 'K', name: 'MB12 ou Keytruda' }, { id: 'C', name: 'Carboplatina' }, { id: 'P', name: 'pemetrexed' }, { id: 'S', name: 'Cisplatina' }];
+  const positions = [
+    { id: '1', productId: 'K', lot: '23951/47', expiry: '2026-09-30' },
+    { id: '2', productId: 'K', lot: '23951/47 - Revalidado', expiry: '2027-03-31' },
+    { id: '3', productId: 'C', lot: '87250076AH', expiry: '2027-02-28' },
+    { id: '4', productId: 'P', lot: '87250505AA', expiry: '2027-10-31' },
+    { id: '5', productId: 'S', lot: '106768', expiry: '2026-07-31' },
+    { id: '6', productId: 'C', lot: '87240356AI', expiry: '2026-08-31' },
+    { id: '7', productId: 'K', lot: '23951/44', expiry: '2027-04-30' },
+    { id: '8', productId: 'K', lot: '23951/47', expiry: '2027-03-31' }
+  ];
+  const ordem = Array.from(ctx.farmaciaSortPositions(positions, products)).map((p) => p.id);
+  assert.deepEqual(ordem, ['6', '3', '5', '1', '8', '2', '7', '4']);
+  assert.deepEqual(positions.map((p) => p.id), ['1', '2', '3', '4', '5', '6', '7', '8'], 'não altera a lista original');
+});
