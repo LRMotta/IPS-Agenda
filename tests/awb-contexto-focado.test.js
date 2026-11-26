@@ -390,3 +390,32 @@ test('mesmo lock: a gravacao da AWB na Agenda reaproveita o contexto da reserva;
   separado.comLock(() => separado.c.agendaAwbContextoReusar_(separado.agenda, '620X77777777', 'LIVRE'));
   assert.equal(separado.agenda.leiturasCompletas, 1);
 });
+
+test('linhas lidas pelo contexto focado ficam lembradas: achar o agendamento depois nao rele a coluna de IDs', () => {
+  const f = fixture();
+  cenario(f);
+  f.comLock(() => {
+    f.c.agendaAwbContextoFocado_(f.agenda, '620X41337652', ['ATIVA']);
+    const colunas = f.agenda.leiturasColuna;
+    const linhaAtiva = f.agenda.rows.findIndex((r) => r[f.i.id] === 'ATIVA') + 1;
+    assert.equal(f.c.encontrarLinhaPorId(f.agenda, 'ATIVA'), linhaAtiva);
+    assert.equal(f.agenda.leiturasColuna, colunas, 'linha conferida pela propria celula, sem ler a coluna');
+  });
+});
+
+test('IDs do historico que nao existem mais na Agenda: a coluna de IDs nao e relida para cada um', () => {
+  const f = fixture();
+  cenario(f);
+  f.historico([
+    ['620X12121212', 'AGD:APAGADO-1:1', 'APAGADO-1', '1', 'MARKEN', 'CONGELADO', 'Pessoa', 'Estudo', '', 'Agendado', ''],
+    ['620X12121212', 'AGD:APAGADO-2:1', 'APAGADO-2', '1', 'MARKEN', 'CONGELADO', 'Pessoa', 'Estudo', '', 'Agendado', ''],
+    ['620X12121212', 'AGD:APAGADO-3:1', 'APAGADO-3', '1', 'MARKEN', 'CONGELADO', 'Pessoa', 'Estudo', '', 'Agendado', '']
+  ]);
+  const antes = f.agenda.leiturasColuna;
+  const focado = f.comLock(() => f.c.agendaAwbContextoFocado_(f.agenda, '620X12121212', ['LIVRE']));
+  // LIVRE (1) + primeiro ausente (busca e indice, 2); os demais saem do indice. Antes: 1 + 2 por ausente = 7.
+  assert.equal(f.agenda.leiturasColuna - antes, 3);
+  const entry = f.c.transporteAwbRegistro_({ awb: '620X12121212', courier: 'MARKEN', temperatura: 'CONGELADO', idAgenda: 'LIVRE', agendaSlot: '1', envioId: 'a'.repeat(32) });
+  assert.deepEqual(f.c.agendaAwbConflito_(focado, entry), f.c.agendaAwbConflito_(f.c.agendaAwbContexto_(f.agenda), entry));
+  assert.equal(f.agenda.leiturasCompletas, 1, 'só a leitura completa de comparação');
+});

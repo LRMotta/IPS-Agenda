@@ -75,6 +75,7 @@ function servidor(opcoes) {
   s.transporteSincronizarAgenda_ = (r) => { eventos.push(['agenda', ativo, r.awb]); return { atualizado: true }; };
   s.transporteMarcarDocsGeradosAgenda_ = () => { eventos.push(['status', ativo]); return { atualizado: true }; };
   s.getAgendaSheetForRead_ = () => ({});
+  s.getAgendaSheet_ = () => ({});
   s.agendaAwbContextoFocado_ = () => ({ entries: [] });
   s.transporteAwbRegistro_ = (r) => ({ owner: r.idAgenda, awb: r.awb });
   s.agendaAwbReservar_ = (_c, entradas) => { eventos.push(['awb', ativo, entradas[0].awb]); };
