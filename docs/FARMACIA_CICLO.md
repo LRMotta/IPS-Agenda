@@ -118,6 +118,26 @@ referência documental. Vencidos são baixados do bloqueado apurado na consulta,
 preservando os eventos e buckets históricos. Não gera MTR, certificado de destruição,
 solicitação de coleta ou comprovação de destinação por conta própria.
 
+A seção **Devolução e destruição** registra um **memorando**: destinação, motivo
+classificado, data, autorização e referência documental uma vez, com um ou mais
+lotes/kits (até 30), cada um com quantidade, saldo de origem (quarentena ou avaliação),
+condição (íntegro, parcialmente utilizado, vazio ou misto, este com observação
+obrigatória) e observação. Devolução registra transportadora, AWB, volumes/lacres,
+registrador de temperatura e destino (opcionais); destruição exige empresa e método, e o
+número do certificado/MTR é opcional, porque costuma sair depois. A observação geral só
+é exigida quando o motivo é "Outro". `registrarDestinacaoFarmacia()` segue o modelo da
+guia de dispensação: valida todos os itens sob o lock, grava numa única escrita, liga os
+itens por `memoId` (o `requestId`) e atribui `memoNumber` (`MEM-AAAA-NNN`, ou
+`MEM-R-AAAA-NNN` na classe restrita, sequencial por estudo/classe e ano). Cada registro
+guarda um retrato do cadastro do estudo (`memoStudy`: protocolo, patrocinador, CRO,
+centro e investigador principal, colunas C, J, K, I e F da aba Projetos). O memorando
+impresso traz os itens com origem (retornado pelo participante, vencido ou não
+dispensado), totais, dados do envio ou da destruição, declaração de conferência,
+assinaturas (farmacêutico com CRF, monitor do patrocinador, transportadora ou empresa de
+destruição e investigador principal opcional) e a lista de anexos. Destinações antigas,
+sem memorando, continuam legíveis e aparecem como registros avulsos.
+`registrarCicloFarmacia()` recusa `memoId`.
+
 ## Persistência, concorrência e segurança
 
 Os eventos usam o mesmo cabeçalho do ledger da Farmácia, com tipo `LIFECYCLE`, prefixo

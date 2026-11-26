@@ -258,12 +258,17 @@ function transporteEnvioGerarDocumentos_(agendaId, slot, versao, generationReque
     var repetido = transporteGenerationReplay_(request.record);
     // O resultado guardado traz a versao da epoca; a tela precisa da atual para continuar gravando.
     if (repetido) return transporteEnvioRespostaGerar_(Object.assign({ ok: true }, repetido, { versao: lido.versao }));
-    // AWB e Agenda: escritas curtas, em lock, antes de qualquer arquivo.
+    // AWB e Agenda: escritas curtas, no MESMO lock, antes de qualquer arquivo. A gravacao da AWB na Agenda
+    // (agendaSetAwbValue_) confere a AWB de novo; dentro do mesmo lock ela reaproveita o contexto focado da
+    // reserva. Em locks separados o contexto era descartado e a conferencia lia a Agenda inteira (~3 s).
     lap('replay');
-    transporteAwbReservarEnvio_(agendaId, slot, usuario, { strict: true });
-    lap('awb');
-    codexWithDocumentLock_('transporteEnvioSincronizarAgenda', function() { return transporteSincronizarAgenda_(registro); });
-    lap('agenda');
+    codexWithDocumentLock_('transporteEnvioAwbAgenda', function() {
+      lap('awb_agenda_lock');
+      transporteAwbReservarEnvio_(agendaId, slot, usuario, { strict: true });
+      lap('awb');
+      transporteSincronizarAgenda_(registro);
+      lap('agenda');
+    });
     var pdf = transporteEnvioGerarPdf_(registro, request, usuario, lap);
     var temperaturaPdf = transporteNormalizeTemperaturaFromCodex_(registro.temperatura);
     var docHash = transportePdfManifestoHash_({ dados: transporteGenerationCanonical_(registro), conteudo: pdf.conteudoPdfHash });

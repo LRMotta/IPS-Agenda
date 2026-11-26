@@ -1141,9 +1141,10 @@ function getFarmaciaEstudo(studyId, productsOnly) {
   return { study: access.farmaciaStudy, farmaciaAccess: access.farmaciaAccess, restrictedAllowed: access.farmaciaRestricted };
 }
 
-function codexAssertCanWrite_(actionName, moduleName, recordId) {
+function codexAssertCanWrite_(actionName, moduleName, recordId, readSnapshot) {
   var autorizacaoInicio = Date.now();
-  var access = codexAuthorizeWebAppRequest_();
+  // readSnapshot é parâmetro de saída: devolve a ACL lida nesta autorização.
+  var access = codexAuthorizeWebAppRequest_(undefined, readSnapshot);
   if (!access.ok) throw new Error(access.message || 'Acesso negado.');
   if (access.role !== 'admin' && access.role !== 'user') {
     codexWriteAuditLog_('ACESSO_NEGADO_READONLY', moduleName || codexInferAuditModule_(actionName || 'readonly'), recordId || '');
@@ -3615,9 +3616,11 @@ function getReqExamesCcEmails_() {
 }
 
 /**
- * Recebe os dados do formulário de requisição do WebApp,
- * preenche a aba "Requisição de Exames", gera o PDF e cria
- * o rascunho de e-mail no Gmail.
+ * Recebe os dados do formulário de requisição do WebApp, gera o PDF
+ * (HTML institucional) e cria o rascunho de e-mail no Gmail.
+ * Os dados vão direto do formulário ao PDF, sem passar pela aba
+ * "Requisição de Exames": evita escritas na planilha e a corrida entre
+ * dois usuários gerando ao mesmo tempo.
  *
  * IMPORTANTE: esta função NÃO usa SpreadsheetApp.getUi() pois
  * getUi() não está disponível no contexto de WebApp (doGet).
@@ -3625,7 +3628,8 @@ function getReqExamesCcEmails_() {
  * do frontend.
  */
 function gerarRequisicaoPDF(dados) {
-  var access = codexAssertCanWrite_('gerarRequisicaoPDF', 'Agenda', dados && (dados.paciente || dados.protocolo));
+  var authSnapshot = {};
+  var access = codexAssertCanWrite_('gerarRequisicaoPDF', 'Agenda', dados && (dados.paciente || dados.protocolo), authSnapshot);
   dados = dados || {};
   if (access && access.userEmail !== 'api-token' && codexNormalizeCanRequestExams_(access.podeSolicitarExames) !== 'Sim') {
     throw new Error('Seu usuário não está autorizado a solicitar exames. Procure um administrador do sistema.');
@@ -3633,64 +3637,28 @@ function gerarRequisicaoPDF(dados) {
   if (agendaDateIsBeforeToday_(dados.dataAgendamento)) {
     throw new Error('Requisicoes de Exame nao podem ser marcadas para uma data anterior a hoje.');
   }
-  var solicitanteEmail = reqExamesSolicitanteEmail_(dados.solicitante);
+  // A ACL lida na autorização acima evita reler Users para achar o solicitante.
+  var solicitanteEmail = reqExamesSolicitanteEmail_(dados.solicitante, authSnapshot.users);
   if (!solicitanteEmail) {
     throw new Error('Selecione um usuário ativo autorizado a solicitar exames.');
   }
   if (!dados.requestedByEmail && access && access.userEmail) dados.requestedByEmail = access.userEmail;
   if (solicitanteEmail) dados.requestedByEmail = solicitanteEmail;
-  const ss    = reqExamesOpenSpreadsheetForWrite_();
-  const sheet = ss.getSheetByName('Requisição de Exames');
-  if (!sheet) throw new Error("Aba 'Requisição de Exames' não encontrada.");
-
-  // ── 1. Limpar campos anteriores ──────────────────────────────────────────
-  ['I5','E8','E9','E10','E11','H8','H9','H10','J10','B36','H41','H42','H43']
-    .forEach(function(cell) { sheet.getRange(cell).clearContent(); });
-
-  // ── 2. Preencher campos ──────────────────────────────────────────────────
-  sheet.getRange('E8').setValue(dados.paciente   || '');
-  sheet.getRange('E9').setValue(dados.nascimento || '');
-  sheet.getRange('H8').setValue(dados.protocolo  || '');
-  sheet.getRange('H9').setValue(dados.medico     || '');
-  sheet.getRange('E10').setValue(dados.localExame || '');
-  sheet.getRange('E11').setValue(dados.endereco   || '');
-
-  if (dados.dataAgendamento) {
-    const p = dados.dataAgendamento.split('-');
-    sheet.getRange('H10').setValue(new Date(p[0], p[1] - 1, p[2]));
-  }
-  sheet.getRange('J10').setValue(dados.horario || '');
 
   var exames = (Array.isArray(dados.exames) ? dados.exames : [])
     .map(function(exame) { return String(exame || '').trim(); })
     .filter(Boolean)
     .slice(0, 40);
   var usarPdfCompatibilidade = reqExamesPdfCompatibilidadePorTextoLongo_(exames);
-  var slotsExames = reqExamesPreencherGradeExames_(sheet, exames);
+  var campos = reqExamesCamposDoFormulario_(dados, exames);
 
-  sheet.getRange('B36').setValue(dados.observacoes || '');
-  sheet.getRange('I5').setValue(dados.urgente ? 'URGENTE' : '');
-  sheet.getRange('H41').setValue(dados.solicitante || '');
-  sheet.getRange('H42').setValue(dados.solFormacao || '');
-  sheet.getRange('H43').setValue(dados.solRegistro || '');
-  // Confirmar o preenchimento antes de conferir as células exibidas e gerar o PDF.
-  SpreadsheetApp.flush();
-
-  var examesGravados = slotsExames
-    .map(function(slot) { return String(slot.getDisplayValue() || '').trim(); })
-    .filter(Boolean);
-  if (examesGravados.length !== exames.length) {
-    throw new Error(
-      'Não foi possível preencher todos os exames na requisição. ' +
-      'Esperados: ' + exames.length + '; gravados: ' + examesGravados.length + '.'
-    );
-  }
-
-  // ── 3. Gerar PDF e criar rascunho (versão sem getUi) ─────────────────────
-  var pdfResult = _exportarPDFWebApp(sheet, ss, {
+  // ── Gerar PDF e criar rascunho (versão sem getUi) ────────────────────────
+  var pdfResult = _exportarPDFWebApp(null, null, {
     requestedByEmail: dados.requestedByEmail || '',
     preferHtml: true,
-    htmlModoCompatibilidade: usarPdfCompatibilidade
+    htmlModoCompatibilidade: usarPdfCompatibilidade,
+    snapshot: campos,
+    authorized: true
   });
 
   var statusResult = null;
@@ -3704,7 +3672,10 @@ function gerarRequisicaoPDF(dados) {
   if (String(dados.agendaId || '').trim()) {
     statusSync.attempted = true;
     try {
-      statusResult = atualizarStatusRequisicaoAgenda(String(dados.agendaId).trim(), true);
+      // Escrita na Agenda já autorizada e auditada no início desta RPC.
+      statusResult = codexMeasurePerformance_('gerarRequisicaoPDF', 'status_agenda', {}, function() {
+        return atualizarStatusRequisicaoAgendaAutorizado_(String(dados.agendaId).trim(), true);
+      });
       if (statusResult && statusResult.semPrestador) {
         statusSync.semPrestador = true;
         statusSync.warning = 'Rascunho criado, mas o status não foi atualizado porque o agendamento está sem prestador.';
@@ -3733,47 +3704,49 @@ function gerarRequisicaoPDF(dados) {
   };
 }
 
-function reqExamesCelulaGravavel_(sheet, row, column) {
-  var cell = sheet.getRange(row, column);
-  var mergedRanges = cell.getMergedRanges();
-  if (!mergedRanges.length) return cell;
-  return mergedRanges[0].getCell(1, 1);
-}
-
-function reqExamesRangeGravavel_(sheet, row, column) {
-  var cell = sheet.getRange(row, column);
-  var mergedRanges = cell.getMergedRanges();
-  return mergedRanges.length ? mergedRanges[0] : cell;
-}
-
-function reqExamesPreencherGradeExames_(sheet, exames) {
-  var baseRow = 14;
-  var linhas = 20;
-  var baseHeight = 38;
-  var leftSlots = [];
-  var rightSlots = [];
-  reqExamesAssertGradeModelo_(sheet);
-  sheet.setRowHeights(baseRow, linhas, baseHeight);
-
-  for (var i = 0; i < linhas; i++) {
-    var row = baseRow + i;
-    var leftText = exames[i] || '';
-    var rightText = exames[linhas + i] || '';
-    var leftRange = reqExamesRangeGravavel_(sheet, row, 3);
-    var rightRange = reqExamesRangeGravavel_(sheet, row, 7);
-    var leftCell = leftRange.getCell(1, 1);
-    var rightCell = rightRange.getCell(1, 1);
-    leftCell.clearContent();
-    rightCell.clearContent();
-    leftRange.setWrap(true).setVerticalAlignment('middle').setFontSize(reqExamesFontSizeExame_(leftText));
-    rightRange.setWrap(true).setVerticalAlignment('middle').setFontSize(reqExamesFontSizeExame_(rightText));
-    leftCell.setValue(leftText);
-    rightCell.setValue(rightText);
-    leftSlots.push(leftCell);
-    rightSlots.push(rightCell);
+// Campos da requisição montados direto do formulário, nas mesmas posições
+// (A1) da aba modelo, para o PDF HTML e o e-mail lerem como antes.
+function reqExamesCamposDoFormulario_(dados, exames) {
+  dados = dados || {};
+  var dataAgendamento = '';
+  if (dados.dataAgendamento) {
+    var p = String(dados.dataAgendamento).split('-');
+    dataAgendamento = new Date(p[0], p[1] - 1, p[2]);
   }
-
-  return leftSlots.concat(rightSlots).slice(0, exames.length);
+  // A aba convertia "dd/mm/aaaa" em data; mantém a conversão para o e-mail e o PDF.
+  var nascimentoTexto = String(dados.nascimento || '').trim();
+  var nascimentoData = nascimentoTexto ? parseAgendaDateAny_(nascimentoTexto) : null;
+  // Data impossível (31/02, 13º mês) rolaria para outro dia; a aba a mantinha como texto, e o PDF também mantém.
+  var nascimentoPartes = /^(\d{1,2})\/(\d{1,2})\/\d{4}$/.exec(nascimentoTexto);
+  var nascimentoValido = nascimentoData && !isNaN(nascimentoData.getTime()) &&
+    (!nascimentoPartes || (nascimentoData.getDate() === Number(nascimentoPartes[1]) && nascimentoData.getMonth() === Number(nascimentoPartes[2]) - 1));
+  var nascimento = nascimentoValido ? nascimentoData : nascimentoTexto;
+  var values = {
+    I5: dados.urgente ? 'URGENTE' : '',
+    E8: dados.paciente || '',
+    E9: nascimento,
+    E10: dados.localExame || '',
+    E11: dados.endereco || '',
+    H8: dados.protocolo || '',
+    H9: dados.medico || '',
+    H10: dataAgendamento,
+    J10: dados.horario || '',
+    B36: dados.observacoes || '',
+    H41: dados.solicitante || '',
+    H42: dados.solFormacao || '',
+    H43: dados.solRegistro || ''
+  };
+  var slots = [];
+  for (var i = 0; i < 40; i++) slots.push(String((exames || [])[i] || '').trim());
+  return {
+    value: function(a1) { return Object.prototype.hasOwnProperty.call(values, a1) ? values[a1] : ''; },
+    display: function(a1) {
+      var v = Object.prototype.hasOwnProperty.call(values, a1) ? values[a1] : '';
+      if (v instanceof Date) return formatarDataMesCurtoPt_(v);
+      return String(v == null ? '' : v);
+    },
+    examesSlots: slots
+  };
 }
 
 function reqExamesPdfCompatibilidadePorTextoLongo_(exames) {
@@ -3782,35 +3755,32 @@ function reqExamesPdfCompatibilidadePorTextoLongo_(exames) {
   });
 }
 
-function reqExamesAssertGradeModelo_(sheet) {
-  for (var i = 0; i < 20; i++) {
-    var row = 14 + i;
-    reqExamesAssertSlotMesclado_(sheet, row, 3, 3, 'C' + row + ':E' + row);
-    reqExamesAssertSlotMesclado_(sheet, row, 7, 4, 'G' + row + ':J' + row);
+// Lê uma vez o bloco B5:J43 da requisição preenchida (valores e texto exibido).
+function reqExamesLerPreenchimento_(sheet) {
+  var firstRow = 5;
+  var firstCol = 2;
+  var range = sheet.getRange('B5:J43');
+  var values = range.getValues();
+  var displays = range.getDisplayValues();
+  function pos(a1) {
+    var m = /^([A-Z])(\d+)$/.exec(a1);
+    return { r: Number(m[2]) - firstRow, c: m[1].charCodeAt(0) - 64 - firstCol };
   }
-}
-
-function reqExamesAssertSlotMesclado_(sheet, row, column, expectedColumns, label) {
-  var cell = sheet.getRange(row, column);
-  var mergedRanges = cell.getMergedRanges();
-  if (!mergedRanges.length) {
-    throw new Error('O modelo da Requisicao de Exames perdeu a mesclagem esperada em ' + label + '. Repare o modelo da planilha e tente novamente.');
+  function cellValue(a1) {
+    var p = pos(a1);
+    return values[p.r] ? values[p.r][p.c] : '';
   }
-  var merged = mergedRanges[0];
-  var ok = merged.getRow() === row &&
-    merged.getColumn() === column &&
-    merged.getNumRows() === 1 &&
-    merged.getNumColumns() >= expectedColumns;
-  if (!ok) {
-    throw new Error('O modelo da Requisicao de Exames esta com mesclagem inesperada em ' + label + '. Repare o modelo da planilha e tente novamente.');
+  function cellDisplay(a1) {
+    var p = pos(a1);
+    return displays[p.r] ? String(displays[p.r][p.c] == null ? '' : displays[p.r][p.c]) : '';
   }
-}
-
-function reqExamesFontSizeExame_(text) {
-  var len = String(text || '').length;
-  if (len > 110) return 7;
-  if (len > 64) return 8;
-  return 10;
+  var slots = [];
+  [3, 7].forEach(function(col) {
+    for (var row = 14; row <= 33; row++) {
+      slots.push(String(displays[row - firstRow][col - firstCol] || '').trim());
+    }
+  });
+  return { value: cellValue, display: cellDisplay, examesSlots: slots };
 }
 
 function reqExamesLinhasEstimadas_(text) {
@@ -3825,14 +3795,20 @@ function reqExamesLinhasEstimadas_(text) {
  * Exporta a requisição e cria o rascunho de e-mail no contexto WebApp.
  * Usada internamente por gerarRequisicaoPDF (contexto WebApp).
  * Lança erros em vez de exibir alertas.
- * @param {Sheet} sheet - Aba "Requisição de Exames" já preenchida.
- * @param {Spreadsheet} ss - Spreadsheet pai.
+ * @param {Sheet|null} sheet - Aba preenchida (legado); null quando options.snapshot traz os campos do formulário.
+ * @param {Spreadsheet|null} ss - Spreadsheet pai, ou null junto com sheet.
  */
 function _exportarPDFWebApp(sheet, ss, options) {
   options = options || {};
-  reqExamesAssertGmailDraftAllowed_(options.requestedByEmail || '');
-  var nomeLocal         = sheet.getRange('E10').getValue();
-  var emailDestinatario = buscarEmailDoLocal(nomeLocal);
+  var snap = options.snapshot || reqExamesLerPreenchimento_(sheet);
+  codexMeasurePerformance_('gerarRequisicaoPDF', 'gmail_autorizacao', {}, function() {
+    reqExamesAssertGmailDraftAllowed_(options.requestedByEmail || '');
+  });
+  var nomeLocal         = snap.value('E10');
+  // options.authorized: a RPC de origem já autorizou; evita reler Users.
+  var emailDestinatario = codexMeasurePerformance_('gerarRequisicaoPDF', 'email_prestador', {}, function() {
+    return options.authorized ? buscarEmailDoLocalDados_(nomeLocal) : buscarEmailDoLocal(nomeLocal);
+  });
 
   if (!emailDestinatario) {
     throw new Error(
@@ -3841,40 +3817,46 @@ function _exportarPDFWebApp(sheet, ss, options) {
     );
   }
 
-  var dataAgendamento = sheet.getRange('H10').getValue();
+  var dataAgendamento = snap.value('H10');
   if (!(dataAgendamento instanceof Date) || isNaN(dataAgendamento.getTime())) {
     throw new Error('Data de agendamento inválida. Verifique o campo de data e tente novamente.');
   }
 
   var dataFormatada   = formatarDataMesCurtoPt_(dataAgendamento);
   var dataArquivo     = formatarDataMesCurtoPt_(dataAgendamento, '-');
-  var paciente        = sheet.getRange('E8').getValue();
+  var paciente        = snap.value('E8');
   var pacienteLimpo   = limparNome(paciente);
-  var dataNascRaw     = sheet.getRange('E9').getValue();
+  var dataNascRaw     = snap.value('E9');
   var dataNasc        = (dataNascRaw instanceof Date)
     ? formatarDataMesCurtoPt_(dataNascRaw) : dataNascRaw;
-  var medico          = sheet.getRange('H9').getValue();
+  var medico          = snap.value('H9');
   var nomeArquivo     = 'IPS-UCS - ' + pacienteLimpo + ' - ' + dataArquivo + '.pdf';
-  var pesquisaClinica = sheet.getRange('H8').getDisplayValue();
-  var urgente         = sheet.getRange('I5').getValue();
+  var pesquisaClinica = snap.display('H8');
+  var urgente         = snap.value('I5');
   var urgenteTag      = urgente
     ? '<span style="background:#e53935;color:white;padding:2px 8px;border-radius:4px;font-weight:700;">URGENTE</span>&nbsp;'
     : '';
 
   // ── Geração do PDF via Export URL ────────────────────────────────────────
-  var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?';
-  var exportOptions = reqExamesPdfExportOptions_(sheet.getSheetId());
-  var pdfResult = reqExamesExportPdfBlob_(url + exportOptions, nomeArquivo, {
-    sheet: sheet,
-    preferHtml: !!options.preferHtml,
-    htmlModoCompatibilidade: !!options.htmlModoCompatibilidade
+  // Sem aba (dados direto do formulário) só o PDF HTML é possível; a URL de export fica vazia.
+  var url = sheet && ss ? 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?' : '';
+  var exportOptions = sheet && ss ? reqExamesPdfExportOptions_(sheet.getSheetId()) : '';
+  var pdfResult = codexMeasurePerformance_('gerarRequisicaoPDF', 'pdf', {}, function() {
+    return reqExamesExportPdfBlob_(url + exportOptions, nomeArquivo, {
+      sheet: sheet,
+      snapshot: snap,
+      preferHtml: !!options.preferHtml,
+      htmlModoCompatibilidade: !!options.htmlModoCompatibilidade
+    });
   });
   var pdfBlob = pdfResult && pdfResult.blob ? pdfResult.blob : pdfResult;
 
   // ── Corpo do e-mail ──────────────────────────────────────────────────────
   var tituloEmail =
     'IPS/UCS - Agendamento de Exames - Paciente: ' + pacienteLimpo + ' - Data: ' + dataFormatada;
-  var signature = getGmailSignature();
+  var signature = codexMeasurePerformance_('gerarRequisicaoPDF', 'assinatura', {}, function() {
+    return options.authorized ? getGmailSignatureDados_() : getGmailSignature();
+  });
   var corpoEmail = gerarReqExamesEmailHtml_({
     paciente: paciente,
     dataFormatada: dataFormatada,
@@ -3889,7 +3871,9 @@ function _exportarPDFWebApp(sheet, ss, options) {
 
   var draftOptions = { htmlBody: corpoEmail, attachments: [pdfBlob] };
   if (ccEmails) draftOptions.cc = ccEmails;
-  GmailApp.createDraft(emailDestinatario, tituloEmail, '', draftOptions);
+  codexMeasurePerformance_('gerarRequisicaoPDF', 'rascunho', {}, function() {
+    GmailApp.createDraft(emailDestinatario, tituloEmail, '', draftOptions);
+  });
   return pdfResult;
 }
 
@@ -3903,9 +3887,9 @@ function reqExamesPdfExportOptions_(sheetId) {
 
 function reqExamesExportPdfBlob_(url, nomeArquivo, options) {
   options = options || {};
-  if (options.preferHtml && options.sheet) {
+  if (options.preferHtml && (options.sheet || options.snapshot)) {
     return {
-      blob: reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo, { institucional: true, compatibilidade: !!options.htmlModoCompatibilidade }),
+      blob: reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo, { institucional: true, compatibilidade: !!options.htmlModoCompatibilidade, snapshot: options.snapshot }),
       modo: 'html-institucional',
       contingencia: false,
       aviso: ''
@@ -3932,7 +3916,7 @@ function reqExamesExportPdfBlob_(url, nomeArquivo, options) {
       Logger.log('ReqExames PDF: planilha temporaria falhou: ' + (fallbackError && fallbackError.message ? fallbackError.message : String(fallbackError)));
       try {
         return {
-          blob: reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo, { contingencia: true }),
+          blob: reqExamesExportPdfBlobViaHtml_(options.sheet, nomeArquivo, { contingencia: true, snapshot: options.snapshot }),
           modo: 'html-contingencia',
           contingencia: true,
           aviso: 'O rascunho foi criado com PDF em modo de contingencia porque o exportador do Google Sheets falhou. Confira o anexo antes de enviar.'
@@ -4030,25 +4014,23 @@ function reqExamesExportPdfBlobViaWorkingCopy_(sheet, nomeArquivo) {
 
 function reqExamesExportPdfBlobViaHtml_(sheet, nomeArquivo, options) {
   options = options || {};
-  var dataAgendamento = sheet.getRange('H10').getValue();
-  var exames = sheet.getRange('C14:C33').getDisplayValues()
-    .concat(sheet.getRange('G14:G33').getDisplayValues())
-    .map(function(row) { return String(row[0] || '').trim(); })
-    .filter(Boolean);
+  var snap = options.snapshot || reqExamesLerPreenchimento_(sheet);
+  var dataAgendamento = snap.value('H10');
+  var exames = snap.examesSlots.filter(Boolean);
   var html = reqExamesPdfHtml_({
-    urgente: sheet.getRange('I5').getDisplayValue(),
-    paciente: sheet.getRange('E8').getDisplayValue(),
-    nascimento: sheet.getRange('E9').getDisplayValue(),
-    protocolo: sheet.getRange('H8').getDisplayValue(),
-    medico: sheet.getRange('H9').getDisplayValue(),
-    localExame: sheet.getRange('E10').getDisplayValue(),
-    endereco: sheet.getRange('E11').getDisplayValue(),
-    dataAgendamento: dataAgendamento instanceof Date ? formatarDataMesCurtoPt_(dataAgendamento) : sheet.getRange('H10').getDisplayValue(),
-    horario: sheet.getRange('J10').getDisplayValue(),
-    observacoes: sheet.getRange('B36').getDisplayValue(),
-    solicitante: sheet.getRange('H41').getDisplayValue(),
-    solFormacao: sheet.getRange('H42').getDisplayValue(),
-    solRegistro: sheet.getRange('H43').getDisplayValue(),
+    urgente: snap.display('I5'),
+    paciente: snap.display('E8'),
+    nascimento: snap.display('E9'),
+    protocolo: snap.display('H8'),
+    medico: snap.display('H9'),
+    localExame: snap.display('E10'),
+    endereco: snap.display('E11'),
+    dataAgendamento: dataAgendamento instanceof Date ? formatarDataMesCurtoPt_(dataAgendamento) : snap.display('H10'),
+    horario: snap.display('J10'),
+    observacoes: snap.display('B36'),
+    solicitante: snap.display('H41'),
+    solFormacao: snap.display('H42'),
+    solRegistro: snap.display('H43'),
     exames: exames,
     contingencia: !!options.contingencia,
     compatibilidade: !!options.compatibilidade
@@ -4205,55 +4187,12 @@ function reqExamesAssertGmailDraftAllowed_(requestedByEmail) {
   }
 }
 
-function reqExamesOpenSpreadsheetForWrite_() {
-  var ss;
-  try {
-    ss = getCodexSpreadsheet_();
-  } catch (e) {
-    throw reqExamesSpreadsheetPermissionError_(e, 'abrir a planilha principal');
-  }
-  reqExamesAssertSpreadsheetEditAccess_(ss);
-  return ss;
-}
-
-function reqExamesAssertSpreadsheetEditAccess_(ss) {
-  var email;
-  try {
-    email = Session.getEffectiveUser().getEmail();
-  } catch (e0) {
-    email = '';
-  }
-  try {
-    var file = DriveApp.getFileById(ss.getId());
-    var access = email ? file.getAccess(email) : '';
-    var accessText = String(access || '').toUpperCase();
-    if (accessText === 'EDIT' || accessText === 'OWNER') return true;
-    throw new Error('Acesso atual: ' + String(access || 'desconhecido'));
-  } catch (e) {
-    throw reqExamesSpreadsheetPermissionError_(e, 'editar a planilha principal');
-  }
-}
-
-function reqExamesSpreadsheetPermissionError_(err, action) {
-  var email;
-  try {
-    email = Session.getEffectiveUser().getEmail();
-  } catch (e0) {
-    email = '';
-  }
-  return new Error(
-    'Nao foi possivel gerar a Requisicao de Exames porque o WebApp agora executa como o usuario acessando, ' +
-    'mas a conta ' + (email || 'atual') + ' nao tem permissao para ' + (action || 'usar') + ' a planilha principal. ' +
-    'Compartilhe a planilha principal do CODEX com esse usuario como Editor e tente novamente. Detalhe: ' +
-    ((err && err.message) || String(err))
-  );
-}
-
-function reqExamesSolicitanteEmail_(nome) {
+function reqExamesSolicitanteEmail_(nome, users) {
   nome = normText_(nome || '');
   if (!nome) return '';
   try {
-    var solicitantes = buscarSolicitantesCompleto() || [];
+    // users: ACL já lida pela autorização da RPC; sem ela, autoriza e relê.
+    var solicitantes = (users ? codexGetExamRequesterUsers_(users) : buscarSolicitantesCompleto()) || [];
     for (var i = 0; i < solicitantes.length; i++) {
       var item = solicitantes[i] || {};
       if (normText_(item.nome || '') === nome) {
@@ -4344,6 +4283,11 @@ function focarDataHoje() {
 
 function buscarEmailDoLocal(nomeLocal) {
   codexAssertCanRead_();
+  return buscarEmailDoLocalDados_(nomeLocal);
+}
+
+// Leitura privada para fluxos que já autorizaram a operação.
+function buscarEmailDoLocalDados_(nomeLocal) {
   if (!nomeLocal) return null;
   var ss         = SpreadsheetApp.getActiveSpreadsheet();
   var localSheet = ss.getSheetByName('🏢 Prestadores');
@@ -16247,6 +16191,11 @@ function cancelarAgendaEvento(id, cancelamento) {
 
 function atualizarStatusRequisicaoAgenda(agendaId, enviado) {
   codexAssertCanWrite_('atualizarStatusRequisicaoAgenda', 'Agenda', agendaId);
+  return atualizarStatusRequisicaoAgendaAutorizado_(agendaId, enviado);
+}
+
+// Chamar somente depois de codexAssertCanWrite_ na Agenda pela RPC de origem.
+function atualizarStatusRequisicaoAgendaAutorizado_(agendaId, enviado) {
   return codexWithDocumentLock_('atualizarStatusRequisicaoAgenda', function() {
   var agenda = getAgendaSheet_();
   var linha = encontrarLinhaPorId(agenda, agendaId);

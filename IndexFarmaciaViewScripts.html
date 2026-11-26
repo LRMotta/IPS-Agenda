@@ -200,11 +200,11 @@ function farmaciaRenderCatalog(data) {
   farmaciaInitialUnitChanged();
 }
 
-// Compativel nao precisa de nota; incompativel ou equipamento indisponivel pede acao e aparece em destaque.
+// Compativel nao precisa de nota; incompativel ou equipamento indisponivel pede acao e aparece em destaque, com o icone de aviso.
 function farmaciaStorageNote(check) {
   if (check && check.status === 'compatible') return '';
   var alerta = check && (check.status === 'incompatible' || check.status === 'unavailable');
-  return '<small' + (alerta ? ' class="farmacia-storage-alert"' : '') + '>' + esc((check || {}).message || 'Conservação pendente de conferência.') + '</small>';
+  return '<small' + (alerta ? ' class="farmacia-storage-alert">⚠ ' : '>') + esc((check || {}).message || 'Conservação pendente de conferência.') + '</small>';
 }
 
 // Validade na tabela de estoque: "Vencido" vem do servidor; lote que vence em ate 30 dias ganha aviso com a contagem.

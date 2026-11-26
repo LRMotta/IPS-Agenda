@@ -14,7 +14,7 @@ test('ciclo visual filtra sem somar unidades e mostra contabilidade de origem e 
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try{for(const width of [1536,390]){
     const {page,errors}=await cycleFixture(browser,width);
-    assert.equal(await page.locator('#farmaciaLifecycleSummary .farmacia-life-card').count(),6);
+    assert.equal(await page.locator('#farmaciaLifecycleSummary .farmacia-life-card').count(),7);
     assert.equal(await page.locator('#farmaciaSummary').isVisible(),false);
     assert.match(await page.locator('[data-filter="all"]').textContent(),/1 lote/);
     await capture(page,'estoque',width);
@@ -22,7 +22,7 @@ test('ciclo visual filtra sem somar unidades e mostra contabilidade de origem e 
     await page.locator('[data-filter="blocked"]').click();assert.equal(await page.locator('#farmaciaInventoryResults tr[data-farmacia-row]:visible').count(),2);
     await page.locator('[data-filter="all"]').click();await page.locator('#farmaciaSearch').fill('inexistente');assert.equal(await page.locator('#farmaciaSearchEmpty').isVisible(),true);
     await page.locator('#farmaciaSearch').fill('');await page.locator('[data-farmacia-position="IN1"] .farmacia-cycle-link').click();
-    assert.equal(await page.locator('.farmacia-cycle-event').count(),4);assert.equal(await page.locator('#farmaciaLifecycleSummary').isVisible(),false);assert.match(await page.locator('.farmacia-cycle-balances').textContent(),/115/);await capture(page,'historico',width);
+    assert.equal(await page.locator('.farmacia-cycle-event').count(),4);assert.equal(await page.locator('#farmaciaLifecycleSummary').isVisible(),true);assert.equal(await page.locator('#farmaciaLifecycleSummary [aria-pressed="true"]').count(),0);assert.match(await page.locator('.farmacia-cycle-balances').textContent(),/115/);await capture(page,'historico',width);
     await page.getByRole('tab',{name:'Contabilidade',exact:true}).click();assert.match(await page.locator('#farmaciaCyclePane tbody tr').last().textContent(),/115 comprimido/);
     await page.locator('#farmaciaCyclePosition').selectOption('RET1');assert.match(await page.locator('#farmaciaCyclePane tbody tr').last().textContent(),/115 comprimido/);
     await page.getByRole('tab',{name:'Documentos',exact:true}).click();assert.match(await page.locator('#farmaciaCyclePane').textContent(),/RET-DEMO-01/);
@@ -45,6 +45,7 @@ test('dispensação preserva formulário e requestId em falha e descarta respost
     await page.getByRole('button',{name:'Adicionar medicamento',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),2);
     assert.match(await page.locator('.farmacia-guide-item').nth(1).locator('[data-guide-label]').textContent(),/Medicamento 2/);
     await page.locator('[name="guidePosition"]').nth(1).selectOption('IN1');await page.locator('[name="guideQuantity"]').nth(1).fill('5');await page.locator('[name="validThrough"]').fill('2026-11-10');await page.locator('[name="prescription"]').fill('PRESC-NOVA');await page.locator('[name="platformReference"]').fill('IRT-NOVA');await page.locator('[name="document"]').fill('DOC-NOVO');await page.locator('[name="confirmed"]').check();
+    assert.equal(await page.locator('#farmaciaLifecycleSummary').isVisible(),false);
     await capture(page,'dispensacao',1536);const before=await page.evaluate(()=>window.pending.length);await page.locator('#farmaciaCycleForm [type="submit"]').click();
     assert.match(await page.locator('#farmaciaCycleSaveStatus').textContent(),/mais de uma vez/);assert.equal(await page.evaluate(()=>window.pending.length),before);
     await page.getByRole('button',{name:'Remover medicamento 2',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),1);
@@ -131,9 +132,9 @@ test('nível Operação vê as ações de rotina e o recebimento, mas não a des
     }
     await page.locator('[data-pane="overview"]').click();await page.locator('[data-farmacia-position="IN1"] .farmacia-cycle-link').click();
     assert.equal(await page.getByRole('button',{name:'Dispensar',exact:true}).count(),1);
-    assert.equal(await page.getByRole('button',{name:'Registrar destinação',exact:true}).count(),0);
+    assert.equal(await page.getByRole('button',{name:'Devolver / destruir',exact:true}).count(),0);
     await render('manage');await page.locator('[data-pane="cycle"]').click();
-    assert.equal(await page.getByRole('button',{name:'Registrar destinação',exact:true}).count(),1);
+    assert.equal(await page.getByRole('button',{name:'Devolver / destruir',exact:true}).count(),1);
     await render('read');
     assert.equal(await page.locator('#farmaciaReceiptAction').isVisible(),false);
     await page.locator('[data-pane="dispense"]').click();assert.equal(await page.getByRole('button',{name:'Registrar dispensação',exact:true}).count(),0);
@@ -207,5 +208,52 @@ test('revalidação no histórico do lote envia nova validade, lote e documento 
     await page.evaluate(()=>window.farmaciaOpenRecordAction('position','IN1','edit'));
     assert.equal(await page.locator('#farmaciaRecordActionTitle').textContent(),'Editar recebimento');
     assert.deepEqual(errors,[]);
+  }finally{await browser.close();}
+});
+
+test('memorando de devolução / destruição: vários lotes, campos por destinação e falha preservada',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{for(const width of [1536,390]){
+    const {page,errors}=await cycleFixture(browser,width);
+    await page.locator('[data-pane="destination"]').click();
+    assert.match(await page.locator('#farmaciaCyclePane h2').first().textContent(),/Devolução e destruição/);
+    await page.getByRole('button',{name:'Novo memorando',exact:true}).click();
+    assert.match(await page.locator('[name="guidePosition"] option[value="RET1"]').textContent(),/5 comprimido em quarentena · retornado/);
+    assert.equal(await page.locator('#farmaciaCycleMemoSponsor').isVisible(),true);assert.equal(await page.locator('#farmaciaCycleMemoDisposal').isVisible(),false);
+    await page.locator('[name="reasonCategory"]').selectOption('participant_return');await page.locator('[name="authorization"]').fill('E-mail CRA 20/11');await page.locator('[name="awb"]').fill('AWB-777');await page.locator('[name="document"]').fill('SOP-FARM-07');
+    await page.locator('[name="guidePosition"]').selectOption('RET1');await page.locator('[name="guideQuantity"]').fill('5');await page.locator('[name="guideCondition"]').selectOption('mixed');
+    assert.equal(await page.locator('[name="guideNote"]').getAttribute('required'),'');await page.locator('[name="guideNote"]').fill('3 cheios, 2 vazios');
+    await page.getByRole('button',{name:'Adicionar lote / kit',exact:true}).click();assert.match(await page.locator('.farmacia-guide-item').nth(1).locator('[data-guide-label]').textContent(),/Item 2/);
+    await page.locator('[name="guidePosition"]').nth(1).selectOption('IN1');await page.locator('[name="guideQuantity"]').nth(1).fill('10');await page.locator('[name="guideCondition"]').nth(1).selectOption('intact');
+    assert.equal(await page.locator('[name="guideQuantity"]').nth(1).getAttribute('max'),'10');
+    await page.locator('[name="confirmed"]').check();await capture(page,'memorando',width);
+    await page.locator('#farmaciaCycleForm [type="submit"]').click();
+    const call=await page.evaluate(()=>window.pending.at(-1));assert.equal(call.method,'registrarDestinacaoFarmacia');
+    const payload=call.args[0];assert.equal(payload.items.length,2);assert.equal(payload.data.destination,'sponsor');assert.equal(payload.data.awb,'AWB-777');assert.equal(payload.data.company,undefined);
+    assert.deepEqual(payload.items.map(i=>[i.positionId,i.quantity,i.from,i.condition,i.itemNote]),[['RET1',5,'blocked','mixed','3 cheios, 2 vazios'],['IN1',10,'blocked','intact','']]);
+    // Destruição troca os campos de envio pelos da empresa responsável.
+    await page.evaluate(()=>window.pending.at(-1).failure({message:'Falha simulada'}));
+    await page.locator('[name="destination"]').selectOption('disposal');assert.equal(await page.locator('#farmaciaCycleMemoDisposal').isVisible(),true);assert.equal(await page.locator('[name="awb"]').isDisabled(),true);
+    assert.equal(await page.locator('[name="method"]').inputValue(),'Incineração');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),true);
+    assert.deepEqual(errors,[]);await page.close();
+  }}finally{await browser.close();}
+});
+
+test('memorando impresso reúne os itens, o cadastro do estudo e as assinaturas',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);const data=cycleData();
+    const common={action:'destination',occurredOn:'2026-10-26',document:'SOP-FARM-07',reason:'',from:'blocked',destination:'disposal',authorization:'AUT-9',memoId:'memo-request-0001',memoNumber:'MEM-2026-004',reasonCategory:'participant_return',company:'Empresa Licenciada Fictícia',method:'Incineração',certificate:'',memoStudy:{code:'PROT-001',sponsor:'Patrocinador Fictício',cro:'CRO Fictícia',site:'123',investigator:'Dra. Fictícia'}};
+    const item=(id,positionId,quantity,extra)=>({id,type:'LIFECYCLE',author:'farm@example.invalid',registeredAt:'2026-10-26T12:00:00.000Z',data:{...common,positionId,revision:positionId,quantity,condition:'intact',itemNote:'',...extra}});
+    data.movements.push(item('MEM1','RET1',5,{condition:'mixed',itemNote:'3 cheios, 2 vazios'}),item('MEM2','IN1',10));
+    await page.evaluate(d=>{FARMACIA_STOCK.data=d;farmaciaCycleNavigate('destination');},data);
+    assert.equal(await page.locator('#farmaciaCyclePane tbody tr').count(),1);assert.match(await page.locator('#farmaciaCyclePane tbody').innerText(),/MEM-2026-004/);
+    const ready=page.waitForEvent('popup');await page.getByRole('button',{name:'Imprimir memorando',exact:true}).click();const memo=await ready;
+    const text=await memo.locator('body').innerText();
+    assert.match(await memo.title(),/Memorando de destruição/);assert.equal(await memo.locator('tbody tr').count(),2);
+    for(const expected of [/MEM-2026-004/,/Patrocinador Fictício/,/PROT-001/,/Dra\. Fictícia/,/Retornado pelo participante DEMO-014/,/3 cheios, 2 vazios/,/Total:\s*15 comprimido/,/Empresa Licenciada Fictícia/,/preencher após a destruição/,/Farmacêutico\(a\) responsável/,/CRF:/,/Monitor\(a\) do patrocinador/,/Certificado de destruição \/ MTR emitido/]) assert.match(text,expected);
+    await memo.screenshot({path:require('node:path').join(process.env.PLAYWRIGHT_ARTIFACTS_DIR||require('node:path').join(os.tmpdir(),'ips-agenda-playwright'),'farmacia-ciclo-memorando-impresso.png'),fullPage:true});
+    await memo.close();assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });

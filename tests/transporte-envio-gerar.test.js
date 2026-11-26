@@ -572,3 +572,22 @@ test('transporteAssertOperador_ entrega a leitura de Users da própria autoriza�
   s.codexAuthorizeWebAppRequest_ = () => ({ ok: true, role: 'readonly', userEmail: A });
   assert.throws(() => s.transporteAssertOperador_({}), /somente leitura/);
 });
+
+test('geração: reserva da AWB e sincronização da Agenda no mesmo lock, antes de qualquer arquivo', () => {
+  const s = servidor();
+  const v = abrir(s).versao;
+  let aquisicoes = 0;
+  const original = s.LockService.getDocumentLock;
+  s.LockService.getDocumentLock = () => { const lock = original(); const tentar = lock.tryLock; lock.tryLock = (ms) => { aquisicoes++; return tentar(ms); }; return lock; };
+  const emQual = {};
+  const reservar = s.agendaAwbReservar_;
+  s.agendaAwbReservar_ = (c, e, strict) => { emQual.awb = aquisicoes; return reservar(c, e, strict); };
+  const sincronizar = s.transporteSincronizarAgenda_;
+  s.transporteSincronizarAgenda_ = (r) => { emQual.agenda = aquisicoes; return sincronizar(r); };
+  const r = plano(s.gerarDocumentosTransporteEnvio('ab12cd34', '1', v, TOKEN));
+  assert.equal(r.ok, true);
+  assert.ok(emQual.awb > 0);
+  assert.equal(emQual.agenda, emQual.awb, 'Agenda sincronizada no mesmo lock da reserva');
+  assert.deepEqual(dentro(s).slice(0, 3), ['awb', 'agenda', 'docs']);
+  assert.equal(s.lockAtivo(), false);
+});
