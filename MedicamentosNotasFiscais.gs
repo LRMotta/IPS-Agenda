@@ -227,12 +227,16 @@ function medNfDataBr_(iso) {
 function medNfItensFarmacia_(ss) {
   var escopos = {};
   escopos[farmaciaLedgerSheetName_(FARMACIA_COMMON_SCOPE_)] = { id: FARMACIA_COMMON_SCOPE_, nome: 'Geral (Farmácia)' };
-  codexFarmaciaStudyCatalog_().forEach(function(study) { escopos[farmaciaLedgerSheetName_(study.id)] = study; });
+  codexMeasurePerformance_('getMedicamentosNotasFiscais', 'catalogo_estudos', {}, function() { return codexFarmaciaStudyCatalog_(); })
+    .forEach(function(study) { escopos[farmaciaLedgerSheetName_(study.id)] = study; });
   var itens = [];
-  ss.getSheets().forEach(function(sheet) {
-    var study = escopos[sheet.getName()];
-    if (!study || sheet.getLastRow() < 2) return;
-    var rows = sheet.getDataRange().getValues();
+  var nomes = ss.getSheets().map(function(sheet) { return sheet.getName(); }).filter(function(nome) { return escopos[nome]; });
+  var ledgers = codexMeasurePerformance_('getMedicamentosNotasFiscais', 'ledgers_farmacia', { rowCount: nomes.length }, function() {
+    return medNfLerLedgers_(ss, nomes);
+  });
+  nomes.forEach(function(nome, indice) {
+    var study = escopos[nome], rows = ledgers[indice] || [];
+    if (rows.length < 2) return;
     if (FARMACIA_LEDGER_HEADERS_.some(function(header, i) { return rows[0][i] !== header; })) return;
     var escopo = JSON.stringify(study.id), registros = [], produtos = {};
     rows.slice(1).forEach(function(row) {
@@ -258,6 +262,27 @@ function medNfItensFarmacia_(ss) {
     });
   });
   return itens;
+}
+
+// Uma abertura da lista lia cada aba do ledger em separado (getLastRow + getValues, ~2 chamadas por estudo; 33 abas
+// na versão 404, 35,8 s). Uma única leitura em lote da API Sheets traz todas; sem o serviço avançado (testes), lê aba a aba.
+function medNfLerLedgers_(ss, nomes) {
+  if (!nomes.length) return [];
+  var colunas = String.fromCharCode(64 + FARMACIA_LEDGER_HEADERS_.length);
+  if (typeof Sheets !== 'undefined' && Sheets && Sheets.Spreadsheets && Sheets.Spreadsheets.Values && typeof ss.getId === 'function') {
+    var resposta = Sheets.Spreadsheets.Values.batchGet(ss.getId(), {
+      ranges: nomes.map(function(nome) { return "'" + nome.replace(/'/g, "''") + "'!A:" + colunas; }),
+      // Restrito volta como booleano e Dados_JSON como texto, como em getValues().
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    }) || {};
+    var faixas = resposta.valueRanges || [];
+    if (faixas.length !== nomes.length) throw new Error('Não foi possível ler os recebimentos da Farmácia. Tente novamente.');
+    return faixas.map(function(faixa) { return faixa.values || []; });
+  }
+  return nomes.map(function(nome) {
+    var sheet = ss.getSheetByName(nome);
+    return sheet && sheet.getLastRow() >= 2 ? sheet.getDataRange().getValues() : [];
+  });
 }
 
 function medNfCamposMeta_(m) {
@@ -316,10 +341,13 @@ function medNfUltimosDestinatarios_(cfg) {
   }
 }
 
+// Etapas no log (só nomes e tempos): autorização, notas (inclui ledgers_farmacia nos medicamentos).
 function medNfListar_(cfg) {
-  var access = medNfAutorizar_(cfg);
+  var operacao = cfg.tipo === 'medicamentos' ? 'getMedicamentosNotasFiscais' : 'getEquipamentosNotasFiscais';
+  var access = codexMeasurePerformance_(operacao, 'autorizacao', {}, function() { return medNfAutorizar_(cfg); });
+  var notas = codexMeasurePerformance_(operacao, 'notas', {}, function() { return medNfLerNotas_(getCodexSpreadsheet_(), cfg, access); });
   return {
-    notas: medNfLerNotas_(getCodexSpreadsheet_(), cfg, access),
+    notas: notas,
     copiaFixa: MED_NF_CC_FIXO_,
     ultimosDestinatarios: medNfUltimosDestinatarios_(cfg)
   };
