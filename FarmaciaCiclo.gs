@@ -220,7 +220,7 @@ function farmaciaApplyLifecycle_(ledger, record) {
   var reserved = position.transportReserved || 0;
   if (data.action === 'dispense') {
     // Material não tem período de uso a conferir contra a validade; só não pode sair vencido.
-    if (position.returned || data.occurredOn > position.expiry || (!material && data.validThrough > position.expiry) ||
+    if (position.returned || farmaciaExpiredOn_(position.expiry, data.occurredOn) || (!material && farmaciaExpiredOn_(position.expiry, data.validThrough)) ||
         quantity > Math.round((position.available - reserved) * 1000) / 1000) throw new Error('Saldo insuficiente, vencido, retornado ou indisponível para o período de uso.');
     if (data.platformReference && ledger.movements.some(function(item) { return item.type === 'LIFECYCLE' && item.data.action === 'dispense' && item.data.platformReference === data.platformReference &&
         item.data.positionId === data.positionId && item.data.participantId === data.participantId; })) throw new Error('Esta referência de dispensação já foi registrada para este item e participante.');
@@ -241,7 +241,7 @@ function farmaciaApplyLifecycle_(ledger, record) {
     }
     if (data.returnTo === 'stock') {
       // Volta ao disponível da posição de onde saiu, pronto para o próximo empréstimo.
-      if (data.occurredOn > position.expiry) throw new Error('Material vencido não volta ao estoque. Segregue para destinação.');
+      if (farmaciaExpiredOn_(position.expiry, data.occurredOn)) throw new Error('Material vencido não volta ao estoque. Segregue para destinação.');
       position.available = Math.round((position.available + quantity) * 1000) / 1000;
       position.physical = Math.round((position.physical + quantity) * 1000) / 1000;
     } else ledger.positions.push({ id: record.id, revision: record.id, productId: position.productId, lot: position.lot, kit: position.kit,
@@ -254,13 +254,13 @@ function farmaciaApplyLifecycle_(ledger, record) {
     if (typeof storage.min !== 'number' || typeof storage.max !== 'number' || data.min !== storage.min || data.max !== storage.max) throw new Error('A faixa do transporte deve corresponder às condições documentadas do produto.');
     record.excursion = data.departureTemperature < data.min || data.departureTemperature > data.max;
     if (data.operation === 'storage') {
-      if (data.dispenseId || quantity > Math.round((position.available - reserved) * 1000) / 1000 || position.returned || data.occurredOn > position.expiry) throw new Error('Quantidade indisponível para transporte de estoque ativo.');
+      if (data.dispenseId || quantity > Math.round((position.available - reserved) * 1000) / 1000 || position.returned || farmaciaExpiredOn_(position.expiry, data.occurredOn)) throw new Error('Quantidade indisponível para transporte de estoque ativo.');
       if ((position.locationRef && position.locationRef.unitId === data.locationRef.unitId && position.locationRef.position === data.locationRef.position) || position.location === data.location) throw new Error('Selecione uma posição de destino diferente da origem.');
       if (data.departureTemperature < data.min || data.departureTemperature > data.max) throw new Error('Temperatura de saída fora da faixa. Registre e avalie a ocorrência antes do transporte.');
       position.transportReserved = Math.round((reserved + quantity) * 1000) / 1000;
     } else {
       var linked = farmaciaLifecycleRecord_(ledger, data.dispenseId, 'dispense');
-      if (linked.data.positionId !== position.id || data.occurredOn < linked.data.occurredOn || data.occurredOn > position.expiry ||
+      if (linked.data.positionId !== position.id || data.occurredOn < linked.data.occurredOn || farmaciaExpiredOn_(position.expiry, data.occurredOn) ||
           quantity > farmaciaDispenseOutstanding_(ledger, data.dispenseId)) throw new Error('Confira a dispensação e a quantidade ainda não retornada ou em transporte.');
     }
   } else if (data.action === 'transport_arrival') {
@@ -288,7 +288,7 @@ function farmaciaApplyLifecycle_(ledger, record) {
     // Vencido na data informada, ou já vencido quando a destinação foi registrada (a consulta mostra todo o saldo como
     // bloqueado). A data do registro vem do próprio ledger, para o replay não depender do dia em que é lido.
     var registeredDay = farmaciaRegisteredDay_(record);
-    if (data.occurredOn > position.expiry || (data.from === 'blocked' && registeredDay > position.expiry)) {
+    if (farmaciaExpiredOn_(position.expiry, data.occurredOn) || (data.from === 'blocked' && farmaciaExpiredOn_(position.expiry, registeredDay))) {
       if (data.from !== 'blocked' || quantity > position.physical) throw new Error('Material vencido deve sair do saldo bloqueado.');
       var remaining = quantity;
       ['blocked', 'pending', 'available'].forEach(function(key) { var take = Math.min(position[key], remaining); position[key] = Math.round((position[key] - take) * 1000) / 1000; remaining = Math.round((remaining - take) * 1000) / 1000; });
@@ -333,7 +333,7 @@ function registrarCicloFarmacia(payload) {
     if (data.occurredOn > farmaciaToday_()) throw new Error('A data da operação não pode ser futura.');
     if (data.action === 'dispense' || data.action === 'transport_departure') {
       var currentPosition = ledger.positions.find(function(item) { return item.id === data.positionId; });
-      if (currentPosition && currentPosition.expiry < farmaciaToday_()) throw new Error('Material vencido não pode ser dispensado ou transportado como estoque ativo.');
+      if (currentPosition && farmaciaExpiredOn_(currentPosition.expiry, farmaciaToday_())) throw new Error('Material vencido não pode ser dispensado ou transportado como estoque ativo.');
     }
     if (data.action === 'dispense') data.participantLabel = farmaciaDispenseParticipantLabel_(context, data.participantId);
     if ((data.action === 'return' && !data.returnTo) || (data.action === 'transport_departure' && data.operation === 'storage')) {
@@ -418,7 +418,7 @@ function registrarDispensacaoFarmacia(payload) {
     var rows = entries.map(function(entry) {
       var data = entry.data;
       var currentPosition = ledger.positions.find(function(item) { return item.id === data.positionId; });
-      if (currentPosition && currentPosition.expiry < farmaciaToday_()) throw new Error('Material vencido não pode ser dispensado.');
+      if (currentPosition && farmaciaExpiredOn_(currentPosition.expiry, farmaciaToday_())) throw new Error('Material vencido não pode ser dispensado.');
       data.participantLabel = label;
       var record = { id: 'FLC-' + Utilities.getUuid(), type: 'LIFECYCLE', data: data,
         author: context.access.userEmail, registeredAt: new Date().toISOString() };

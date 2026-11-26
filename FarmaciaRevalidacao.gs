@@ -22,6 +22,7 @@ function farmaciaApplyRevalidation_(ledger, record) {
   if (position.returned) throw new Error('Produtos retornados pelo participante permanecem em quarentena até a destinação documentada.');
   if (position.transportReserved) throw new Error('Conclua o transporte em andamento antes de revalidar esta entrada.');
   if (!(position.physical > 0)) throw new Error('Esta entrada não tem saldo para revalidar.');
+  if (!position.expiry) throw new Error('Esta entrada é de material sem validade e não precisa de revalidação.');
   if (data.occurredOn < (position.countedOn || position.receivedOn || position.occurredOn || '')) throw new Error('A data da revalidação não pode ser anterior à entrada do lote.');
   if (data.expiry <= position.expiry) throw new Error('A nova validade deve ser posterior à validade atual (' + position.expiry + ').');
   if (data.expiry < data.occurredOn) throw new Error('A nova validade não pode ser anterior à data da revalidação.');

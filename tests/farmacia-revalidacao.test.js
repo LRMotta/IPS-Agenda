@@ -118,3 +118,10 @@ test('replay recusa revalidação adulterada', () => {
   const data = JSON.parse(row[7]); data.expiry = '2026-11-01'; row[7] = JSON.stringify(data);
   assert.throws(() => f.stock(), /inconsistentes/);
 });
+
+test('material sem validade não é revalidado', () => {
+  const f = fixture();
+  const material = f.server.cadastrarProdutoFarmacia({ ...f.scope, requestId:'material-product-0001', data:{ category:'material', materialUse:'loan', name:'Mochila', presentation:'1 mochila', unit:'unidade', control:'quantity', supplySource:'sponsor', storage:{ min:2, max:8, instructions:'' } } }).id;
+  const id = f.server.registrarInventarioInicialFarmacia({ ...f.scope, requestId:'material-initial-0001', data:{ productId:material, lot:'', expiry:'', location:'Catálogo', locationRef:{ unitId:'UNIT-1', position:'Gaveta 2' }, kit:'', physical:1, blocked:0, countedOn:'2026-10-12', confirmed:true, note:'' } }).id;
+  assert.throws(() => f.revalidate({ positionId:id, revision:f.find(id).revision, lot:'X' }), /sem validade/);
+});

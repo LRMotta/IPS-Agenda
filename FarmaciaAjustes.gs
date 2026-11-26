@@ -29,7 +29,7 @@ function farmaciaApplyAdjustment_(ledger, record) {
   if (position.transportReserved) throw new Error('Conclua o transporte em andamento antes de ajustar esta entrada.');
   if (data.occurredOn < (position.countedOn || position.receivedOn || '')) throw new Error('A data do ajuste não pode ser anterior à entrada do lote.');
   var quantity = farmaciaQuantity_(data.quantity, ['mL', 'g'].indexOf(product.data.unit) !== -1);
-  if (position.expiry < data.occurredOn) {
+  if (farmaciaExpiredOn_(position.expiry, data.occurredOn)) {
     // Após a validade todo o saldo já é exibido como bloqueado; o ajuste parte desse mesmo estado.
     if (data.kind === 'consumption') throw new Error('Material vencido não pode ser registrado como consumo.');
     position.blocked = Math.round((position.blocked + position.available) * 1000) / 1000;
@@ -65,7 +65,7 @@ function registrarAjusteFarmacia(payload) {
     }
     if (data.occurredOn > farmaciaToday_()) throw new Error('A data do ajuste não pode ser futura.');
     var position = ledger.positions.find(function(item) { return item.id === data.positionId; });
-    if (position && data.kind === 'consumption' && position.expiry < farmaciaToday_()) throw new Error('Material vencido não pode ser registrado como consumo.');
+    if (position && data.kind === 'consumption' && farmaciaExpiredOn_(position.expiry, farmaciaToday_())) throw new Error('Material vencido não pode ser registrado como consumo.');
     var record = { id: 'FAJ-' + Utilities.getUuid(), type: 'ADJUSTMENT', data: data };
     if (ledger.records.some(function(item) { return item.id === record.id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
     farmaciaApplyAdjustment_(ledger, record);

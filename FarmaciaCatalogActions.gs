@@ -8,7 +8,8 @@ function farmaciaCatalogActionData_(type, value) {
   else if (type === 'INITIAL_EDIT') {
     var data = value.data || {};
     if (Object.keys(data).some(function(key) { return ['lot', 'expiry', 'note'].indexOf(key) === -1; })) throw new Error('A correção não pode alterar quantidades, produto, kit ou localização.');
-    result.data = { lot: farmaciaText_(data.lot, 'o lote', 100), expiry: farmaciaDate_(data.expiry, 'a validade'),
+    // Vazio só vale para material ("sem lote" / "sem validade"); a categoria é conferida ao aplicar.
+    result.data = { lot: farmaciaText_(data.lot, 'o lote', 100, true), expiry: data.expiry === '' ? '' : farmaciaDate_(data.expiry, 'a validade'),
       note: farmaciaText_(data.note, 'a observação', 500, true) };
   } else if (['PRODUCT_DELETE', 'INITIAL_DELETE'].indexOf(type) === -1) throw new Error('Ação de catálogo inválida.');
   return result;
@@ -34,6 +35,7 @@ function farmaciaApplyCatalogAction_(ledger, record) {
       // A categoria deve ser coerente com o estado completo, inclusive campos preservados na correção.
       next = farmaciaProductData_(next, !Object.prototype.hasOwnProperty.call(next, 'category'));
       if (used && ['unit', 'control', 'supplySource'].some(function(key) { return next[key] !== current.data[key]; })) throw new Error('Produtos com histórico devem preservar unidade, controle e origem do fornecimento.');
+      if (next.category !== 'material' && ledger.positions.some(function(item) { return item.productId === current.id && (!item.lot || !item.expiry); })) throw new Error('Há entradas deste material sem lote ou sem validade. Ele não pode virar medicamento.');
       if (ledger.products.some(function(item) { return item.id !== current.id && farmaciaProductKey_(item.data) === farmaciaProductKey_(next); })) throw new Error('Este produto já está cadastrado.');
       list[index] = Object.assign({}, current, { data: next, revision: record.id });
     }
@@ -44,6 +46,8 @@ function farmaciaApplyCatalogAction_(ledger, record) {
     if (current.origin !== 'initial' && !(receipt && !deleting)) throw new Error(receipt ? 'Recebimentos não podem ser excluídos. Corrija o lote, a validade ou a observação, ou use uma movimentação documentada.' : 'Entradas de retorno, transporte ou revalidação preservam seu histórico. Use uma movimentação documentada.');
     if (ledger.movements.some(function(item) { return ['MOVEMENT', 'LIFECYCLE', 'ADJUSTMENT', 'REVALIDATION'].indexOf(item.type) !== -1 && item.data.positionId === current.id; })) throw new Error('Registros com movimentações preservam seu histórico. Este lote já tem liberação, bloqueio, transferência, dispensação, ajuste ou revalidação registrado; use uma movimentação documentada.');
     if (!deleting) {
+      var owner = ledger.products.find(function(item) { return item.id === current.productId; });
+      if ((!data.data.lot || !data.data.expiry) && !farmaciaLotOptional_(owner)) throw new Error('Informe o lote e a validade. Só material pode ficar sem lote ou sem validade.');
       var corrected = Object.assign({}, current, data.data);
       if (ledger.positions.some(function(item) { return item.id !== current.id && farmaciaSamePosition_(item, corrected); })) throw new Error('Esta posição já possui saldo.');
       if (receipt && ledger.positions.some(function(item) { return item.id !== current.id && item.origin === 'receipt' && farmaciaReceiptKey_(item) === farmaciaReceiptKey_(corrected); })) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
@@ -73,7 +77,7 @@ function alterarRegistroFarmacia(payload) {
     if (type === 'PRODUCT_EDIT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.data.supplySource === 'sponsor') throw new Error('Produtos do patrocinador devem pertencer ao estoque do estudo.');
     if (type === 'INITIAL_EDIT') {
       var position = ledger.positions.find(function(item) { return item.id === data.entityId; });
-      if (position && data.data.expiry < farmaciaToday_() && position.blocked !== position.physical) throw new Error('Material vencido deve permanecer integralmente bloqueado.');
+      if (position && farmaciaExpiredOn_(data.data.expiry, farmaciaToday_()) && position.blocked !== position.physical) throw new Error('Material vencido deve permanecer integralmente bloqueado.');
     }
     farmaciaApplyCatalogAction_(ledger, record);
     // Material corrigido precisa do uso (cadastros anteriores o recebem na primeira correção).

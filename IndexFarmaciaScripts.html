@@ -160,6 +160,39 @@ function farmaciaStockQuantity(value, unit) {
   return farmaciaStockNumber(value) + (nome ? ' ' + nome + (plural ? 's' : '') : '');
 }
 
+// Material pode não ter lote nem validade: o vazio aparece como "Sem lote" / "Sem validade".
+function farmaciaLotLabel(lot) {
+  return lot || 'Sem lote';
+}
+
+function farmaciaExpiryLabel(expiry) {
+  return expiry ? farmaciaStockDate(expiry) : 'Sem validade';
+}
+
+// Campos de lote e validade da entrada: obrigatórios para medicamento; para material, em branco registra "sem lote" / "sem validade".
+function farmaciaLotOptional(product) {
+  return !!product && product.category === 'material';
+}
+
+function farmaciaLotFieldLabels(optional) {
+  return optional ? ['Lote (em branco: sem lote)', 'Validade (em branco: sem validade)'] : ['Lote', 'Validade'];
+}
+
+function farmaciaLotFieldsMode(lotId, expiryId, product) {
+  var optional = farmaciaLotOptional(product), labels = farmaciaLotFieldLabels(optional);
+  [lotId, expiryId].forEach(function(id, index) {
+    var input = document.getElementById(id), label = document.querySelector('label[for="' + id + '"]');
+    if (input) input.required = !optional;
+    if (label) label.textContent = labels[index];
+  });
+}
+
+function farmaciaEntryLotFieldsHtml(record, input) {
+  var product = ((FARMACIA_STOCK.data || {}).products || []).find(function(item) { return item.id === record.productId; });
+  var optional = farmaciaLotOptional(product), labels = farmaciaLotFieldLabels(optional);
+  return input('lot', labels[0], record.lot, 'text', 100, optional) + input('expiry', labels[1], record.expiry, 'date', undefined, optional);
+}
+
 function farmaciaStockDate(value, includeTime) {
   return includeTime ? new Date(value).toLocaleString('pt-BR', { timeZone:'America/Sao_Paulo' }) : String(value).split('-').reverse().join('/');
 }
@@ -276,6 +309,7 @@ function farmaciaInitialProductChanged() {
   if (kit) document.getElementById('farmaciaInitialPhysical').value = '1';
   else document.getElementById('farmaciaInitialKit').value = '';
   document.getElementById('farmaciaInitialLifecycleStatus').hidden = !product || product.supplySource !== 'sponsor';
+  farmaciaLotFieldsMode('farmaciaInitialLot', 'farmaciaInitialExpiry', product);
   farmaciaInitialStorageCheck();
   farmaciaInitialExpiryChanged();
 }
@@ -457,6 +491,7 @@ function farmaciaReceiptUnitChanged() {
 function farmaciaReceiptProductChanged() {
   var product = ((FARMACIA_STOCK.data || {}).products || []).find(function(item) { return item.id === document.getElementById('farmaciaReceiptProduct').value; });
   var kit = !!product && product.control === 'kit', input = document.getElementById('farmaciaReceiptPhysical');
+  farmaciaLotFieldsMode('farmaciaReceiptLot', 'farmaciaReceiptExpiry', product);
   document.getElementById('farmaciaReceiptKitField').hidden = !kit;
   document.getElementById('farmaciaReceiptKit').required = kit;
   input.readOnly = kit;
@@ -526,7 +561,7 @@ function salvarRecebimentoFarmaciaApp(event) {
 // Topo do histórico do lote: produto como título, dados do lote em linha e um quadro por situação do saldo.
 function farmaciaPositionSummaryHtml(position, product) {
   var expiry = typeof farmaciaExpiryChip === 'function' ? farmaciaExpiryChip(position) : (position.expired ? ' <span class="chip chip-red farmacia-expiry-chip">Vencido</span>' : '');
-  var meta = [['Lote', esc(position.lot) + (position.kit ? ' · Kit ' + esc(position.kit) : '')], ['Validade', esc(farmaciaStockDate(position.expiry)) + expiry], ['Localização', esc(position.location)]];
+  var meta = [['Lote', esc(farmaciaLotLabel(position.lot)) + (position.kit ? ' · Kit ' + esc(position.kit) : '')], ['Validade', esc(farmaciaExpiryLabel(position.expiry)) + expiry], ['Localização', esc(position.location)]];
   var balances = [['physical', 'Físico'], ['available', 'Disponível'], ['pending', 'Aguardando avaliação'], ['blocked', 'Bloqueado']].map(function(item) {
     var value = position[item[0]] || 0;
     return '<div class="farmacia-lot-balance' + (value > 0 ? '' : ' is-zero') + '"><span>' + item[1] + '</span><strong>' + esc(farmaciaStockQuantity(value, product.unit)) + '</strong></div>';
@@ -578,7 +613,7 @@ function farmaciaOpenPosition(id) {
     '<div class="field full"><label class="field-label" for="farmaciaMovementReason">Motivo (obrigatório)</label><input class="f-input" id="farmaciaMovementReason" maxlength="500" required></div>' +
     '<div class="field full"><label class="field-label" for="farmaciaMovementDocument">Documento de suporte (obrigatório)</label><input class="f-input" id="farmaciaMovementDocument" maxlength="200" required aria-describedby="farmaciaMovementDocumentHelp"><div class="field-help" id="farmaciaMovementDocumentHelp">Qual documento autoriza esta ação? Informe o nome ou número e a versão ou data. Ex.: e-mail do patrocinador de 26/10/2026.</div></div></fieldset></div><div class="farmacia-dialog-actions"><button type="submit" class="btn-save">Registrar movimentação</button></div></form>';
   if (FARMACIA_STOCK.studyId === '@IPS_COMMON' && product.supplySource !== 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += farmaciaAdjustmentFormHtml(position, product);
-  if (data.farmaciaAccess === 'manage' && !position.inTransit && !position.returned && position.physical > 0) html += farmaciaRevalidationFormHtml(position, product);
+  if (data.farmaciaAccess === 'manage' && !position.inTransit && !position.returned && position.physical > 0 && position.expiry) html += farmaciaRevalidationFormHtml(position, product);
   document.getElementById('farmaciaPositionDetail').innerHTML = html;
   if (document.getElementById('farmaciaAdjustmentForm')) farmaciaAdjustmentKindChanged();
   if (document.getElementById('farmaciaInvoiceForm')) farmaciaReceiptLoadSenders();

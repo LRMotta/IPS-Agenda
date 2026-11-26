@@ -556,3 +556,50 @@ test('material antigo sem uso: fora do ciclo até a correção, que exige o uso 
   assert.equal(f.stock().products.find(p=>p.id===legacy.product).materialUse,'loan');
   assert.equal(f.server.registrarDispensacaoFarmacia(guide(f,[[legacy.id,1]])).ids.length,1);
 });
+
+// Material sem lote e sem validade: texto vazio no registro, nunca tratado como vencido.
+function noLotMaterial(f,suffix,extra={}){
+  const product=f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'nolot-product-'+suffix,data:{category:'material',materialUse:'loan',name:'Bag '+suffix,presentation:'1 bag',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''}}}).id;
+  const id=f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'nolot-initial-'+suffix,data:{productId:product,lot:'',expiry:'',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Gaveta 1'},kit:'',physical:2,blocked:0,countedOn:'2026-10-12',confirmed:true,note:'',...extra}}).id;
+  return {product,id};
+}
+
+test('material sem lote e sem validade entra, nunca vence, é dispensado e volta ao estoque',()=>{
+  const f=fixture(),bag=noLotMaterial(f,'semlote');
+  const at=()=>f.stock().positions.find(p=>p.id===bag.id);
+  assert.deepEqual([at().lot,at().expiry,at().expired],['','',false]);
+  f.movement({positionId:bag.id,revision:bag.id,quantity:2});
+  // Anos depois continua utilizável: sem validade não entra em comparação de datas.
+  f.state.today='2035-01-10';
+  assert.equal(at().expired,false);
+  const [dispenseId]=f.server.registrarDispensacaoFarmacia(guide(f,[[bag.id,1]],{occurredOn:'2035-01-10',validThrough:'2035-02-10'})).ids;
+  f.write({action:'return',positionId:bag.id,revision:bag.id,dispenseId,quantity:1,occurredOn:'2035-01-10',returnTo:'stock'});
+  assert.equal(at().available,2);
+});
+
+test('sem lote / sem validade só vale para material',()=>{
+  const f=fixture(),entry=data=>f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'medicine-nolot-'+(++f.state.uuid),data:{productId:f.product,lot:'L9',expiry:'2027-08-31',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Quarentena'},kit:'',physical:1,blocked:0,countedOn:'2026-10-12',confirmed:true,note:'',...data}});
+  assert.throws(()=>entry({lot:''}),/lote/);
+  assert.throws(()=>entry({expiry:''}),/validade/);
+  // Material com uma entrada sem lote não vira medicamento.
+  const bag=noLotMaterial(f,'categoria');
+  const edit=values=>f.server.alterarRegistroFarmacia({studyId:'P1',restricted:false,requestId:'nolot-edit-'+(++f.state.uuid),type:'PRODUCT_EDIT',data:{entityId:bag.product,revision:bag.product,reason:'Teste',data:{name:'Bag categoria',presentation:'1 bag',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''},...values}}});
+  assert.throws(()=>edit({category:'medicine'}),/não pode virar medicamento/);
+});
+
+test('correção do inventário apaga lote e validade fictícios de material, mas não de medicamento',()=>{
+  const f=fixture(),bag=noLotMaterial(f,'correcao',{lot:'N/A',expiry:'2030-12-31'});
+  const fix=(id,data)=>f.server.alterarRegistroFarmacia({studyId:'P1',restricted:false,requestId:'nolot-fix-request-'+(++f.state.uuid),type:'INITIAL_EDIT',data:{entityId:id,revision:f.stock().positions.find(p=>p.id===id).revision,reason:'Material sem lote',data}});
+  fix(bag.id,{lot:'',expiry:'',note:''});
+  const at=f.stock().positions.find(p=>p.id===bag.id);
+  assert.deepEqual([at.lot,at.expiry],['','']);
+  const medicine=f.server.registrarInventarioInicialFarmacia({studyId:'P1',restricted:false,requestId:'medicine-fix-entry-01',data:{productId:f.product,lot:'L7',expiry:'2027-08-31',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Quarentena'},kit:'',physical:1,blocked:0,countedOn:'2026-10-12',confirmed:true,note:''}}).id;
+  assert.throws(()=>fix(medicine,{lot:'',expiry:'',note:''}),/Só material/);
+});
+
+test('recebimento de material sem lote e sem validade entra aguardando avaliação, sem bloqueio por vencimento',()=>{
+  const f=fixture(),material=f.server.cadastrarProdutoFarmacia({studyId:'P1',restricted:false,requestId:'nolot-receipt-product',data:{category:'material',materialUse:'participant',name:'Kit de coleta',presentation:'1 kit',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:15,max:25,instructions:''}}}).id;
+  const id=f.server.registrarRecebimentoFarmacia({studyId:'P1',restricted:false,requestId:'nolot-receipt-0001',data:{productId:material,lot:'',expiry:'',location:'Catálogo',locationRef:{unitId:'UNIT-1',position:'Gaveta 1'},kit:'',physical:5,receivedOn:'2026-10-20',document:'Shipment 1',note:''}}).id;
+  const at=f.stock().positions.find(p=>p.id===id);
+  assert.deepEqual([at.lot,at.expiry,at.pending,at.blocked],['','',5,0]);
+});

@@ -89,13 +89,28 @@ function farmaciaProductData_(value, allowLegacyCategory) {
 }
 var FARMACIA_MATERIAL_USES_ = ['participant', 'loan', 'site'];
 
+// Material pode não ter lote nem validade: o texto vazio registra "sem lote" / "sem validade".
+// Medicamento (e produto antigo sem categoria) continua exigindo os dois.
+function farmaciaLotOptional_(product) {
+  return !!product && product.data.category === 'material';
+}
+
+function farmaciaEntryExpiry_(value, product, label) {
+  return farmaciaLotOptional_(product) && value === '' ? '' : farmaciaDate_(value, label);
+}
+
+// Vencido na data informada. Sem validade nunca vence (o texto vazio não pode entrar em comparação de datas).
+function farmaciaExpiredOn_(expiry, date) {
+  return !!expiry && date > expiry;
+}
+
 function farmaciaInitialData_(value, product, historical) {
   value = value || {};
   if (!product) throw new Error('Produto não encontrado neste estudo e classe de acesso.');
   var fractional = ['mL', 'g'].indexOf(product.data.unit) !== -1;
   var physical = farmaciaQuantity_(value.physical, fractional);
   var blocked = farmaciaQuantity_(value.blocked, fractional);
-  var expiry = farmaciaDate_(value.expiry, 'a validade');
+  var expiry = farmaciaEntryExpiry_(value.expiry, product, 'a validade');
   var countedOn = farmaciaDate_(value.countedOn, 'a data da conferência');
   var kit = farmaciaText_(value.kit, 'o número do kit', 100, product.data.control !== 'kit');
   if (!physical || blocked > physical || countedOn > farmaciaToday_() || value.confirmed !== true ||
@@ -103,8 +118,8 @@ function farmaciaInitialData_(value, product, historical) {
     throw new Error('Confira o saldo físico, bloqueado, a data e o tipo de controle. Confirme a contagem física.');
   }
   // Não cria vínculo clínico nem presume que material vencido esteja utilizável.
-  if (!historical && expiry < farmaciaToday_() && blocked !== physical) throw new Error('Material vencido deve entrar integralmente bloqueado.');
-  var result = { productId: product.id, lot: farmaciaText_(value.lot, 'o lote', 100), expiry: expiry,
+  if (!historical && farmaciaExpiredOn_(expiry, farmaciaToday_()) && blocked !== physical) throw new Error('Material vencido deve entrar integralmente bloqueado.');
+  var result = { productId: product.id, lot: farmaciaText_(value.lot, 'o lote', 100, farmaciaLotOptional_(product)), expiry: expiry,
     location: farmaciaText_(value.location, 'a localização', 200), kit: kit,
     physical: physical, blocked: blocked, countedOn: countedOn, confirmed: true,
     note: farmaciaText_(value.note, 'a observação', 500, true) };
@@ -256,7 +271,7 @@ function farmaciaMovementData_(value) {
 
 function farmaciaEntryState_(record) {
   var data = record.data, receipt = record.type === 'RECEIPT';
-  var blocked = receipt ? (data.expiry < data.receivedOn ? data.physical : 0) : data.blocked;
+  var blocked = receipt ? (farmaciaExpiredOn_(data.expiry, data.receivedOn) ? data.physical : 0) : data.blocked;
   // Recebimento do Geral grava pending: 0 (entra disponível); o do patrocinador aguarda avaliação.
   var pending = receipt ? (data.pending === 0 ? 0 : data.physical - blocked) : data.pending || 0;
   return Object.assign({}, data, { id: record.id, revision: record.id, registeredAt: record.registeredAt,
@@ -463,7 +478,7 @@ function getFarmaciaEstoque(studyId, restricted) {
       if (record.adjustmentDelta !== undefined) event.adjustmentDelta = record.adjustmentDelta;
       return event;
     }), positions: data.positions.map(function(position) {
-      var expired = position.expiry < today;
+      var expired = farmaciaExpiredOn_(position.expiry, today);
       return Object.assign({}, position, {
         storageCheck: farmaciaStorageCheck_(data.products.find(function(item) { return item.id === position.productId; }).data, position, locations.units),
         expired: expired, available: expired ? 0 : Math.round((position.available - (position.transportReserved || 0)) * 1000) / 1000,
@@ -531,7 +546,7 @@ function farmaciaWrite_(payload, type) {
     if (type === 'MOVEMENT') {
       var position = ledger.positions.find(function(item) { return item.id === data.positionId; });
       var movementProduct = position && ledger.products.find(function(item) { return item.id === position.productId; });
-      if (position && position.expiry < farmaciaToday_() && data.action !== 'transfer') throw new Error(data.action === 'release' ? 'Material vencido permanece bloqueado e não pode ser liberado.' : 'Material vencido já está integralmente bloqueado.');
+      if (position && farmaciaExpiredOn_(position.expiry, farmaciaToday_()) && data.action !== 'transfer') throw new Error(data.action === 'release' ? 'Material vencido permanece bloqueado e não pode ser liberado.' : 'Material vencido já está integralmente bloqueado.');
       farmaciaApplyMovement_(position, data, movementProduct, id);
     }
     var row = [id, type, JSON.stringify(context.studyId), context.restricted, requestId, JSON.stringify(new Date().toISOString()), JSON.stringify(context.access.userEmail), dataJson];

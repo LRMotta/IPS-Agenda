@@ -67,6 +67,14 @@ e formulários anteriores e descarta respostas obsoletas.
 - Inventário: produto, lote, validade civil, localização, kit quando aplicável,
   quantidade física positiva, quantidade bloqueada, data e confirmação da contagem,
   observação opcional, autor autenticado e instante do registro.
+- **Material sem lote / sem validade:** em produto de categoria material, lote e validade
+  são opcionais no inventário, no recebimento e na correção da entrada; o texto vazio
+  registra "sem lote" / "sem validade" (em vez de valores fictícios como N/A e 2030),
+  e a tela mostra esses rótulos. Medicamento continua exigindo os dois. Sem validade nunca
+  vence: toda comparação de vencimento passa por `farmaciaExpiredOn_()`, que trata o vazio
+  como não vencido. Entrada sem validade não é revalidada, e um material com entrada sem
+  lote ou sem validade não pode virar medicamento. Duas entradas sem lote do mesmo
+  material no mesmo local são a mesma posição.
 - Quantidades inteiras para unidades discretas; até três casas para mL/g. Cada kit
   individual tem quantidade física 1 e seu número é único dentro do estudo/classe.
 - Não somar unidades diferentes. O disponível é físico menos bloqueado. Vencidos
