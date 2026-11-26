@@ -79,8 +79,15 @@ function farmaciaProductData_(value, allowLegacyCategory) {
     if (['sponsor', 'site'].indexOf(value.supplySource) === -1) throw new Error('Selecione a origem do fornecimento do produto.');
     result.supplySource = value.supplySource;
   }
+  // Uso do material: entregue ao participante, emprestado (volta para reuso) ou consumido no centro.
+  // Só materiais têm; cadastros anteriores sem a chave continuam válidos no replay.
+  if (Object.prototype.hasOwnProperty.call(value, 'materialUse')) {
+    if (category !== 'material' || FARMACIA_MATERIAL_USES_.indexOf(value.materialUse) === -1) throw new Error('Selecione o uso do material.');
+    result.materialUse = value.materialUse;
+  }
   return result;
 }
+var FARMACIA_MATERIAL_USES_ = ['participant', 'loan', 'site'];
 
 function farmaciaInitialData_(value, product, historical) {
   value = value || {};
@@ -429,7 +436,7 @@ function getFarmaciaProdutos(studyId, restricted) {
     farmaciaAccess: access.farmaciaAccess, locationsConfigured: false, locationsCanManage: false,
     positions: [], movements: [], storageUnits: [], products: products.map(function(record) {
       var result = { id: record.id, revision: record.revision || record.id, hasStockHistory: stockHistoryUnknown || productsWithStockHistory[record.id] === true };
-      ['name','presentation','category','unit','control','productCode','barcode','dosageForm','strength','route','brand','storage','supplySource'].forEach(function(key) {
+      ['name','presentation','category','unit','control','productCode','barcode','dosageForm','strength','route','brand','storage','supplySource','materialUse'].forEach(function(key) {
         if (record.data[key] !== undefined) result[key] = record.data[key];
       });
       return result;
@@ -493,6 +500,7 @@ function farmaciaWrite_(payload, type) {
     }
     if (type === 'PRODUCT' && !data.storage) throw new Error('Informe as condições de conservação do produto.');
     if (type === 'PRODUCT' && !data.supplySource) throw new Error('Selecione a origem do fornecimento do produto.');
+    if (type === 'PRODUCT' && data.category === 'material' && !data.materialUse) throw new Error('Selecione o uso do material.');
     if (type === 'PRODUCT' && context.studyId === FARMACIA_COMMON_SCOPE_ && data.supplySource === 'sponsor') throw new Error('Produtos do patrocinador devem pertencer ao estoque do estudo.');
     if (type === 'INITIAL' || type === 'RECEIPT' || (type === 'MOVEMENT' && data.action === 'transfer')) {
       var locations = farmaciaReadLocations_();

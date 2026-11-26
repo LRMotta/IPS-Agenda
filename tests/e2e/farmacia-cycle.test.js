@@ -42,13 +42,13 @@ test('dispensação preserva formulário e requestId em falha e descarta respost
     assert.match(await page.locator('[name="guidePosition"] option[value="IN1"]').textContent(),/100 comprimido disponíveis/);
     assert.equal(await page.locator('.farmacia-guide-remove').isVisible(),false);assert.equal(await page.locator('[name="platformReference"]').getAttribute('required'),null);
     await page.locator('[name="guidePosition"]').selectOption('IN1');await page.locator('[name="guideQuantity"]').fill('10');
-    await page.getByRole('button',{name:'Adicionar medicamento',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),2);
-    assert.match(await page.locator('.farmacia-guide-item').nth(1).locator('[data-guide-label]').textContent(),/Medicamento 2/);
+    await page.getByRole('button',{name:'Adicionar item',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),2);
+    assert.match(await page.locator('.farmacia-guide-item').nth(1).locator('[data-guide-label]').textContent(),/Item 2/);
     await page.locator('[name="guidePosition"]').nth(1).selectOption('IN1');await page.locator('[name="guideQuantity"]').nth(1).fill('5');await page.locator('[name="validThrough"]').fill('2026-11-10');await page.locator('[name="prescription"]').fill('PRESC-NOVA');await page.locator('[name="platformReference"]').fill('IRT-NOVA');await page.locator('[name="document"]').fill('DOC-NOVO');await page.locator('[name="confirmed"]').check();
     assert.equal(await page.locator('#farmaciaLifecycleSummary').isVisible(),false);
     await capture(page,'dispensacao',1536);const before=await page.evaluate(()=>window.pending.length);await page.locator('#farmaciaCycleForm [type="submit"]').click();
     assert.match(await page.locator('#farmaciaCycleSaveStatus').textContent(),/mais de uma vez/);assert.equal(await page.evaluate(()=>window.pending.length),before);
-    await page.getByRole('button',{name:'Remover medicamento 2',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),1);
+    await page.getByRole('button',{name:'Remover item 2',exact:true}).click();assert.equal(await page.locator('.farmacia-guide-item').count(),1);
     await page.locator('#farmaciaCycleForm [type="submit"]').click();
     const payload=await page.evaluate(()=>window.pending.at(-1).args[0]);assert.equal(payload.items.length,1);assert.equal(payload.items[0].revision,'OP-BLOCK');assert.equal(payload.items[0].quantity,10);assert.equal(payload.data.participantId,'CAD-014');assert.equal(payload.data.platformReference,'IRT-NOVA');
     await page.evaluate(()=>window.farmaciaStockRefresh());assert.equal(await page.locator('#confirmUnsaved').evaluate(node=>node.classList.contains('open')),false);assert.equal(await page.evaluate(()=>window.pending.at(-1).method),'registrarDispensacaoFarmacia');

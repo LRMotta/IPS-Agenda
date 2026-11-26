@@ -182,11 +182,18 @@ function farmaciaDispenseOutstanding_(ledger, dispenseId) {
   return Math.round((dispense.data.quantity - returned - inTransit) * 1000) / 1000;
 }
 
+// Entram no ciclo os medicamentos do patrocinador e os materiais do patrocinador entregues ou emprestados ao participante.
+function farmaciaCycleProductEligible_(data) {
+  return !!data && data.supplySource === 'sponsor' && (data.category === 'medicine' ||
+    (data.category === 'material' && (data.materialUse === 'participant' || data.materialUse === 'loan')));
+}
+
 function farmaciaApplyLifecycle_(ledger, record) {
   var data = record.data;
   var position = ledger.positions.find(function(item) { return item.id === data.positionId; });
   var product = position && ledger.products.find(function(item) { return item.id === position.productId; });
-  if (!position || !product || product.data.supplySource !== 'sponsor' || product.data.category !== 'medicine') throw new Error('O ciclo exige medicamento do patrocinador identificado neste estudo.');
+  if (!position || !product || !farmaciaCycleProductEligible_(product.data)) throw new Error('O ciclo exige medicamento do patrocinador, ou material do patrocinador para o participante, identificado neste estudo.');
+  var material = product.data.category === 'material';
   // O retorno não altera o saldo da origem: é validado pela dispensação (vínculo, acumulado e trânsito),
   // não pela revisão da entrada. A revisão continua avançando ao final para preservar o replay do histórico.
   if (data.action !== 'return' && data.revision !== position.revision) throw new Error('O saldo mudou. Atualize o estoque antes de registrar a operação.');
@@ -205,13 +212,16 @@ function farmaciaApplyLifecycle_(ledger, record) {
   if (product.data.control === 'kit' && quantity && quantity !== 1) throw new Error('Kits individualizados exigem quantidade 1.');
   var reserved = position.transportReserved || 0;
   if (data.action === 'dispense') {
-    if (position.returned || data.occurredOn > position.expiry || data.validThrough > position.expiry ||
+    // Material não tem período de uso a conferir contra a validade; só não pode sair vencido.
+    if (position.returned || data.occurredOn > position.expiry || (!material && data.validThrough > position.expiry) ||
         quantity > Math.round((position.available - reserved) * 1000) / 1000) throw new Error('Saldo insuficiente, vencido, retornado ou indisponível para o período de uso.');
     if (data.platformReference && ledger.movements.some(function(item) { return item.type === 'LIFECYCLE' && item.data.action === 'dispense' && item.data.platformReference === data.platformReference &&
         item.data.positionId === data.positionId && item.data.participantId === data.participantId; })) throw new Error('Esta referência de dispensação já foi registrada para este item e participante.');
     position.available = Math.round((position.available - quantity) * 1000) / 1000;
     position.physical = Math.round((position.physical - quantity) * 1000) / 1000;
   } else if (data.action === 'return') {
+    // O retorno de hoje segrega para destinação; material emprestado precisa voltar ao estoque (próxima etapa).
+    if (material && product.data.materialUse === 'loan') throw new Error('O retorno de material emprestado, com volta ao estoque, ainda não está disponível.');
     var dispense = farmaciaLifecycleRecord_(ledger, data.dispenseId, 'dispense');
     if (dispense.data.positionId !== position.id || data.occurredOn < dispense.data.occurredOn) throw new Error('Confira a dispensação e a data do retorno.');
     var totalReturned = ledger.movements.reduce(function(total, item) { return total + (item.type === 'LIFECYCLE' && item.data.action === 'return' && item.data.dispenseId === data.dispenseId ? item.data.quantity : 0); }, quantity);

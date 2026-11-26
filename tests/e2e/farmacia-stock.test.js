@@ -784,6 +784,7 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       assert.equal(await page.locator('#farmaciaProductSupply option[value=sponsor]').isDisabled(),true);
       await page.locator('#farmaciaProductSupply').selectOption('site');
       await page.locator('#farmaciaProductCategory').selectOption('material');
+      await page.locator('#farmaciaProductMaterialUse').selectOption('site');
       await page.locator('#farmaciaProductName').fill('Seringa fictícia');
       await page.locator('#farmaciaProductBrand').fill('Marca de material');
       await page.locator('#farmaciaProductBarcode').fill('07891234567890');
@@ -800,6 +801,7 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       const commonProduct=await page.evaluate(() => window.pending.at(-1).args[0]);
       assert.equal(commonProduct.studyId,'@IPS_COMMON');
       assert.equal(commonProduct.data.category,'material');
+      assert.equal(commonProduct.data.materialUse,'site');
       assert.equal(commonProduct.data.brand,'Marca de material');
       assert.equal(commonProduct.data.barcode,'07891234567890');
       assert.equal(Object.hasOwn(commonProduct.data.storage,'source'),false);

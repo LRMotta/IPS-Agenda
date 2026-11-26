@@ -254,6 +254,14 @@ function farmaciaProductCategoryChanged(form) {
       if (input) input.value = '';
     }
   });
+  // Uso do material: obrigatório só para material; desabilitado (e fora do envio) nos demais.
+  currentForm.querySelectorAll('[data-farmacia-material-field]').forEach(function(field) {
+    var select = field.querySelector('select');
+    if (select.options.length < 2) select.innerHTML = farmaciaMaterialUseOptionsHtml(select.value);
+    field.hidden = category !== 'material';
+    select.disabled = field.hidden; select.required = !field.hidden;
+    if (field.hidden) select.value = '';
+  });
 }
 
 function farmaciaInitialProductChanged() {
@@ -377,12 +385,15 @@ function farmaciaStockSave(type, data) {
 
 function salvarProdutoFarmaciaApp(event) {
   event.preventDefault();
-  farmaciaStockSave('product', { category:document.getElementById('farmaciaProductCategory').value, name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
+  var category = document.getElementById('farmaciaProductCategory').value;
+  var product = { category:category, name:document.getElementById('farmaciaProductName').value, presentation:document.getElementById('farmaciaProductPresentation').value,
     brand:document.getElementById('farmaciaProductBrand').value,
     barcode:document.getElementById('farmaciaProductBarcode').value, dosageForm:document.getElementById('farmaciaProductDosageForm').value,
     strength:document.getElementById('farmaciaProductStrength').value, route:document.getElementById('farmaciaProductRoute').value,
     unit:document.getElementById('farmaciaProductUnit').value, control:document.getElementById('farmaciaProductControl').value, supplySource:document.getElementById('farmaciaProductSupply').value,
-    storage:{ min:farmaciaInputTemperature('farmaciaProductMin'), max:farmaciaInputTemperature('farmaciaProductMax'), instructions:document.getElementById('farmaciaProductInstructions').value } });
+    storage:{ min:farmaciaInputTemperature('farmaciaProductMin'), max:farmaciaInputTemperature('farmaciaProductMax'), instructions:document.getElementById('farmaciaProductInstructions').value } };
+  if (category === 'material') product.materialUse = document.getElementById('farmaciaProductMaterialUse').value;
+  farmaciaStockSave('product', product);
   return false;
 }
 

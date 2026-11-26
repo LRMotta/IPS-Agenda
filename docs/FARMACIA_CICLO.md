@@ -15,7 +15,15 @@ PA 024/104 e PA 019/103 foi confirmada pelo usuário. Não foi feita alteração
 documentos controlados.
 
 Somente medicamentos classificados explicitamente como fornecidos pelo patrocinador,
-em um estudo autorizado, usam as novas operações. O estoque comum e produtos sem
+em um estudo autorizado, usam as novas operações. Materiais do patrocinador também entram
+quando o cadastro informa o **uso do material** (`materialUse`): `participant` (entregue
+ao participante, não retorna) e `loan` (emprestado ao participante, volta para reuso)
+aparecem na guia de dispensação junto dos medicamentos; `site` (consumido no centro) fica
+fora do ciclo e sai pelo estoque. O uso é obrigatório em material novo e na primeira
+correção de um material antigo; material sem o uso fica fora do ciclo até essa correção.
+Material não confere a validade contra o último dia previsto de uso, só que não saia
+vencido. O retorno de material emprestado, que deve voltar ao estoque disponível, ainda
+não existe: o servidor recusa esse retorno, e a guia de retorno não lista essas dispensações. O estoque comum e produtos sem
 classificação mantêm seus contratos anteriores. Nenhum vínculo clínico, cronograma,
 origem ou autorização é inferido a partir de nomes ou de saldos.
 

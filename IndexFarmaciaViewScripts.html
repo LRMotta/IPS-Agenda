@@ -139,6 +139,24 @@ function farmaciaProductCategoryOptionsHtml(selected) {
   }).join('');
 }
 
+// Uso do material define o fluxo: participante e empréstimo entram no ciclo (guia de dispensação); centro fica no estoque.
+var FARMACIA_MATERIAL_USE_OPTIONS = [
+  { value:'participant', label:'Entregue ao participante (não retorna)', short:'Entregue ao participante' },
+  { value:'loan', label:'Emprestado ao participante (volta para reuso)', short:'Emprestado ao participante' },
+  { value:'site', label:'Consumido no centro', short:'Consumido no centro' }
+];
+
+function farmaciaMaterialUseLabel(use) {
+  var option = FARMACIA_MATERIAL_USE_OPTIONS.find(function(item) { return item.value === use; });
+  return option ? option.short : '';
+}
+
+function farmaciaMaterialUseOptionsHtml(selected) {
+  return '<option value="">Selecione o uso</option>' + FARMACIA_MATERIAL_USE_OPTIONS.map(function(item) {
+    return '<option value="' + esc(item.value) + '"' + (item.value === selected ? ' selected' : '') + '>' + esc(item.label) + '</option>';
+  }).join('');
+}
+
 function farmaciaProductDosageFormOptionsHtml(selected) {
   return '<option value="">Selecione</option>' + FARMACIA_PRODUCT_DOSAGE_FORM_OPTIONS.map(function(item) {
     return '<option value="' + esc(item) + '"' + (item === selected ? ' selected' : '') + '>' + esc(item) + '</option>';
@@ -153,7 +171,7 @@ function farmaciaCurrentStudyLabel() {
 }
 
 function farmaciaProductCharacteristics(product) {
-  return [farmaciaProductCategoryLabel(product.category), product.brand ? 'Marca: ' + product.brand : '', product.barcode ? 'GTIN ' + product.barcode : '', product.strength, product.dosageForm, product.route].filter(Boolean).join(' · ');
+  return [farmaciaProductCategoryLabel(product.category), product.category === 'material' ? farmaciaMaterialUseLabel(product.materialUse) : '', product.brand ? 'Marca: ' + product.brand : '', product.barcode ? 'GTIN ' + product.barcode : '', product.strength, product.dosageForm, product.route].filter(Boolean).join(' · ');
 }
 
 function farmaciaProductLabel(product) {

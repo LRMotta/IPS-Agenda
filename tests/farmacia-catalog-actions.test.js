@@ -83,7 +83,7 @@ test('troca para material revalida campos herdados antes de gravar e aceita limp
   const f=fixture();
   const medicine={...f.ledger().products[0].data,dosageForm:'Comprimido',strength:'10 mg',route:'Oral'};
   const edited=f.server.alterarRegistroFarmacia(f.action('PRODUCT_EDIT',f.product.id,f.product.id,medicine));
-  const material={name:medicine.name,presentation:medicine.presentation,category:'material',unit:medicine.unit,control:medicine.control};
+  const material={name:medicine.name,presentation:medicine.presentation,category:'material',materialUse:'site',unit:medicine.unit,control:medicine.control};
   const sheet=f.ledger().sheet, rows=JSON.stringify(sheet.rows), writes=sheet.writes;
   const partial=f.action('PRODUCT_EDIT',f.product.id,edited.id,material,'material-partial-0001');
   assert.throws(()=>f.server.alterarRegistroFarmacia(partial),/campos farmacêuticos/);

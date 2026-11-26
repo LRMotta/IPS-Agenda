@@ -29,6 +29,8 @@ function farmaciaApplyCatalogAction_(ledger, record) {
       ['category', 'storage', 'supplySource', 'productCode', 'barcode', 'dosageForm', 'strength', 'route', 'brand'].forEach(function(key) {
         if (!Object.prototype.hasOwnProperty.call(next, key) && Object.prototype.hasOwnProperty.call(current.data, key)) next[key] = current.data[key];
       });
+      // O uso só se preserva enquanto o produto continua material.
+      if (next.category === 'material' && !Object.prototype.hasOwnProperty.call(next, 'materialUse') && Object.prototype.hasOwnProperty.call(current.data, 'materialUse')) next.materialUse = current.data.materialUse;
       // A categoria deve ser coerente com o estado completo, inclusive campos preservados na correção.
       next = farmaciaProductData_(next, !Object.prototype.hasOwnProperty.call(next, 'category'));
       if (used && ['unit', 'control', 'supplySource'].some(function(key) { return next[key] !== current.data[key]; })) throw new Error('Produtos com histórico devem preservar unidade, controle e origem do fornecimento.');
@@ -74,6 +76,9 @@ function alterarRegistroFarmacia(payload) {
       if (position && data.data.expiry < farmaciaToday_() && position.blocked !== position.physical) throw new Error('Material vencido deve permanecer integralmente bloqueado.');
     }
     farmaciaApplyCatalogAction_(ledger, record);
+    // Material corrigido precisa do uso (cadastros anteriores o recebem na primeira correção).
+    var edited = type === 'PRODUCT_EDIT' && ledger.products.find(function(item) { return item.id === data.entityId; });
+    if (edited && edited.data.category === 'material' && !edited.data.materialUse) throw new Error('Selecione o uso do material.');
     var row = [record.id, type, JSON.stringify(context.studyId), context.restricted, requestId,
       JSON.stringify(new Date().toISOString()), JSON.stringify(context.access.userEmail), dataJson];
     farmaciaAssertLedgerRowReplayable_(context, ledger, row);
