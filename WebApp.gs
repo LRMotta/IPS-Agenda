@@ -3716,7 +3716,11 @@ function reqExamesCamposDoFormulario_(dados, exames) {
   // A aba convertia "dd/mm/aaaa" em data; mantém a conversão para o e-mail e o PDF.
   var nascimentoTexto = String(dados.nascimento || '').trim();
   var nascimentoData = nascimentoTexto ? parseAgendaDateAny_(nascimentoTexto) : null;
-  var nascimento = nascimentoData && !isNaN(nascimentoData.getTime()) ? nascimentoData : nascimentoTexto;
+  // Data impossível (31/02, 13º mês) rolaria para outro dia; a aba a mantinha como texto, e o PDF também mantém.
+  var nascimentoPartes = /^(\d{1,2})\/(\d{1,2})\/\d{4}$/.exec(nascimentoTexto);
+  var nascimentoValido = nascimentoData && !isNaN(nascimentoData.getTime()) &&
+    (!nascimentoPartes || (nascimentoData.getDate() === Number(nascimentoPartes[1]) && nascimentoData.getMonth() === Number(nascimentoPartes[2]) - 1));
+  var nascimento = nascimentoValido ? nascimentoData : nascimentoTexto;
   var values = {
     I5: dados.urgente ? 'URGENTE' : '',
     E8: dados.paciente || '',

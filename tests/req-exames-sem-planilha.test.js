@@ -33,6 +33,10 @@ test('campos do formulário convertem nascimento e data como a aba fazia e mant�
   const semData = server.reqExamesCamposDoFormulario_({ nascimento: 'não informado' }, []);
   assert.equal(semData.value('E9'), 'não informado');
   assert.equal(semData.display('E9'), 'não informado');
+  // Data impossível não vira outro dia: segue como foi digitada.
+  const impossivel = server.reqExamesCamposDoFormulario_({ nascimento: '31/02/1980' }, []);
+  assert.equal(impossivel.value('E9'), '31/02/1980');
+  assert.equal(server.reqExamesCamposDoFormulario_({ nascimento: '12/13/1980' }, []).value('E9'), '12/13/1980');
 });
 
 test('gerarRequisicaoPDF não toca na planilha nem reautoriza solicitante, prestador, assinatura ou status', () => {
