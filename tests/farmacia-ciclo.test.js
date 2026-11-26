@@ -410,3 +410,65 @@ test('transação no IRT é opcional; quando informada continua impedindo a mesm
   assert.throws(()=>f.write({quantity:1,platformReference:'IRT-X'}),/já foi registrada/);
   assert.throws(()=>f.write({quantity:1,guideId:'guide-forged-0001'}),/própria guia/);
 });
+
+function memo(f,items,data={},requestId='memo-request-0001'){
+  const common={destination:'sponsor',reasonCategory:'expired',occurredOn:'2026-10-26',authorization:'AUT-1',document:'SOP-FARM-07 v2',reason:'',carrier:'Transportadora X',awb:'AWB-1',packages:'1 caixa, lacre 123',logger:'LOG-9',shipTo:'Depósito do patrocinador',...data};
+  const revision=id=>f.stock().positions.find(p=>p.id===id).revision;
+  return {studyId:'P1',restricted:false,requestId,data:common,items:items.map(([positionId,quantity,extra={}])=>({positionId,revision:revision(positionId),quantity,from:'blocked',condition:'intact',itemNote:'',...extra}))};
+}
+
+test('memorando de devolução grava vários lotes numa escrita, numera, guarda o cadastro do estudo e repete sem duplicar',()=>{
+  const f=fixture();
+  f.app.sheets.Projetos=new FakeSheet('Projetos',[['ID','Nome','Código','Esp','Fase','PI','Sub1','Sub2','Centro','Patrocinador','CRO'],['P1','Estudo A','PROT-001','','','Dra. Fictícia','','',123,'Patrocinador Fictício','CRO Fictícia']]);
+  const second=secondLot(f);
+  f.movement({action:'block',from:'available',quantity:20});
+  f.movement({positionId:second,revision:f.stock().positions.find(p=>p.id===second).revision,action:'block',from:'available',quantity:10});
+  const writes=f.sheet().writes,p=memo(f,[[f.position,5],[second,10,{condition:'mixed',itemNote:'2 frascos abertos'}]]);
+  const result=f.server.registrarDestinacaoFarmacia(p);
+  assert.equal(result.ids.length,2);assert.equal(result.memoNumber,'MEM-2026-001');assert.equal(f.sheet().writes,writes+1);
+  const records=f.stock().movements.filter(r=>r.type==='LIFECYCLE'&&r.data.action==='destination');
+  assert.deepEqual([...records.map(r=>r.data.memoId)],[p.requestId,p.requestId]);
+  assert.equal(records[0].data.memoStudy.sponsor,'Patrocinador Fictício');assert.equal(records[0].data.memoStudy.site,'123');assert.equal(records[0].data.memoStudy.code,'PROT-001');
+  assert.equal(records[1].data.itemNote,'2 frascos abertos');assert.equal(records[0].data.awb,'AWB-1');assert.equal(records[0].data.company,undefined);
+  assert.equal(f.stock().positions.find(x=>x.id===f.position).blocked,15);assert.equal(f.stock().positions.find(x=>x.id===second).blocked,0);
+  const repeated=f.server.registrarDestinacaoFarmacia(p);
+  assert.equal(repeated.repeated,true);assert.equal(repeated.memoNumber,'MEM-2026-001');assert.equal(f.sheet().writes,writes+1);
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia({...p,items:[p.items[0]]}),/outros dados/);
+  const next=f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,1]],{destination:'disposal',company:'Empresa licenciada',method:'Incineração',certificate:''},'memo-request-0002'));
+  assert.equal(next.memoNumber,'MEM-2026-002');
+  const disposal=f.stock().movements.at(-1).data;assert.equal(disposal.company,'Empresa licenciada');assert.equal(disposal.certificate,'');assert.equal(disposal.awb,undefined);
+});
+
+test('memorando valida todos os itens antes de gravar e exige o Responsável',()=>{
+  const f=fixture(),second=secondLot(f);
+  f.movement({action:'block',from:'available',quantity:20});
+  const writes=f.sheet().writes;
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5],[second,1]])),/saldo segregado/);
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5],[f.position,1]])),/mais de uma vez/);
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[])),/de 1 a 30/);
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5,{condition:'mixed'}]])),/observação do item/);
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]],{reasonCategory:''})),/motivo/);
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]],{destination:'disposal',company:''})),/empresa/);
+  assert.throws(()=>f.write({action:'destination',quantity:5,from:'blocked',destination:'sponsor',authorization:'AUT-1',memoId:'memo-forged-0001'}),/próprio memorando/);
+  f.state.permission='operate';
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]])),/permissão/);
+  assert.equal(f.sheet().writes,writes);
+  assert.equal(f.stock().positions.find(x=>x.id===f.position).blocked,20);
+});
+
+test('destinação antiga, sem memorando, continua legível ao lado dos memorandos',()=>{
+  const f=fixture();
+  f.movement({action:'block',from:'available',quantity:20});
+  f.write({action:'destination',quantity:5,from:'blocked',destination:'sponsor',authorization:'AUT-1',reason:'Devolução'});
+  f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]]));
+  const records=f.stock().movements.filter(r=>r.type==='LIFECYCLE'&&r.data.action==='destination');
+  assert.equal(records.length,2);assert.equal(records[0].data.memoId,undefined);assert.equal(records[1].data.memoNumber,'MEM-2026-001');
+  assert.equal(f.stock().positions[0].blocked,10);
+});
+
+test('memorando dispensa a observação geral, exceto quando o motivo é Outro',()=>{
+  const f=fixture();
+  f.movement({action:'block',from:'available',quantity:20});
+  assert.throws(()=>f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]],{reasonCategory:'other'})),/observação/);
+  assert.equal(f.server.registrarDestinacaoFarmacia(memo(f,[[f.position,5]],{reasonCategory:'other',reason:'Frasco sem rótulo legível'})).repeated,false);
+});

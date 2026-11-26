@@ -7,7 +7,9 @@ function farmaciaLifecycleData_(value) {
     revision: farmaciaText_(value.revision, 'a revisão do estoque', 100),
     occurredOn: farmaciaDate_(value.occurredOn, 'a data da operação'),
     document: farmaciaText_(value.document, 'a referência documental', 200, value.action === 'dispense'),
-    reason: farmaciaText_(value.reason, 'a observação', 500, value.action !== 'destination') };
+    // No memorando o motivo já vem classificado; a observação só é exigida quando o motivo é "Outro".
+    reason: farmaciaText_(value.reason, 'a observação', 500, value.action !== 'destination' ||
+      (value.memoId !== undefined && value.memoId !== '' && value.reasonCategory !== 'other')) };
   if (value.action !== 'transport_arrival') {
     result.quantity = farmaciaQuantity_(value.quantity, true);
     if (!result.quantity) throw new Error('Informe uma quantidade positiva.');
@@ -69,8 +71,42 @@ function farmaciaLifecycleData_(value) {
     result.from = value.from;
     result.destination = value.destination;
     result.authorization = farmaciaText_(value.authorization, 'a referência da autorização de destinação', 200);
+    // Memorando de devolução / destruição: só os registros novos têm a chave; os antigos seguem sem ela.
+    if (value.memoId !== undefined && value.memoId !== '') farmaciaDestinationMemoData_(value, result);
   }
   return result;
+}
+
+var FARMACIA_DESTINATION_REASONS_ = ['expired', 'participant_return', 'study_close', 'excursion', 'recall', 'damaged', 'other'];
+var FARMACIA_DESTINATION_CONDITIONS_ = ['intact', 'partial', 'empty', 'mixed'];
+
+function farmaciaDestinationMemoData_(value, result) {
+  if (typeof value.memoId !== 'string' || !/^[A-Za-z0-9_-]{12,100}$/.test(value.memoId)) throw new Error('Memorando inválido.');
+  result.memoId = value.memoId;
+  // Número legível atribuído pelo servidor dentro do lock; o replay só confere o formato.
+  if (typeof value.memoNumber !== 'string' || !/^MEM-(R-)?\d{4}-\d{3,6}$/.test(value.memoNumber)) throw new Error('Número do memorando inválido.');
+  result.memoNumber = value.memoNumber;
+  if (FARMACIA_DESTINATION_REASONS_.indexOf(value.reasonCategory) === -1) throw new Error('Selecione o motivo da devolução / destruição.');
+  result.reasonCategory = value.reasonCategory;
+  if (FARMACIA_DESTINATION_CONDITIONS_.indexOf(value.condition) === -1) throw new Error('Selecione a condição de cada item.');
+  result.condition = value.condition;
+  result.itemNote = farmaciaText_(value.itemNote, 'a observação do item', 200, value.condition !== 'mixed');
+  if (result.destination === 'sponsor') {
+    result.carrier = farmaciaText_(value.carrier, 'a transportadora', 120, true);
+    result.awb = farmaciaText_(value.awb, 'o AWB / conhecimento', 80, true);
+    result.packages = farmaciaText_(value.packages, 'os volumes e lacres', 200, true);
+    result.logger = farmaciaText_(value.logger, 'o registrador de temperatura', 120, true);
+    result.shipTo = farmaciaText_(value.shipTo, 'o destino da devolução', 300, true);
+  } else {
+    result.company = farmaciaText_(value.company, 'a empresa responsável pela destruição', 160);
+    result.method = farmaciaText_(value.method, 'o método de destruição', 120);
+    result.certificate = farmaciaText_(value.certificate, 'o certificado de destruição / MTR', 120, true);
+  }
+  var study = value.memoStudy || {};
+  result.memoStudy = {};
+  ['code', 'sponsor', 'cro', 'site', 'investigator'].forEach(function(key) {
+    result.memoStudy[key] = farmaciaText_(study[key], 'o dado do estudo', 300, true);
+  });
 }
 
 function farmaciaLifecycleTime_(value) {
@@ -259,6 +295,7 @@ function registrarCicloFarmacia(payload) {
     farmaciaAssertRequestId_(requestId);
     // Itens de guia só nascem em registrarDispensacaoFarmacia, que os grava juntos.
     if (payload.data && payload.data.guideId !== undefined) throw new Error('Registre guias de dispensação pela própria guia.');
+    if (payload.data && payload.data.memoId !== undefined) throw new Error('Registre devoluções e destruições pelo próprio memorando.');
     var ledger = farmaciaReadLedger_(context), data = farmaciaLifecycleData_(payload.data);
     var previous = ledger.records.find(function(item) { return item.requestId === requestId; });
     if (previous) {
@@ -374,5 +411,87 @@ function registrarDispensacaoFarmacia(payload) {
     farmaciaAssertLedgerRowsReplayable_(context, ledger, rows);
     ledger.sheet.getRange(ledger.sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
     return { ok: true, ids: rows.map(function(row) { return row[0]; }), repeated: false };
+  });
+}
+
+// Memorando de devolução ao patrocinador ou de destruição: dados comuns uma vez e um ou mais lotes / kits.
+// Como na guia de dispensação, os itens são validados juntos e gravados numa única escrita. Cada item
+// continua sendo uma destinação própria no ledger, ligada às demais pelo memorando.
+var FARMACIA_DESTINATION_MEMO_MAX_ITEMS_ = 30;
+
+// Cabeçalho do memorando: retrato do cadastro do estudo no momento do registro (aba Projetos).
+function farmaciaDestinationMemoStudy_(studyId) {
+  var sheet = getCodexSpreadsheet_().getSheetByName('Projetos');
+  var empty = { code: '', sponsor: '', cro: '', site: '', investigator: '' };
+  if (!sheet || sheet.getLastRow() < 2) return empty;
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).getValues();
+  var matches = rows.filter(function(row) { return String(row[0] || '') === studyId; });
+  if (matches.length !== 1) return empty;
+  var row = matches[0];
+  function cell(index) { return String(row[index] === undefined || row[index] === null ? '' : row[index]).trim().slice(0, 300); }
+  return { code: cell(2), sponsor: cell(9), cro: cell(10), site: cell(8), investigator: cell(5) };
+}
+
+function farmaciaDestinationMemoNumber_(ledger, restricted, occurredOn) {
+  var prefix = 'MEM-' + (restricted ? 'R-' : '') + occurredOn.slice(0, 4) + '-', seen = {};
+  ledger.records.forEach(function(item) {
+    var number = item.type === 'LIFECYCLE' && item.data && item.data.memoNumber;
+    if (number && number.indexOf(prefix) === 0) seen[number] = true;
+  });
+  return prefix + ('00' + (Object.keys(seen).length + 1)).slice(-3);
+}
+
+function registrarDestinacaoFarmacia(payload) {
+  payload = payload || {};
+  return codexWithDocumentLock_('farmacia-lifecycle', function() {
+    var context = farmaciaContext_(payload.studyId, payload.restricted, farmaciaLifecyclePermission_('destination'));
+    if (context.studyId === FARMACIA_COMMON_SCOPE_ || !context.ss) throw new Error('Selecione um estudo configurado para o ciclo do medicamento.');
+    var requestId = farmaciaText_(payload.requestId, 'o identificador da operação', 90);
+    farmaciaAssertRequestId_(requestId);
+    var items = payload.items;
+    if (!Array.isArray(items) || !items.length || items.length > FARMACIA_DESTINATION_MEMO_MAX_ITEMS_) {
+      throw new Error('Inclua de 1 a ' + FARMACIA_DESTINATION_MEMO_MAX_ITEMS_ + ' lotes / kits no memorando.');
+    }
+    var common = payload.data || {}, seen = {}, ledger = farmaciaReadLedger_(context);
+    var previous = items.map(function(item, index) { return ledger.records.find(function(record) { return record.requestId === requestId + '-' + (index + 1); }); });
+    var repeated = previous.some(Boolean);
+    // Na repetição, número e cabeçalho vêm do registro gravado; senão são atribuídos agora.
+    var first = repeated ? (previous.find(Boolean) || {}).data || {} : null;
+    var occurredOn = farmaciaDate_(common.occurredOn, 'a data da devolução / destruição');
+    var memoNumber = first ? first.memoNumber : farmaciaDestinationMemoNumber_(ledger, context.restricted, occurredOn);
+    var memoStudy = first ? first.memoStudy : farmaciaDestinationMemoStudy_(context.studyId);
+    var entries = items.map(function(item, index) {
+      item = item || {};
+      var data = farmaciaLifecycleData_({ action: 'destination', positionId: item.positionId, revision: item.revision, quantity: item.quantity,
+        from: item.from, condition: item.condition, itemNote: item.itemNote,
+        occurredOn: occurredOn, document: common.document, reason: common.reason, destination: common.destination,
+        authorization: common.authorization, memoId: requestId, memoNumber: memoNumber, reasonCategory: common.reasonCategory,
+        carrier: common.carrier, awb: common.awb, packages: common.packages, logger: common.logger, shipTo: common.shipTo,
+        company: common.company, method: common.method, certificate: common.certificate, memoStudy: memoStudy });
+      if (seen[data.positionId]) throw new Error('O mesmo lote / kit aparece mais de uma vez no memorando. Informe a quantidade total em um único item.');
+      seen[data.positionId] = true;
+      return { requestId: requestId + '-' + (index + 1), data: data };
+    });
+    if (repeated) {
+      var extra = ledger.records.some(function(record) { return record.requestId === requestId + '-' + (entries.length + 1); });
+      var same = !extra && previous.every(function(record, index) { return record && record.type === 'LIFECYCLE' && record.dataJson === JSON.stringify(entries[index].data); });
+      if (!same) throw new Error('Esta operação já foi usada com outros dados.');
+      return { ok: true, ids: previous.map(function(record) { return record.id; }), memoNumber: memoNumber, repeated: true };
+    }
+    if (occurredOn > farmaciaToday_()) throw new Error('A data da operação não pode ser futura.');
+    var rows = entries.map(function(entry) {
+      var record = { id: 'FLC-' + Utilities.getUuid(), type: 'LIFECYCLE', data: entry.data,
+        author: context.access.userEmail, registeredAt: new Date().toISOString() };
+      if (ledger.records.some(function(item) { return item.id === record.id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
+      // Aplicado em memória, em ordem: cada item já considera os anteriores do memorando.
+      farmaciaApplyLifecycle_(ledger, record);
+      ledger.records.push(record);
+      return [record.id, record.type, JSON.stringify(context.studyId), context.restricted, entry.requestId,
+        JSON.stringify(record.registeredAt), JSON.stringify(record.author), JSON.stringify(entry.data)];
+    });
+    if (!ledger.sheet) throw new Error('Entrada de estoque não encontrada.');
+    farmaciaAssertLedgerRowsReplayable_(context, ledger, rows);
+    ledger.sheet.getRange(ledger.sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    return { ok: true, ids: rows.map(function(row) { return row[0]; }), memoNumber: memoNumber, repeated: false };
   });
 }
