@@ -299,3 +299,42 @@ test('material emprestado: lista de emprestados em uso, devolução ao estoque s
     assert.deepEqual(errors,[]);await page.close();
   }finally{await browser.close();}
 });
+
+test('material do patrocinador sem uso definido: aviso na guia, atalho para o cadastro e selo em Produtos',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);
+    const data=cycleData();
+    data.products.push({id:'PR-BAG',name:'Bag de transporte fictícia',category:'material',presentation:'1 bag',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''}});
+    data.products.push({id:'PR-EQUIPO',name:'Equipo fictício',category:'material',materialUse:'site',presentation:'1 equipo',unit:'equipo',control:'quantity',supplySource:'sponsor',storage:{min:15,max:25,instructions:''}});
+    for(const [id,productId] of [['IN-BAG','PR-BAG'],['IN-EQUIPO','PR-EQUIPO']])data.positions.push({id,revision:id,productId,lot:'',expiry:'',location:'IPS AF-01 → Gaveta 12',locationRef:{unitId:'UNIT-1',position:'Gaveta 12'},physical:1,available:1,pending:0,blocked:0,origin:'initial',countedOn:'2026-10-12',registeredAt:'2026-10-12T16:10:00.000Z',author:'farm@example.invalid'});
+    await page.evaluate(d=>{FARMACIA_STOCK.data=d;renderFarmaciaEstoque(d);},data);
+    await page.locator('[data-pane="dispense"]').click();
+    const notice=page.locator('#farmaciaCyclePane .farmacia-material-notice');
+    assert.match(await notice.textContent(),/⚠ Bag de transporte fictícia não aparece na guia porque falta definir o uso do material/);
+    assert.match(await notice.textContent(),/Equipo fictício está marcado como consumido no centro/);
+    await capture(page,'material-sem-uso',1536);
+    // Dentro da guia o aviso só orienta: a correção recarregaria o formulário.
+    await page.getByRole('button',{name:'Registrar dispensação',exact:true}).click();
+    assert.match(await page.locator('#farmaciaCycleForm .farmacia-material-notice').textContent(),/Cancele a guia e use “Definir uso”/);
+    assert.equal(await page.locator('#farmaciaCycleForm .farmacia-material-notice button').count(),0);
+    assert.doesNotMatch(await page.locator('[name="guidePosition"]').first().innerHTML(),/Bag de transporte/);
+    await page.evaluate(()=>{FARMACIA_CYCLE.form=null;FARMACIA_CYCLE.renderData=null;window.appClearUnsavedChanges('farmaciaCyclePane');farmaciaCycleNavigate('dispense');});
+    await page.getByRole('button',{name:'Definir uso: Bag de transporte fictícia',exact:true}).click();
+    assert.equal(await page.locator('#farmaciaModal-recordAction').isVisible(),true);
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'farmaciaAction-materialUse');
+    assert.equal(await page.locator('#farmaciaAction-reason').inputValue(),'Definir o uso do material');
+    await page.locator('#farmaciaAction-materialUse').selectOption('participant');
+    await page.locator('#farmaciaModal-recordAction [type="submit"]').click();
+    const payload=await page.evaluate(()=>window.pending.at(-1).args[0]);
+    assert.equal(payload.type,'PRODUCT_EDIT');assert.equal(payload.data.data.materialUse,'participant');
+    // Sem o nível Responsável não há atalho; a orientação aponta quem corrige.
+    await page.evaluate(d=>{FARMACIA_CYCLE.form=null;FARMACIA_CYCLE.renderData=null;FARMACIA_STOCK.saving=false;document.getElementById('farmaciaModal-recordAction').classList.remove('open');d.farmaciaAccess='operate';FARMACIA_STOCK.data=d;renderFarmaciaEstoque(d);farmaciaCycleNavigate('dispense');},data);
+    assert.match(await page.locator('#farmaciaCyclePane .farmacia-material-notice').textContent(),/Peça ao Responsável pela Farmácia/);
+    assert.equal(await page.locator('#farmaciaCyclePane .farmacia-material-notice button').count(),0);
+    const products=await page.evaluate(()=>document.getElementById('farmaciaProductsResults').innerHTML);
+    assert.ok(products.includes('Bag de transporte fictícia</strong><span class="chip chip-green">Material / dispositivo</span> <span class="chip chip-orange">⚠ Defina o uso</span>'));
+    assert.match(products,/Consumido no centro/);
+    assert.deepEqual(errors,[]);await page.close();
+  }finally{await browser.close();}
+});

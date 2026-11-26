@@ -21,6 +21,12 @@ ao participante, não retorna) e `loan` (emprestado ao participante, volta para 
 aparecem na guia de dispensação junto dos medicamentos; `site` (consumido no centro) fica
 fora do ciclo e sai pelo estoque. O uso é obrigatório em material novo e na primeira
 correção de um material antigo; material sem o uso fica fora do ciclo até essa correção.
+Para isso não passar despercebido, a aba Dispensações e a guia avisam (⚠) quais materiais
+do patrocinador com saldo ficam fora da guia: sem uso definido, ou marcados como consumidos
+no centro. Na aba, quem é Responsável pela Farmácia tem o botão "Definir uso", que abre a
+correção do produto com o campo em foco e o motivo sugerido. Dentro da guia o aviso só
+orienta, porque a correção recarrega o estoque. Em Produtos, o material sem uso tem o selo
+"⚠ Defina o uso".
 Material não confere a validade contra o último dia previsto de uso, só que não saia
 vencido. No retorno de material emprestado, a equipe escolhe o destino: **conferido e
 higienizado** (`returnTo: 'stock'`) devolve a quantidade ao disponível da posição de

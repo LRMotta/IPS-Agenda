@@ -146,6 +146,26 @@ var FARMACIA_MATERIAL_USE_OPTIONS = [
   { value:'site', label:'Consumido no centro', short:'Consumido no centro' }
 ];
 
+// Material sem uso definido fica fora da guia de dispensação: listas e guia avisam e levam ao cadastro.
+function farmaciaMaterialUsePending(product) {
+  return !!product && product.category === 'material' && !product.materialUse;
+}
+
+function farmaciaMaterialUseChip(product) {
+  return farmaciaMaterialUsePending(product) ? ' <span class="chip chip-orange">⚠ Defina o uso</span>' : '';
+}
+
+// Abre a correção do produto já no campo do uso, com o motivo sugerido.
+function farmaciaDefineMaterialUse(id) {
+  farmaciaOpenRecordAction('product', id, 'edit');
+  var field = document.getElementById('farmaciaAction-materialUse'), reason = document.getElementById('farmaciaAction-reason');
+  if (!field) return;
+  if (reason && !reason.value) reason.value = 'Definir o uso do material';
+  // O foco inicial do diálogo é aplicado depois de abrir; a marca o leva ao campo do uso.
+  field.setAttribute('data-dialog-initial-focus', '');
+  field.focus();
+}
+
 function farmaciaMaterialUseLabel(use) {
   var option = FARMACIA_MATERIAL_USE_OPTIONS.find(function(item) { return item.value === use; });
   return option ? option.short : '';
@@ -182,7 +202,7 @@ function farmaciaRenderTables(data) {
   var products = data.products || [], positions = data.positions || [];
   var lifecycle = typeof farmaciaCycleOpen === 'function';
   var productRows = products.map(function(product) {
-    return '<tr data-farmacia-row><td><div class="farmacia-product-heading"><strong>' + esc(product.name) + '</strong><span class="chip ' + (product.category === 'medicine' ? 'chip-blue' : product.category === 'material' ? 'chip-green' : 'chip-gray') + '">' + esc(farmaciaProductCategoryLabel(product.category)) + '</span></div><small>' + esc([product.brand ? 'Marca: ' + product.brand : '', product.strength, product.dosageForm, product.route].filter(Boolean).join(' · ')) + '</small><small>' + esc(product.barcode ? 'GTIN ' + product.barcode : '') + '</small></td><td>' + esc(product.presentation) + '<small>' + farmaciaSupplyLabel(product) + '</small></td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td><td>' + farmaciaRecordActions('product',product,data) + '</td></tr>';
+    return '<tr data-farmacia-row><td><div class="farmacia-product-heading"><strong>' + esc(product.name) + '</strong><span class="chip ' + (product.category === 'medicine' ? 'chip-blue' : product.category === 'material' ? 'chip-green' : 'chip-gray') + '">' + esc(farmaciaProductCategoryLabel(product.category)) + '</span>' + farmaciaMaterialUseChip(product) + '</div><small>' + esc([product.category === 'material' ? farmaciaMaterialUseLabel(product.materialUse) : '', product.brand ? 'Marca: ' + product.brand : '', product.strength, product.dosageForm, product.route].filter(Boolean).join(' · ')) + '</small><small>' + esc(product.barcode ? 'GTIN ' + product.barcode : '') + '</small></td><td>' + esc(product.presentation) + '<small>' + farmaciaSupplyLabel(product) + '</small></td><td>' + esc(product.unit) + '</td><td>' + (product.control === 'kit' ? 'Kit individualizado' : 'Por quantidade') + '</td><td class="farmacia-cell-detail">' + farmaciaConservationHtml(product.storage) + '</td><td>' + farmaciaRecordActions('product',product,data) + '</td></tr>';
   }).join('');
   var positionRows = farmaciaSortPositions(positions, products).map(function(position) {
     var product = products.find(function(item) { return item.id === position.productId; }) || {};
