@@ -15873,15 +15873,31 @@ function atualizarAgendaEventoCompleto(dados) {
   agendaValidarMaterialBioPayload_(dados);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var agenda = getAgendaSheet_();
-  var linha = agendaLocalizarLinhaPorId_(agenda, String(dados.id || '').trim(), dados._rowIndex);
+  lap('sv_aba');
+  var idEdicao = String(dados.id || '').trim();
+  var linha = null;
+  var rowAnterior = null;
+  // A linha sugerida pela tela é lida inteira uma vez e o ID é conferido nela,
+  // sem um getValue() separado da célula de ID.
+  var linhaSugerida = Number(dados._rowIndex) || 0;
+  if (linhaSugerida >= 2 && linhaSugerida <= agenda.getLastRow()) {
+    var rowSugerida = agenda.getRange(linhaSugerida, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    if (String(rowSugerida[AGENDA_CFG.idx.id] || '') === idEdicao) {
+      linha = linhaSugerida;
+      rowAnterior = rowSugerida;
+    }
+  }
+  if (!linha) linha = agendaLocalizarLinhaPorId_(agenda, idEdicao);
   if (!linha) throw new Error('Agendamento nao encontrado para edicao.');
+  codexLinhaPorIdLembrar_(agenda, idEdicao, linha);
+  lap('sv_localizar');
   // Agendamento preliminar pode anteceder a AWB; Gerar docs exige validação.
   if (dados.transporteDocumentosSlot) {
     var docCourier = ({ '1': dados.courier1, '2': dados.courier2, '3': dados.courier3, '4': dados.courier4, backup: dados.backup, backup2: dados.backup2 })[dados.transporteDocumentosSlot];
     if (!docCourier) throw new Error('Transporte não informado para gerar documentos.');
     codexCourierAssertDocumentAwb_(docCourier.awb, docCourier.nome);
   }
-  var rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  if (!rowAnterior) rowAnterior = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
   lap('sv_ler_linha');
   var versaoAtual = agendaRecordVersionFromRow_(rowAnterior);
   var versaoEsperada = String(dados._recordVersion || '').trim();
@@ -15934,6 +15950,7 @@ function atualizarAgendaEventoCompleto(dados) {
   }
   var projetoParticipanteErro = agendaSincronizarProjetoDoParticipante_(dados, policy, rowAnterior);
   if (projetoParticipanteErro) return projetoParticipanteErro;
+  lap('sv_participante');
   if (policy.requiresTime && !String(dados.hora || '').trim()) {
     return { erro: 'Informe o horario do agendamento.' };
   }
@@ -16020,7 +16037,8 @@ function atualizarAgendaEventoCompleto(dados) {
   if (AgendaServerRules_.isCancelled(status) && !AgendaServerRules_.isCancelled(rowAnterior[AGENDA_CFG.idx.status])) {
     dados.obs = agendaAppendCancelamentoMotivo_(dados.obs, dados.cancelamento);
   }
-  var dataAnterior = agenda.getRange(linha, AGENDA_CFG.col.data).getValue();
+  // Mesmo valor da célula de data: a linha foi lida sob este lock e ainda não houve escrita.
+  var dataAnterior = rowAnterior[AGENDA_CFG.idx.data];
   if (datasAgendaDiferentes_(dataAnterior, d) && dados.reagendamentoConfirmado !== true) {
     return { erro: 'Confirme a troca de data antes de salvar o reagendamento.' };
   }
@@ -16034,8 +16052,10 @@ function atualizarAgendaEventoCompleto(dados) {
     !AgendaServerRules_.sameStatus(rowAnterior[AGENDA_CFG.idx.status], status);
   var postVisitConcluidoPorStatus = agendaPostVisitConcluidoPorStatus_(status, tipo);
   var awbWarnings = agendaAwbValidarPayload_(agenda, dados, dados.id, rowAnterior);
+  lap('sv_awb_validar');
   // Validar a cauda do acompanhamento antes da primeira escrita na Agenda.
   if (typeof transporteOperacoesSheet_ === 'function') transporteOperacoesSheet_(true, true);
+  lap('sv_operacoes_validar');
   var dataConclusaoPostVisit = new Date();
   var poloTrialValor = postVisitConcluidoPorStatus
     ? (rowAnterior[AGENDA_CFG.idx.poloTrial] || dataConclusaoPostVisit)
@@ -16091,7 +16111,9 @@ function atualizarAgendaEventoCompleto(dados) {
     reservasCanceladas = cancelarReservasKitsAgenda_(rowAnterior[AGENDA_CFG.idx.id], dados.obs || 'Cancelamento da visita na Agenda');
   }
   var rowAtual = agenda.getRange(linha, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  lap('sv_reler_linha');
   if (typeof transporteReconciliarOperacoesAgenda_ === 'function') transporteReconciliarOperacoesAgenda_(rowAtual);
+  lap('sv_reconciliar');
   codexWriteAuditChanges_('Agenda', 'atualizarAgendaEventoCompleto', dados.id, agendaAuditChangesFromRows_(rowAnterior, rowAtual), 'Alteração de agendamento' +
     (mergeResult && mergeResult.ok ? '; alterações simultâneas preservadas: ' + mergeResult.preserved.join('; ') : ''));
   lap('sv_auditoria');
@@ -16102,10 +16124,16 @@ function atualizarAgendaEventoCompleto(dados) {
   // Persistir as escritas sob lock antes de conferir carro/registro e reler após a ordenação.
   SpreadsheetApp.flush();
   lap('sv_ordenar');
-  // Depois da ordenacao, para gravar nas linhas definitivas das origens.
-  if (deveOrdenarAgenda) agendaAtualizarBackupDataVinculada_(agenda, dados.id, d);
-  var linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
-  rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+  var linhaAtualizada = linha;
+  if (deveOrdenarAgenda) {
+    // Depois da ordenacao, para gravar nas linhas definitivas das origens.
+    agendaAtualizarBackupDataVinculada_(agenda, dados.id, d);
+    linhaAtualizada = encontrarLinhaPorId(agenda, dados.id) || linha;
+    rowAtual = agenda.getRange(linhaAtualizada, 1, 1, AGENDA_CFG.lastCol).getValues()[0];
+    lap('sv_localizar_final');
+  }
+  // Sem ordenação, a linha não muda e rowAtual (lido depois de transporte e
+  // cancelamento) continua atual: reconciliação e auditoria gravam em outras abas.
   agendaInvalidateDateIndexCache_();
   if (reservasCanceladas) agendaInvalidateKitsReference_();
   if (deveVerificarNotificacoes) {

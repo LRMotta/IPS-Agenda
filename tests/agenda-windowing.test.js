@@ -120,7 +120,10 @@ test('salvamento envia a linha aberta e o servidor revalida ID e rowIndex', () =
   const update = functionBody(server, 'atualizarAgendaEventoCompleto');
 
   assert.match(save, /payload\._rowIndex\s*=\s*Number\(eventoEditado\s*&&\s*eventoEditado\.rowIndex/);
-  assert.match(update, /agendaLocalizarLinhaPorId_\(agenda,\s*String\(dados\.id[^,]+,\s*dados\._rowIndex\)/);
+  // A linha sugerida é lida uma vez e só é aceita se o ID dela for o do payload.
+  assert.match(update, /var linhaSugerida = Number\(dados\._rowIndex\)/);
+  assert.match(update, /String\(rowSugerida\[AGENDA_CFG\.idx\.id\] \|\| ''\) === idEdicao/);
+  assert.match(update, /if \(!linha\) linha = agendaLocalizarLinhaPorId_\(agenda, idEdicao\)/);
 });
 
 test('monitores externos consultam Gmail e DHL antes de adquirir o bloqueio de escrita', () => {
