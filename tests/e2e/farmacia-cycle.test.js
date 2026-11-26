@@ -257,3 +257,45 @@ test('memorando impresso reúne os itens, o cadastro do estudo e as assinaturas'
     await memo.close();assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });
+
+test('material emprestado: lista de emprestados em uso, devolução ao estoque sem posição segregada e avariado segregado',async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try{
+    const {page,errors}=await cycleFixture(browser);
+    const data=cycleData();
+    data.products.push({id:'PR-LOAN',name:'Mochila térmica fictícia',category:'material',materialUse:'loan',presentation:'1 mochila',unit:'unidade',control:'quantity',supplySource:'sponsor',storage:{min:2,max:8,instructions:''}});
+    data.positions.push({id:'IN-LOAN',revision:'DISP-LOAN',productId:'PR-LOAN',lot:'MOCH-1',expiry:'2030-12-31',location:'IPS AF-01 → Gaveta 12',locationRef:{unitId:'UNIT-1',position:'Gaveta 12'},physical:1,available:1,pending:0,blocked:0,origin:'initial',countedOn:'2026-10-12',registeredAt:'2026-10-12T16:10:00.000Z',author:'farm@example.invalid'});
+    data.movements.push({id:'DISP-LOAN',type:'LIFECYCLE',registeredAt:'2026-10-20T12:00:00.000Z',author:'farm@example.invalid',data:{action:'dispense',positionId:'IN-LOAN',quantity:1,participantId:'CAD-014',participantLabel:'DEMO-014',visit:'Week 4',occurredOn:'2026-10-20',document:''}});
+    await page.evaluate(d=>{FARMACIA_STOCK.data=d;renderFarmaciaEstoque(d);},data);
+    await page.locator('[data-pane="return"]').click();
+    const loans=page.locator('.farmacia-cycle-loans');
+    assert.match(await loans.textContent(),/Materiais emprestados em uso/);assert.match(await loans.textContent(),/DEMO-014.*Mochila térmica fictícia.*há 6 dias/);
+    assert.doesNotMatch(await loans.textContent(),/Medicamento fictício/);
+    // Retorno de medicamento: o destino não aparece e a posição segregada continua exigida.
+    await page.getByRole('button',{name:'Registrar retorno',exact:true}).click();await page.locator('[name="dispenseId"]').selectOption('DISP1');
+    assert.equal(await page.locator('[name="returnTo"]').isVisible(),false);assert.equal(await page.locator('[name="unitId"]').isVisible(),true);
+    assert.equal(await page.locator('[name="dailyDose"]').isVisible(),true);assert.match(await page.locator('#farmaciaCycleNoticeText').textContent(),/segregada/);
+    await page.evaluate(()=>{FARMACIA_CYCLE.form=null;FARMACIA_CYCLE.renderData=null;window.appClearUnsavedChanges('farmaciaCyclePane');farmaciaCycleNavigate('return');});
+    await page.locator('.farmacia-cycle-loans').getByRole('button',{name:'Registrar devolução',exact:true}).click();
+    assert.equal(await page.locator('[name="dispenseId"]').inputValue(),'DISP-LOAN');
+    assert.equal(await page.locator('[name="returnTo"]').isVisible(),true);
+    await page.locator('[name="returnTo"]').selectOption('stock');
+    assert.equal(await page.locator('[name="unitId"]').isVisible(),false);assert.equal(await page.locator('[name="position"]').isVisible(),false);
+    assert.equal(await page.locator('[name="calculateAdherence"]').isVisible(),false);assert.equal(await page.locator('[name="dailyDose"]').isVisible(),false);
+    assert.match(await page.locator('#farmaciaCycleNoticeText').textContent(),/volta ao saldo disponível/);assert.match(await page.locator('#farmaciaCycleReturnConfirm').textContent(),/higienização/);
+    await capture(page,'devolucao-emprestimo',1536);
+    await page.locator('[name="quantity"]').fill('1');await page.locator('[name="document"]').fill('DEV-MOCH');await page.locator('[name="confirmed"]').check();
+    await page.locator('#farmaciaCycleForm [type="submit"]').click();
+    let payload=await page.evaluate(()=>window.pending.at(-1).args[0]);
+    assert.equal(payload.data.returnTo,'stock');assert.equal(payload.data.locationRef,undefined);assert.equal(payload.data.positionId,'IN-LOAN');
+    await page.evaluate(()=>window.pending.at(-1).failure(new Error('Falha simulada')));
+    // Avariado: volta a pedir a posição segregada.
+    await page.locator('[name="returnTo"]').selectOption('quarantine');
+    assert.equal(await page.locator('[name="unitId"]').isVisible(),true);
+    await page.locator('[name="unitId"]').selectOption('UNIT-1');await page.locator('[name="position"]').selectOption('Área segregada');
+    await page.locator('#farmaciaCycleForm [type="submit"]').click();
+    payload=await page.evaluate(()=>window.pending.at(-1).args[0]);
+    assert.equal(payload.data.returnTo,undefined);assert.equal(payload.data.locationRef.position,'Área segregada');
+    assert.deepEqual(errors,[]);await page.close();
+  }finally{await browser.close();}
+});

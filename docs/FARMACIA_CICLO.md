@@ -22,8 +22,15 @@ aparecem na guia de dispensação junto dos medicamentos; `site` (consumido no c
 fora do ciclo e sai pelo estoque. O uso é obrigatório em material novo e na primeira
 correção de um material antigo; material sem o uso fica fora do ciclo até essa correção.
 Material não confere a validade contra o último dia previsto de uso, só que não saia
-vencido. O retorno de material emprestado, que deve voltar ao estoque disponível, ainda
-não existe: o servidor recusa esse retorno, e a guia de retorno não lista essas dispensações. O estoque comum e produtos sem
+vencido. No retorno de material emprestado, a equipe escolhe o destino: **conferido e
+higienizado** (`returnTo: 'stock'`) devolve a quantidade ao disponível da posição de
+origem, sem posição segregada, pronta para o próximo empréstimo; **avariado ou
+incompleto** segue o retorno de sempre, segregado em quarentena. Só material emprestado
+aceita `returnTo`, e material vencido não volta ao estoque. Retornos anteriores não têm a
+chave. A aba Retornos do participante mostra **Materiais emprestados em uso**: dispensações
+de material emprestado ainda não devolvidas, com participante, visita, quantidade, data e
+dias com o participante, a mais antiga primeiro, e o atalho "Registrar devolução". A
+adesão não aparece no retorno de material. O estoque comum e produtos sem
 classificação mantêm seus contratos anteriores. Nenhum vínculo clínico, cronograma,
 origem ou autorização é inferido a partir de nomes ou de saldos.
 

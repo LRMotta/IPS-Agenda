@@ -507,12 +507,38 @@ test('material consumido no centro e produto sem uso não entram no ciclo',()=>{
   assert.throws(()=>f.server.registrarDispensacaoFarmacia(guide(f,[[site.id,1]])),/ciclo exige/);
 });
 
-test('retorno: material entregue segue o retorno atual; emprestado aguarda a volta ao estoque',()=>{
+test('material emprestado conferido volta ao disponível da posição e pode sair de novo; avariado é segregado',()=>{
+  const f=fixture(),loan=materialLot(f,'loan','emprestada'),location={unitId:'UNIT-1',position:'Quarentena'};
+  const [dispenseId]=f.server.registrarDispensacaoFarmacia(guide(f,[[loan.id,2]])).ids;
+  const at=()=>f.stock().positions.find(p=>p.id===loan.id);
+  assert.equal(at().available,1);assert.equal(at().physical,1);
+  const back=f.payload({action:'return',positionId:loan.id,revision:loan.id,dispenseId,quantity:1,occurredOn:'2026-10-26',returnTo:'stock'},'loan-return-request-01');
+  f.server.registrarCicloFarmacia(back);
+  assert.equal(at().available,2);assert.equal(at().physical,2);
+  assert.equal(f.stock().positions.filter(p=>p.returned).length,0);
+  assert.equal(f.stock().movements.at(-1).data.locationRef,undefined);
+  const writes=f.sheet().writes;
+  assert.equal(f.server.registrarCicloFarmacia(back).repeated,true);assert.equal(f.sheet().writes,writes);
+  // A outra unidade voltou avariada: segregada, como qualquer retorno.
+  f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId,quantity:1,occurredOn:'2026-10-26',locationRef:location});
+  assert.equal(f.stock().positions.filter(p=>p.returned).length,1);assert.equal(at().available,2);
+  assert.throws(()=>f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId,quantity:1,occurredOn:'2026-10-26',returnTo:'stock'}),/excede/);
+  // O que voltou ao estoque é emprestado de novo.
+  assert.equal(f.server.registrarDispensacaoFarmacia(guide(f,[[loan.id,2]],{},'guide-request-0002')).ids.length,1);
+  assert.equal(at().available,0);
+});
+
+test('volta ao estoque só vale para material emprestado e dentro da validade',()=>{
   const f=fixture(),delivered=materialLot(f,'participant','entregue'),loan=materialLot(f,'loan','emprestada'),location={unitId:'UNIT-1',position:'Quarentena'};
-  const [deliveredDispense,loanDispense]=f.server.registrarDispensacaoFarmacia(guide(f,[[delivered.id,1],[loan.id,1]])).ids;
-  f.write({action:'return',positionId:delivered.id,revision:delivered.id,dispenseId:deliveredDispense,quantity:1,occurredOn:'2026-10-26',locationRef:location});
+  const [medicineDispense,deliveredDispense,loanDispense]=f.server.registrarDispensacaoFarmacia(guide(f,[[f.position,30],[delivered.id,1],[loan.id,1]])).ids;
+  assert.throws(()=>f.write({action:'return',dispenseId:medicineDispense,quantity:1,returnTo:'stock'}),/Só material emprestado/);
+  assert.throws(()=>f.write({action:'return',positionId:delivered.id,revision:delivered.id,dispenseId:deliveredDispense,quantity:1,returnTo:'stock'}),/Só material emprestado/);
+  assert.throws(()=>f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId:loanDispense,quantity:1,returnTo:'shelf'}),/destino/);
+  f.write({action:'return',positionId:delivered.id,revision:delivered.id,dispenseId:deliveredDispense,quantity:1,locationRef:location});
   assert.equal(f.stock().positions.filter(p=>p.returned).length,1);
-  assert.throws(()=>f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId:loanDispense,quantity:1,occurredOn:'2026-10-26',locationRef:location}),/emprestado/);
+  // Vencido (validade 01/11) não volta ao disponível.
+  f.state.today='2026-11-02';
+  assert.throws(()=>f.write({action:'return',positionId:loan.id,revision:loan.id,dispenseId:loanDispense,quantity:1,occurredOn:'2026-11-02',returnTo:'stock'}),/vencido/);
 });
 
 test('material antigo sem uso: fora do ciclo até a correção, que exige o uso e depois o preserva',()=>{

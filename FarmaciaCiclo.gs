@@ -34,10 +34,17 @@ function farmaciaLifecycleData_(value) {
     if (value.confirmed !== true) throw new Error('Confirme a contagem e a segregação do material retornado.');
     result.confirmed = true;
     result.dispenseId = farmaciaText_(value.dispenseId, 'a dispensação vinculada', 100);
-    var ref = value.locationRef || {};
-    result.locationRef = { unitId: farmaciaText_(ref.unitId, 'o equipamento de quarentena', 100), position: farmaciaText_(ref.position, 'a posição segregada', 80) };
-    // O rótulo é resolvido do catálogo antes de gravar; a leitura histórica o preserva.
-    result.location = farmaciaText_(value.location, 'a localização segregada', 200, true);
+    // Material emprestado conferido volta à posição de origem (returnTo: 'stock'); sem a chave, o retorno é
+    // segregado em quarentena, como sempre foi. Registros anteriores não têm a chave.
+    if (value.returnTo !== undefined && value.returnTo !== '') {
+      if (value.returnTo !== 'stock') throw new Error('Selecione o destino do material devolvido.');
+      result.returnTo = 'stock';
+    } else {
+      var ref = value.locationRef || {};
+      result.locationRef = { unitId: farmaciaText_(ref.unitId, 'o equipamento de quarentena', 100), position: farmaciaText_(ref.position, 'a posição segregada', 80) };
+      // O rótulo é resolvido do catálogo antes de gravar; a leitura histórica o preserva.
+      result.location = farmaciaText_(value.location, 'a localização segregada', 200, true);
+    }
     if (value.adherence) result.adherence = farmaciaAdherenceData_(value.adherence);
   } else if (value.action === 'transport_departure') {
     result.dispenseId = farmaciaText_(value.dispenseId, 'a dispensação vinculada', 100, true);
@@ -220,8 +227,8 @@ function farmaciaApplyLifecycle_(ledger, record) {
     position.available = Math.round((position.available - quantity) * 1000) / 1000;
     position.physical = Math.round((position.physical - quantity) * 1000) / 1000;
   } else if (data.action === 'return') {
-    // O retorno de hoje segrega para destinação; material emprestado precisa voltar ao estoque (próxima etapa).
-    if (material && product.data.materialUse === 'loan') throw new Error('O retorno de material emprestado, com volta ao estoque, ainda não está disponível.');
+    // Só material emprestado volta ao estoque; avariado ou incompleto segue a segregação de sempre.
+    if (data.returnTo === 'stock' && !(material && product.data.materialUse === 'loan')) throw new Error('Só material emprestado volta ao estoque. Os demais retornos são segregados.');
     var dispense = farmaciaLifecycleRecord_(ledger, data.dispenseId, 'dispense');
     if (dispense.data.positionId !== position.id || data.occurredOn < dispense.data.occurredOn) throw new Error('Confira a dispensação e a data do retorno.');
     var totalReturned = ledger.movements.reduce(function(total, item) { return total + (item.type === 'LIFECYCLE' && item.data.action === 'return' && item.data.dispenseId === data.dispenseId ? item.data.quantity : 0); }, quantity);
@@ -232,7 +239,12 @@ function farmaciaApplyLifecycle_(ledger, record) {
           data.adherence.firstDose < dispense.data.occurredOn || data.adherence.lastDose > data.occurredOn) throw new Error('Adesão exige comprimidos/cápsulas e período compatível com a dispensação e o retorno.');
       record.adherenceResult = farmaciaCalculateAdherence_(dispense.data.quantity, totalReturned, data.adherence);
     }
-    ledger.positions.push({ id: record.id, revision: record.id, productId: position.productId, lot: position.lot, kit: position.kit,
+    if (data.returnTo === 'stock') {
+      // Volta ao disponível da posição de onde saiu, pronto para o próximo empréstimo.
+      if (data.occurredOn > position.expiry) throw new Error('Material vencido não volta ao estoque. Segregue para destinação.');
+      position.available = Math.round((position.available + quantity) * 1000) / 1000;
+      position.physical = Math.round((position.physical + quantity) * 1000) / 1000;
+    } else ledger.positions.push({ id: record.id, revision: record.id, productId: position.productId, lot: position.lot, kit: position.kit,
       expiry: position.expiry, physical: quantity, available: 0, pending: 0, blocked: quantity, initialBlocked: quantity,
       origin: 'return', returned: true, originalPositionId: position.id, dispenseId: dispense.id, participantId: dispense.data.participantId,
       locationRef: data.locationRef, location: data.location, countedOn: data.occurredOn,
@@ -310,7 +322,7 @@ function registrarCicloFarmacia(payload) {
     var previous = ledger.records.find(function(item) { return item.requestId === requestId; });
     if (previous) {
       if (data.action === 'dispense') data.participantLabel = previous.data.participantLabel;
-      if (data.action === 'return' || (data.action === 'transport_departure' && data.operation === 'storage')) data.location = previous.data.location;
+      if ((data.action === 'return' && !data.returnTo) || (data.action === 'transport_departure' && data.operation === 'storage')) data.location = previous.data.location;
       if (data.action === 'transport_departure' && data.operation === 'storage') {
         data.origin = previous.data.origin;
         data.destination = previous.data.destination;
@@ -324,7 +336,7 @@ function registrarCicloFarmacia(payload) {
       if (currentPosition && currentPosition.expiry < farmaciaToday_()) throw new Error('Material vencido não pode ser dispensado ou transportado como estoque ativo.');
     }
     if (data.action === 'dispense') data.participantLabel = farmaciaDispenseParticipantLabel_(context, data.participantId);
-    if (data.action === 'return' || (data.action === 'transport_departure' && data.operation === 'storage')) {
+    if ((data.action === 'return' && !data.returnTo) || (data.action === 'transport_departure' && data.operation === 'storage')) {
       var locations = farmaciaReadLocations_();
       var unit = locations.units.find(function(item) { return item.id === data.locationRef.unitId; });
       if (!unit || unit.deleted || unit.positions.indexOf(data.locationRef.position) === -1) throw new Error('Selecione equipamento e posição de destino cadastrados.');
