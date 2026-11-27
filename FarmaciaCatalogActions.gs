@@ -50,7 +50,7 @@ function farmaciaApplyCatalogAction_(ledger, record) {
       if ((!data.data.lot || !data.data.expiry) && !farmaciaLotOptional_(owner)) throw new Error('Informe o lote e a validade. Só material pode ficar sem lote ou sem validade.');
       var corrected = Object.assign({}, current, data.data);
       if (ledger.positions.some(function(item) { return item.id !== current.id && farmaciaSamePosition_(item, corrected); })) throw new Error('Esta posição já possui saldo.');
-      if (receipt && ledger.positions.some(function(item) { return item.id !== current.id && item.origin === 'receipt' && farmaciaReceiptKey_(item) === farmaciaReceiptKey_(corrected); })) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
+      if (receipt && ledger.positions.some(function(item) { return item.id !== current.id && item.origin === 'receipt' && farmaciaSameReceipt_(item, corrected); })) throw new Error(FARMACIA_RECEIPT_DUPLICATE_MESSAGE_);
       list[index] = Object.assign(corrected, { revision: record.id });
     }
   }

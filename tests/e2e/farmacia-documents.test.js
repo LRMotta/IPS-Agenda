@@ -27,6 +27,9 @@ test('impressão abre prévia de dispensação e ficha consolidada em desktop/ce
     assert.match(await preview.locator('.document-logo').getAttribute('src'),/^data:image\/png;base64,/);
     assert.match(await preview.locator('body').innerText(),/DEMO-014/);
     assert.match(await preview.locator('body').innerText(),/PRESC-DEMO-14/);
+    // Sem identificadores internos: só o número curto do registro.
+    assert.match(await preview.title(),/— DISP1$/);
+    assert.doesNotMatch(await preview.locator('body').innerText(),/Identificador do registro|Dispensação vinculada|ID do estudo|Classe de acesso|Posição de referência|Referência da emissão/);
     assert.equal(await preview.locator('.signature').count(),2);
     assert.match(await preview.locator('.signatures').innerText(),/Nome legível/);
     await preview.evaluate(()=>{window.printed=false;window.print=()=>{window.printed=true;};});
@@ -62,11 +65,12 @@ test('documentos vinculam transporte, destinação e adesão histórica sem incl
     const retHtml=await page.evaluate(()=>farmaciaDocumentHtml('RET1',false));
     await page.setContent(retHtml);assert.match(await page.locator('body').innerText(),/125%/);
     assert.equal(await page.locator('dl>div').filter({has:page.locator('dt',{hasText:'Total retornado até este registro'})}).locator('dd').innerText(),'5 comprimido');
+    assert.match(await page.locator('body').innerText(),/Dispensação de origem\s*\d{2}\/\d{2}\/\d{4}/);assert.doesNotMatch(await page.locator('body').innerText(),/DISP1|Dispensação vinculada/);
     // Use another fixture: setContent deliberately removed the original app scripts.
     const next=await cycleFixture(browser);await next.page.evaluate(d=>{FARMACIA_STOCK.data=d;},data);
     const dep=await next.page.evaluate(()=>farmaciaDocumentHtml('DEP1',false));const arr=await next.page.evaluate(()=>farmaciaDocumentHtml('ARR1',false));
     await page.setContent(dep);assert.equal(await page.locator('section').count(),3);assert.match(await page.locator('body').innerText(),/Destino B/);assert.match(await page.locator('body').innerText(),/Identificada — requer avaliação/);
-    await page.setContent(arr);assert.match(await page.locator('body').innerText(),/TERM1/);assert.match(await page.locator('body').innerText(),/Responsável pelo recebimento/);
+    await page.setContent(arr);assert.match(await page.locator('body').innerText(),/TERM1/);assert.doesNotMatch(await page.locator('body').innerText(),/Saída vinculada|ARR1/);assert.match(await page.title(),/— DEP1$/);assert.match(await page.locator('body').innerText(),/Responsável pelo recebimento/);
     await page.setContent(await next.page.evaluate(()=>farmaciaDocumentHtml('DEST1',false)));assert.match(await page.locator('body').innerText(),/AUT-123/);assert.match(await page.locator('body').innerText(),/CERT-456/);
     assert.deepEqual(errors,[]);assert.deepEqual(next.errors,[]);
   }finally{await browser.close();}
@@ -92,11 +96,13 @@ test('guia de dispensação imprime todos os medicamentos gravados juntos',async
     data.movements.push(item('GUIDE-A',4),item('GUIDE-B',6));
     await page.evaluate(d=>{FARMACIA_STOCK.data=d;},data);
     const text=await page.evaluate(()=>{const html=farmaciaDocumentHtml('GUIDE-B',false);const doc=new DOMParser().parseFromString(html,'text/html');return doc.title+'\n'+doc.body.innerText;});
-    assert.match(text,/^Guia de dispensação/);
-    assert.match(text,/Medicamentos na guia\s*2/);
-    assert.match(text,/1 de 2/);assert.match(text,/2 de 2/);
-    assert.match(text,/4 comprimido/);assert.match(text,/6 comprimido/);
-    assert.match(text,/Transação no IRT \/ plataforma do estudo\s*Não informado/);
+    assert.match(text,/^Guia de dispensação — GUIDEDEM/);
+    assert.match(text,/Guia nº\s*GUIDEDEM/);
+    assert.match(text,/Medicamentos \(2\)/);
+    assert.match(text,/4 comprimido/);assert.match(text,/6 comprimido/);assert.match(text,/Total:\s*10 comprimido/);
+    // Dados comuns da guia aparecem uma vez; códigos internos e campos vazios ficam de fora.
+    assert.equal(text.match(/DEMO-014/g).length,1);assert.equal(text.match(/PRESC-GUIA/g).length,1);
+    assert.doesNotMatch(text,/Identificador do registro|Dispensação vinculada|ID do estudo|Classe de acesso|GUIDE-A|guide-demo-0001|Transação no IRT|Não informado|Kit/);
     assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });

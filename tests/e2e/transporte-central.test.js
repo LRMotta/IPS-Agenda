@@ -46,7 +46,7 @@ const RESPOSTA = {
   ok: true, janelaDiasUteis: 7, maisAdiante: { transportes: 3, visitas: 2, primeiraData: '13/10/2026' },
   tarefas: [
     { agendaId: 'a1', data: '02/10/2026', hora: '09:00', participante: 'Pessoa A', projeto: 'Estudo X', visita: 'V1', titulo: 'Preparar 2 transportes',
-      prazoLabel: 'Em 3h', comPessoa: 'Ana', parouNoPasso: 2, parouNoPassoNome: 'gerar',
+      prazoLabel: 'Em 3h', comPessoa: 'Ana', parouNoPasso: 2, parouNoPassoNome: 'gerar', parouNoPassoTotal: 3,
       transportes: [{ slotRotulo: 'Transporte I', courier: 'OCASA', temperatura: 'CONGELADO', destino: 'LAB X', situacao: 'preparar' },
         { slotRotulo: 'Backup', courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'LAB X', situacao: 'preparar' }] },
     { agendaId: 'a2', data: '06/10/2026', hora: '10:00', participante: 'Pessoa B', projeto: 'Estudo Y', visita: 'V2', titulo: 'Enviar o pedido de coleta à courier',
@@ -75,7 +75,11 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.equal(await page.locator('#tcTabFazer').innerText(), 'Para fazer (2)');
       // Não fica preso à primeira tarefa: cada transporte da próxima tem seu próprio botão, e cada linha da lista também começa.
       assert.equal(await page.locator('.tc-next [data-tc-comecar][data-tc-slot]').count(), 2);
-      assert.match(await page.locator('.tc-next .btn-new').innerText(), /Começar os 2 transportes/);
+      // A próxima já foi iniciada (Parou no passo Gerar): o botão diz Continuar, não Começar.
+      assert.match(await page.locator('.tc-next .btn-new').innerText(), /Continuar os 2 transportes/);
+      assert.doesNotMatch(await page.locator('.tc-next .btn-new').innerText(), /Começar/);
+      // A da lista ainda não começou: segue "Começar".
+      assert.match(await page.locator('.tc-list .tc-item [data-tc-comecar]').innerText(), /Começar/);
       assert.equal(await page.locator('.tc-list .tc-item [data-tc-comecar]').count(), 1);
       assert.doesNotMatch(await page.locator('.tc-list').innerText(), /SITUAÇÃO|Situação/);
       assert.match(await page.locator('#tcFazer').innerText(), /Sugerida pelo sistema: a de prazo mais próximo/);
@@ -88,10 +92,18 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.doesNotMatch(await page.locator('.tc-transports').innerText(), /Preparar/);
       assert.match(await page.locator('.tc-transports').innerText(), /Backup/);
       assert.match(await page.locator('.tc-badges').innerText(), /Em 3h/);
-      assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo Gerar/);
+      assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo Gerar · 2 de 3/);
       assert.match(await page.locator('.tc-badges').innerText(), /Com Ana agora/);
       assert.equal(await page.locator('.tc-list .tc-item').count(), 1);
       assert.match(await page.locator('.tc-list').innerText(), /Enviar o pedido de coleta à courier/);
+      // Destino e temperatura numa coluna própria (antes só no card de cima); a tarefa fica com transporte e courier.
+      assert.equal(await page.locator('.tc-list .tc-fila-destino').innerText(), 'LAB Y · CONGELADO');
+      assert.equal(await page.locator('.tc-list .tc-fila-transp').innerText(), 'Transporte I: MARKEN');
+      if (width >= 1280) {
+        assert.equal(await page.locator('.tc-list .tc-thead').innerText(), 'ENVIO\nPARTICIPANTE\nTAREFA\nDESTINO');
+        const [tarefa, destino, acao] = await Promise.all(['.tc-fila-tarefa', '.tc-fila-destino', '.tc-trans-acoes'].map((s) => page.locator('.tc-list ' + s).boundingBox()));
+        assert.ok(tarefa.x + tarefa.width <= destino.x && destino.x + destino.width <= acao.x, 'Destino fica entre a tarefa e o botão');
+      }
       assert.equal(await page.locator('.tc-item.urgent').count(), 0);
       assert.match(await page.locator('.tc-footer').innerText(), /3 transportes viram tarefa em breve/);
       await page.locator('[data-tc-abrir]').click();

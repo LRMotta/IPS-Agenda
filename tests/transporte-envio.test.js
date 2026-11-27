@@ -260,7 +260,11 @@ test('o número do passo é gravado com o passo e reflete os passos do envio (AW
   const salvo = plano(s.salvarTransporteEnvio('ab12cd34', '1', aberto.versao, { awb: '111122223333' }, 'gerar'));
   // Depois de salvar a AWB os passos são conferir, gerar, enviar: "gerar" é o passo 2.
   assert.equal(s.transporteRegistroLer_('ab12cd34', '1').registro.passoNumero, 2);
+  // O total sai da mesma lista do número: sem a AWB eram 4 passos, com ela são 3 ("2 de 3").
+  assert.equal(s.transporteRegistroLer_('ab12cd34', '1').registro.passoTotal, 3);
   assert.equal(salvo.ok, true);
+  assert.deepEqual(plano(s.transporteEnvioMarcarPasso_(registro({ awb: '' }), 'conferir')).passoTotal, 4);
+  assert.deepEqual([s.transporteEnvioMarcarPasso_(registro({}), 'concluido')].map((r) => [r.passoNumero, r.passoTotal]), [[0, 0]]);
   assert.equal(s.transporteEnvioNumeroPasso_(registro({ awb: '' }), 'gerar'), 3);
   assert.equal(s.transporteEnvioNumeroPasso_(registro({ courier: 'PINEX', awb: '9', pinexColeta: '78429' }), 'anvisa'), 3);
   assert.equal(s.transporteEnvioNumeroPasso_(registro(), 'concluido'), 0);

@@ -308,6 +308,18 @@ function farmaciaReceiptKey_(data) {
   return JSON.stringify([data.document, data.productId, data.lot, data.kit]);
 }
 
+var FARMACIA_RECEIPT_DUPLICATE_MESSAGE_ = 'Este recebimento já foi registrado. Se for outro item da mesma remessa, informe o número da nota fiscal e o valor unitário do item, ou o item na referência documental (ex.: Remessa 123 – item 2).';
+
+// Mesmo recebimento: mesma remessa, produto, lote e kit, sem nota fiscal que separe os itens.
+// Uma nota pode trazer o mesmo lote em itens com descrição e valor unitário diferentes (27/11/2026):
+// com número de nota nos dois, número ou valor unitário diferente indica outro item da mesma remessa.
+function farmaciaSameReceipt_(a, b) {
+  if (farmaciaReceiptKey_(a) !== farmaciaReceiptKey_(b)) return false;
+  var first = a.invoice || {}, second = b.invoice || {};
+  if (!first.number || !second.number) return true;
+  return first.number === second.number && first.unitValue === second.unitValue;
+}
+
 function farmaciaReadLedger_(context) {
   var sheet = context.ss.getSheetByName(farmaciaLedgerSheetName_(context.studyId));
   if (!sheet || !sheet.getLastRow()) return { sheet: sheet, records: [], products: [], initial: [], positions: [], movements: [], rows: [] };
@@ -340,7 +352,7 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
   }
   // Conjuntos para unicidade em O(1): o replay roda a cada leitura e escrita. Posições e produtos continuam em listas porque as correções os substituem/removem.
   var records = [], products = [], initial = [], positions = [], movements = [];
-  var ids = new Set(), requests = new Set(), kits = new Set(), receipts = new Set();
+  var ids = new Set(), requests = new Set(), kits = new Set(), receipts = new Map();
   var lastLifecycleDate = {};
   try {
     rows.slice(1).forEach(function(row) {
@@ -372,10 +384,10 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
             (record.type === 'INITIAL' && (positions.some(function(item) { return farmaciaSamePosition_(item, data); }) || records.some(function(item, index) {
               return index < records.length - 1 && (item.type === 'INITIAL' || item.type === 'RECEIPT') && farmaciaSamePosition_(item.data, data);
             }))) ||
-            (record.type === 'RECEIPT' && receipts.has(farmaciaReceiptKey_(data)))) throw new Error('Entrada duplicada ou inválida.');
+            (record.type === 'RECEIPT' && (receipts.get(farmaciaReceiptKey_(data)) || []).some(function(item) { return farmaciaSameReceipt_(item, data); }))) throw new Error('Entrada duplicada ou inválida.');
         if (data.kit) kits.add(data.kit);
         if (record.type === 'INITIAL') initial.push(record);
-        else receipts.add(farmaciaReceiptKey_(data));
+        else receipts.set(farmaciaReceiptKey_(data), (receipts.get(farmaciaReceiptKey_(data)) || []).concat([data]));
         positions.push(farmaciaEntryState_(record)); movements.push(record);
       } else if (record.type === 'LIFECYCLE') {
         if (JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
@@ -544,11 +556,11 @@ function farmaciaWrite_(payload, type) {
     })) throw new Error('Esta posição ou kit já possui inventário inicial. Não repita a contagem como nova entrada.');
     if (type === 'INITIAL' && ledger.positions.some(function(position) { return farmaciaSamePosition_(position, data); })) throw new Error('Esta posição já possui saldo. Não repita a contagem como nova entrada.');
     if (type === 'RECEIPT' && (ledger.records.some(function(record) {
-      return record.type === 'RECEIPT' && farmaciaReceiptKey_(record.data) === farmaciaReceiptKey_(data);
+      return record.type === 'RECEIPT' && farmaciaSameReceipt_(record.data, data);
     }) || ledger.positions.some(function(position) {
       // Lote corrigido depois do recebimento: a chave atual também identifica o mesmo recebimento.
-      return position.origin === 'receipt' && farmaciaReceiptKey_(position) === farmaciaReceiptKey_(data);
-    }))) throw new Error('Este recebimento já foi registrado. Confira a referência documental.');
+      return position.origin === 'receipt' && farmaciaSameReceipt_(position, data);
+    }))) throw new Error(FARMACIA_RECEIPT_DUPLICATE_MESSAGE_);
     var id = ({ PRODUCT: 'FPR-', INITIAL: 'FIN-', RECEIPT: 'FRC-', MOVEMENT: 'FMV-' })[type] + Utilities.getUuid();
     if (ledger.records.some(function(record) { return record.id === id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
     if (type === 'MOVEMENT') {

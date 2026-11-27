@@ -8,10 +8,20 @@ function farmaciaDocumentFields(rows) {
 }
 function farmaciaDocumentDate(value,time) {return value?farmaciaStockDate(value,time):'Não informado';}
 function farmaciaDocumentQuantity(value,unit) {return value===undefined||value===null?'Não informado':farmaciaStockNumber(value)+' '+(unit||'');}
-function farmaciaDocumentEvent(record,records,unit,itemRows) {
-  var e=record.data,a=e.action,rows=(itemRows||[]).concat([['Identificador do registro',record.id],['Data da atividade',farmaciaDocumentDate(e.occurredOn||e.receivedOn||e.countedOn)],['Autor do lançamento',record.author],['Data/hora do lançamento (Brasília)',farmaciaDocumentDate(record.registeredAt,true)],['Quantidade',farmaciaDocumentQuantity(e.quantity===undefined?e.physical:e.quantity,unit)]]);
-  var linked=records.find(function(r){return r.id===e.dispenseId;}),d=linked?linked.data:{};
-  if(a==='dispense'||e.dispenseId)rows=rows.concat([['Dispensação vinculada',a==='dispense'?record.id:e.dispenseId],['Código do participante',a==='dispense'?e.participantLabel:d.participantLabel],['Visita / ciclo',a==='dispense'?e.visit:d.visit],['Prescrição / Documento Fonte',a==='dispense'?e.prescription:d.prescription],['Transação no IRT / plataforma do estudo',a==='dispense'?e.platformReference:d.platformReference]]);
+// Número curto exibido ao usuário no lugar do identificador interno (FLC-…, UUID).
+function farmaciaDocumentNumber(id) {return String(id||'').replace(/^[A-Za-z]+-/,'').replace(/[^A-Za-z0-9]/g,'').slice(0,8).toUpperCase();}
+function farmaciaDocumentEvent(record,records,unit) {
+  var e=record.data,a=e.action,rows=[['Data da atividade',farmaciaDocumentDate(e.occurredOn||e.receivedOn||e.countedOn)],['Registrado por',record.author],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)]];
+  // A chegada do transporte não tem quantidade própria; a da saída vale para as duas.
+  if(e.quantity!==undefined||e.physical!==undefined)rows.push(['Quantidade',farmaciaDocumentQuantity(e.quantity===undefined?e.physical:e.quantity,unit)]);
+  var linked=records.find(function(r){return r.id===e.dispenseId;}),d=a==='dispense'?e:linked?linked.data:{};
+  // A dispensação de origem aparece pela data; participante e visita identificam o vínculo.
+  if(a!=='dispense'&&e.dispenseId)rows.push(['Dispensação de origem',linked?farmaciaDocumentDate(d.occurredOn):'Não localizada nesta consulta']);
+  if(a==='dispense'||e.dispenseId){
+    rows.push(['Participante',d.participantLabel],['Visita / ciclo',d.visit]);
+    if(d.prescription)rows.push(['Prescrição / documento fonte',d.prescription]);
+    if(d.platformReference)rows.push(['Transação no IRT',d.platformReference]);
+  }
   if(a==='dispense')rows.push(['Último dia previsto de uso',farmaciaDocumentDate(e.validThrough)],['Conferência registrada',e.confirmed===true?'Sim':'Não informada']);
   if(a==='return'){
     // A ordem do ledger limita o acumulado ao momento deste retorno.
@@ -21,12 +31,13 @@ function farmaciaDocumentEvent(record,records,unit,itemRows) {
     else rows.push(['Adesão','Não avaliada neste registro']);
   }
   if(a==='transport_departure')rows.push(['Finalidade',({storage:'Armazenamento',preparation:'Preparo / manipulação',administration:'Administração'})[e.operation]],['Origem registrada',e.origin],['Destino registrado',e.destination],['Hora da saída',e.departureTime],['Termômetro',e.thermometer],['Faixa documentada (°C)',e.min===undefined||e.max===undefined?'Não informada':e.min+' a '+e.max],['Temperatura na saída (°C)',e.departureTemperature]);
-  if(a==='transport_arrival')rows.push(['Saída vinculada',e.departureId],['Hora da chegada',e.arrivalTime],['Temperatura atual (°C)',e.currentTemperature],['Temperatura mínima (°C)',e.minTemperature],['Temperatura máxima (°C)',e.maxTemperature],['Conferência da chegada registrada',e.confirmed===true?'Sim':'Não informada']);
+  if(a==='transport_arrival')rows.push(['Hora da chegada',e.arrivalTime],['Temperatura atual (°C)',e.currentTemperature],['Temperatura mínima (°C)',e.minTemperature],['Temperatura máxima (°C)',e.maxTemperature],['Conferência da chegada registrada',e.confirmed===true?'Sim':'Não informada']);
   if(a==='transport_departure'||a==='transport_arrival')rows.push(['Excursão de temperatura',record.excursion===undefined?'Não informada':record.excursion?'Identificada — requer avaliação documentada':'Não identificada no registro']);
   if(a==='destination')rows.push(['Destinação',({sponsor:'Devolução ao patrocinador / ORPC',disposal:'Descarte documentado'})[e.destination]],['Situação de origem',({blocked:'Quarentena / bloqueado',pending:'Aguardando avaliação'})[e.from]],['Referência da autorização',e.authorization]);
   if(a==='destination'&&e.memoNumber)rows.push(['Memorando',e.memoNumber],['Condição do item',FARMACIA_DESTINATION_CONDITION_LABELS[e.condition]],['Observação do item',e.itemNote]);
   if(record.retroactive)rows.push(['Lançamento retroativo','Sim — data anterior à última operação registrada para a entrada. Conferir o motivo informado.']);
-  rows.push(['Referência documental',e.document],['Motivo / observação',e.reason||e.note]);
+  if(e.document)rows.push(['Referência documental',e.document]);
+  if(e.reason||e.note)rows.push(['Motivo / observação',e.reason||e.note]);
   return '<section><h2>'+esc(FARMACIA_CYCLE_LABELS[a||record.type]||record.type)+'</h2>'+farmaciaDocumentFields(rows)+'</section>';
 }
 function farmaciaDocumentHtml(id,lot) {
@@ -35,6 +46,7 @@ function farmaciaDocumentHtml(id,lot) {
   var records=data.movements||[],record=lot?null:records.find(function(r){return r.id===id&&r.type==='LIFECYCLE';});
   if(!lot&&!record)return '';
   if(!lot&&record.data.action==='destination'&&record.data.memoId)return farmaciaDocumentMemoHtml(record,records);
+  if(!lot&&record.data.action==='dispense'&&record.data.guideId)return farmaciaDocumentGuideHtml(record,records);
   var p=farmaciaCyclePosition(lot?id:record.data.positionId),product=farmaciaCycleProduct(p);
   if(!p||!product)return '';
   var group=farmaciaCycleLotPositions(p),ids=group.map(function(item){return item.id;}),selected=[],title;
@@ -42,35 +54,65 @@ function farmaciaDocumentHtml(id,lot) {
   else if(record.data.action==='transport_departure'||record.data.action==='transport_arrival'){
     title='Registro de transporte';var departureId=record.data.action==='transport_departure'?record.id:record.data.departureId;
     selected=records.filter(function(r){return r.id===departureId||(r.data.action==='transport_arrival'&&r.data.departureId===departureId);});
-  }else if(record.data.action==='dispense'&&record.data.guideId){
-    // Guia com vários medicamentos: um documento com todos os itens gravados juntos.
-    title='Guia de dispensação';selected=records.filter(function(r){return r.type==='LIFECYCLE'&&r.data.action==='dispense'&&r.data.guideId===record.data.guideId;});
   }else{title=({dispense:'Registro de dispensação',return:'Registro de retorno do participante e adesão',destination:'Registro de destinação'})[record.data.action];selected=[record];}
   if(!title)return '';
   var emitterName=typeof CURRENT_ACCESS!=='undefined'&&CURRENT_ACCESS.ok?String(CURRENT_ACCESS.name||'').trim():'';
   var emitted=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'}).format(new Date());
-  var guide=title==='Guia de dispensação';
-  var body=farmaciaDocumentFields([['Estudo',farmaciaCurrentStudyLabel()],['ID do estudo',FARMACIA_STOCK.studyId],['Classe de acesso',FARMACIA_STOCK.restricted?'Restrita':'Geral']].concat(guide?[['Guia de dispensação',record.data.guideId],['Medicamentos na guia',selected.length]]:[['Produto (cadastro atual)',product.name],['Apresentação (cadastro atual)',product.presentation],['Lote',farmaciaLotLabel(p.lot)],['Kit',p.kit||'Não se aplica'],['Validade da posição selecionada',p.expiry?farmaciaDocumentDate(p.expiry):'Sem validade'],['Posição de referência',p.id]]).concat([['Referência da emissão',id],['Emissão (Brasília)',emitted]]));
+  // O transporte reúne saída e chegada: o número é o da saída, de onde quer que se imprima.
+  var number=farmaciaDocumentNumber(title==='Registro de transporte'?departureId:id),head=(lot?[]:[['Nº do registro',number]]).concat([['Estudo',farmaciaCurrentStudyLabel()],['Produto',product.name],['Apresentação',product.presentation],['Lote',farmaciaLotLabel(p.lot)]]);
+  if(p.kit)head.push(['Kit',p.kit]);
+  head.push(['Validade',p.expiry?farmaciaDocumentDate(p.expiry):'Sem validade']);
+  var body=farmaciaDocumentFields(head);
   if(lot){
-    body+='<h2>Saldos e localização na consulta carregada</h2><table><thead><tr>'+['Posição / revisão','Localização','Validade','Físico','Disponível','Em trânsito','Avaliação','Bloqueado'].map(function(v){return '<th>'+esc(v)+'</th>';}).join('')+'</tr></thead><tbody>'+group.map(function(item){return '<tr>'+[item.id+' / '+item.revision,item.location,farmaciaDocumentDate(item.expiry),item.physical,item.available,item.inTransit||0,item.pending,item.blocked].map(function(v){return '<td>'+esc(v===undefined?'Não informado':String(v))+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table><p>Quantidades em '+esc(product.unit)+'. Transferências internas não representam nova entrada ou saída do IPS. As validades são apresentadas por posição.</p>';
+    body+='<h2>Saldos e localização na consulta carregada</h2><table><thead><tr>'+['Localização','Validade','Físico','Disponível','Em trânsito','Avaliação','Bloqueado'].map(function(v){return '<th>'+esc(v)+'</th>';}).join('')+'</tr></thead><tbody>'+group.map(function(item){return '<tr>'+[item.location,farmaciaDocumentDate(item.expiry),item.physical,item.available,item.inTransit||0,item.pending,item.blocked].map(function(v){return '<td>'+esc(v===undefined?'Não informado':String(v))+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table><p>Quantidades em '+esc(product.unit)+'. Transferências internas não representam nova entrada ou saída do IPS. As validades são apresentadas por posição.</p>';
   }
-  body+=selected.map(function(r,index){
-    if(!guide)return farmaciaDocumentEvent(r,records,product.unit);
-    var itemPosition=farmaciaCyclePosition(r.data.positionId),itemProduct=farmaciaCycleProduct(itemPosition)||{};
-    return farmaciaDocumentEvent(r,records,itemProduct.unit,[['Medicamento da guia',(index+1)+' de '+selected.length],['Produto (cadastro atual)',itemProduct.name],['Apresentação (cadastro atual)',itemProduct.presentation],['Lote',itemPosition?farmaciaLotLabel(itemPosition.lot):''],['Kit',itemPosition&&itemPosition.kit||'Não se aplica'],['Validade',itemPosition&&!itemPosition.expiry?'Sem validade':farmaciaDocumentDate(itemPosition&&itemPosition.expiry)]]);
-  }).join('');
+  body+=selected.map(function(r){return farmaciaDocumentEvent(r,records,product.unit);}).join('');
   if(title==='Registro de transporte'&&!selected.some(function(r){return r.data.action==='transport_arrival';}))body+='<p><strong>Chegada ainda não registrada nesta consulta.</strong></p>';
   if(title==='Registro de destinação')body+='<p>As referências registradas devem acompanhar os comprovantes pertinentes à devolução ou ao descarte.</p>';
   var signatures=title==='Registro de transporte'?['Responsável pela emissão','Responsável pela entrega','Responsável pelo recebimento']:['Responsável','Conferente (quando aplicável)'];
   body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+signatures.map(function(label,index){return '<div class="signature"><strong>'+label+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(emitterName):'')+'</span></p><p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
-  return farmaciaDocumentPage(title,id,body,emitted,emitterName,FARMACIA_DOCUMENT_FOOTER);
+  // A ficha do lote é identificada pelo próprio lote, não pela posição interna.
+  return farmaciaDocumentPage(title,lot?farmaciaLotLabel(p.lot)+(p.kit?' / '+p.kit:''):number,body,emitted,emitterName,FARMACIA_DOCUMENT_FOOTER);
 }
-var FARMACIA_DOCUMENT_FOOTER='Modelo de impressão v1. Autor do lançamento identifica quem registrou a operação no sistema. As assinaturas são manuais. Documento emitido a partir da consulta carregada: atualize a Farmácia antes de emitir se houver novas operações. Produto e apresentação refletem o cadastro atual. Guarde o PDF ou exemplar assinado para preservar esta emissão; a reimpressão pode refletir atualizações posteriores.';
+var FARMACIA_DOCUMENT_FOOTER='Modelo de impressão v2. As assinaturas são manuais. Produto e apresentação refletem o cadastro atual. Guarde o PDF ou o exemplar assinado para preservar esta emissão.';
 function farmaciaDocumentPage(title,id,body,emitted,emitterName,footer) {
   var brand=document.querySelector('.nav-brand img'),logo=brand?brand.getAttribute('src'):'';
   var logoHtml=/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(logo||'')?'<img class="document-logo" src="'+logo+'" alt="Instituto de Pesquisas em Saúde · UCS">':'';
   var pageId=Array.from(String(id)).map(function(ch){return '\\'+ch.codePointAt(0).toString(16)+' ';}).join('');
   return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+' — '+esc(id)+'</title><style>@page{size:A4;margin:15mm;@bottom-left{content:"IPS | Farmácia · Registro: '+pageId+'";font:8pt Arial}@bottom-right{content:"Página " counter(page) " de " counter(pages);font:8pt Arial}}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#172333;margin:24px auto;max-width:1000px;padding:0 20px;line-height:1.5}.document-logo{height:44px;width:auto;object-fit:contain;flex-shrink:0}header.head{display:flex;align-items:center;gap:16px;border-bottom:2px solid #1266f1;padding-bottom:12px;margin-bottom:14px}.head>div{min-width:0}.head h1{font-size:20px;margin:0;color:#0b3f8a}.head p{margin:4px 0;color:#64748b;font-size:12px;overflow-wrap:anywhere}h1{font-size:20px}h2{font-size:15px;margin:20px 0 10px;break-after:avoid}dl{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}dl>div{border-bottom:1px solid #ddd;padding:6px 0;break-inside:avoid;min-width:0}dt{font-size:10px;color:#465567}dd{margin:2px 0;white-space:pre-wrap;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10px}th,td{border:1px solid #bbb;padding:5px;text-align:left;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}.signatures{break-inside:avoid}.signature{display:inline-block;width:49%;vertical-align:top;padding:15px 12px 0 0}.signature-name{display:block;border-bottom:1px solid #666;min-height:18px;width:100%;overflow-wrap:anywhere}.signature-line{display:block;border-bottom:1px solid #666;height:12px;width:100%}.signature p{margin:18px 0;overflow-wrap:anywhere}footer{margin-top:25px;border-top:1px solid #bbb;padding-top:10px;font-size:10px}.toolbar{position:sticky;top:0;background:#edf3fa;padding:12px;display:flex;gap:12px;flex-wrap:wrap}button{padding:10px 16px;cursor:pointer}@media(max-width:600px){header.head{align-items:flex-start;gap:12px;flex-wrap:wrap}dl{grid-template-columns:1fr}.signature{display:block;width:100%}}@media print{header.head{align-items:center;flex-wrap:nowrap;margin-bottom:12px}.head p{margin:4px 0}footer{margin-top:12px;padding-top:6px;font-size:8px;line-height:1.25}body{max-width:none;margin:0;padding:0;font-size:9pt;line-height:1.3}dl>div{padding:4px 0}h1{font-size:19pt}h2{margin:14px 0 8px}.signature p{margin:14px 0}.toolbar{display:none}dl{grid-template-columns:1fr 1fr}.signature{display:inline-block;width:49%}a{color:inherit}}</style></head><body><div class="toolbar"><button id="farmaciaDocumentPrint" type="button">Imprimir / Salvar em PDF</button><button id="farmaciaDocumentClose" type="button">Fechar</button></div><header class="head">'+logoHtml+'<div><h1>'+esc(title)+'</h1><p>Farmácia · Emitido em '+esc(emitted)+(emitterName?' · Emitido por '+esc(emitterName):'')+'</p></div></header>'+body+'<footer>'+esc(footer)+'</footer></body></html>';
+}
+// Guia de dispensação: os itens são gravados juntos e compartilham participante, visita e
+// prescrição; o documento mostra esses dados uma vez e os medicamentos em tabela.
+function farmaciaDocumentGuideHtml(record,records) {
+  var e=record.data,list=records.filter(function(r){return r.type==='LIFECYCLE'&&r.data.action==='dispense'&&r.data.guideId===e.guideId;});
+  var number=String(e.guideId).replace(/[^A-Za-z0-9]/g,'').slice(0,8).toUpperCase();
+  var emitterName=typeof CURRENT_ACCESS!=='undefined'&&CURRENT_ACCESS.ok?String(CURRENT_ACCESS.name||'').trim():'';
+  var emitted=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'}).format(new Date());
+  // Campos opcionais entram só quando preenchidos, para não encher a guia de "Não informado".
+  var fields=[['Guia nº',number],['Estudo',farmaciaCurrentStudyLabel()],['Participante',e.participantLabel],['Visita / ciclo',e.visit],['Data da dispensação',farmaciaDocumentDate(e.occurredOn)]];
+  if(e.validThrough)fields.push(['Último dia previsto de uso',farmaciaDocumentDate(e.validThrough)]);
+  if(e.prescription)fields.push(['Prescrição / documento fonte',e.prescription]);
+  if(e.platformReference)fields.push(['Transação no IRT',e.platformReference]);
+  if(e.document)fields.push(['Referência documental',e.document]);
+  if(e.reason)fields.push(['Observação',e.reason]);
+  fields.push(['Registrado por',record.author],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)],['Conferência registrada',e.confirmed===true?'Sim':'Não informada']);
+  if(list.some(function(r){return r.retroactive;}))fields.push(['Lançamento retroativo','Sim — data anterior à última operação registrada para a entrada. Conferir o motivo informado.']);
+  var items=list.map(function(r){var position=farmaciaCyclePosition(r.data.positionId);return {d:r.data,position:position,product:farmaciaCycleProduct(position)||{}};});
+  var kit=items.some(function(item){return item.position&&item.position.kit;}),totals={};
+  var rows=items.map(function(item,index){
+    var unit=item.product.unit||'';totals[unit]=Math.round(((totals[unit]||0)+item.d.quantity)*1000)/1000;
+    var cells=[String(index+1),item.product.name||'Produto histórico',item.product.presentation||'—',item.position?farmaciaLotLabel(item.position.lot):'—'];
+    if(kit)cells.push(item.position&&item.position.kit||'—');
+    cells.push(item.position&&!item.position.expiry?'Sem validade':farmaciaDocumentDate(item.position&&item.position.expiry),farmaciaStockNumber(item.d.quantity)+' '+unit);
+    return '<tr>'+cells.map(function(v){return '<td>'+esc(v)+'</td>';}).join('')+'</tr>';
+  }).join('');
+  var heads=['#','Produto','Apresentação','Lote'].concat(kit?['Kit']:[]).concat(['Validade','Quantidade']);
+  var widths=kit?[5,24,24,13,10,12,12]:[5,27,27,15,13,13];
+  var body=farmaciaDocumentFields(fields);
+  body+='<h2>Medicamentos ('+list.length+')</h2><table><colgroup>'+widths.map(function(w){return '<col style="width:'+w+'%">';}).join('')+'</colgroup><thead><tr>'+heads.map(function(v){return '<th>'+esc(v)+'</th>';}).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';
+  body+='<p><strong>Total:</strong> '+esc(Object.keys(totals).map(function(unit){return farmaciaStockNumber(totals[unit])+' '+unit;}).join(' · '))+'</p>';
+  body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+['Responsável','Conferente (quando aplicável)'].map(function(label,index){return '<div class="signature"><strong>'+label+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(emitterName):'')+'</span></p><p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
+  return farmaciaDocumentPage('Guia de dispensação',number,body,emitted,emitterName,'Guia de dispensação v2. As assinaturas são manuais. Produto e apresentação refletem o cadastro atual. Guarde o PDF ou o exemplar assinado para preservar esta emissão.');
 }
 // Memorando de devolução ao patrocinador / destruição: todos os itens gravados com o mesmo memorando.
 function farmaciaDocumentMemoHtml(record,records) {
@@ -79,7 +121,7 @@ function farmaciaDocumentMemoHtml(record,records) {
   var title=sponsor?'Memorando de devolução ao patrocinador':'Memorando de destruição';
   var emitterName=typeof CURRENT_ACCESS!=='undefined'&&CURRENT_ACCESS.ok?String(CURRENT_ACCESS.name||'').trim():'';
   var emitted=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'}).format(new Date());
-  var body=farmaciaDocumentFields([['Memorando nº',e.memoNumber],['Destinação',FARMACIA_DESTINATION_LABELS[e.destination]],['Estudo',farmaciaCurrentStudyLabel()],['Protocolo',study.code],['Patrocinador',study.sponsor],['CRO',study.cro],['Centro',study.site],['Investigador principal',study.investigator],['Classe de acesso',FARMACIA_STOCK.restricted?'Restrita':'Geral'],['Data da '+(sponsor?'devolução':'destruição'),farmaciaDocumentDate(e.occurredOn)],['Motivo',FARMACIA_DESTINATION_REASON_LABELS[e.reasonCategory]],['Autorização do patrocinador',e.authorization],['Referência documental',e.document],['Observação',e.reason],['Registrado por',record.author],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)]]);
+  var body=farmaciaDocumentFields([['Memorando nº',e.memoNumber],['Destinação',FARMACIA_DESTINATION_LABELS[e.destination]],['Estudo',farmaciaCurrentStudyLabel()],['Protocolo',study.code],['Patrocinador',study.sponsor],['CRO',study.cro],['Centro',study.site],['Investigador principal',study.investigator],['Data da '+(sponsor?'devolução':'destruição'),farmaciaDocumentDate(e.occurredOn)],['Motivo',FARMACIA_DESTINATION_REASON_LABELS[e.reasonCategory]],['Autorização do patrocinador',e.authorization],['Referência documental',e.document],['Observação',e.reason],['Registrado por',record.author],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)]]);
   var totals={};
   var rows=list.map(function(r,index){
     var d=r.data,position=farmaciaCyclePosition(d.positionId),product=farmaciaCycleProduct(position)||{},unit=product.unit||'';
