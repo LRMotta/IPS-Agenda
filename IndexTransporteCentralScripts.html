@@ -92,6 +92,8 @@
     // O rótulo da situação (Preparar, Enviar pedido de coleta…) só aparece quando os transportes da visita pedem coisas diferentes;
     // senão, o título da tarefa já diz o que fazer.
     var situacoesDistintas = (proxima.transportes || []).map(function(t) { return t.situacao; }).filter(function(s, i, a) { return a.indexOf(s) === i; }).length > 1;
+    // Tarefa já iniciada ("Parou no passo …"): o botão diz Continuar, para não parecer que recomeça do zero.
+    var verbo = proxima.parouNoPasso ? 'Continuar' : 'Começar';
     var html = transpCentralHtmlCabecalho('Próxima tarefa', 'play_circle', null, 'Sugerida pelo sistema: a de prazo mais próximo. Você pode escolher outra na lista abaixo.') +
       '<article class="tc-next' + (proxima.prazoLabel ? ' urgent' : '') + '" data-tc-agenda="' + esc(proxima.agendaId) + '">' +
       '<div class="tc-next-top">' + transpCentralHtmlDataDestaque(proxima.dataOrdem, proxima.data, proxima.hora) +
@@ -103,7 +105,7 @@
         return transpCentralHtmlTransporteLinha(situacoesDistintas ? t : Object.assign({}, t, { situacao: '' }), multi ? transpCentralBotaoTransporte(proxima, t, 'Começar este') : '');
       }).join('') + '</ul>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-comecar="' + esc(proxima.agendaId) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
-      (multi ? 'Começar os ' + proxima.transportes.length + ' transportes' : 'Começar') + '</button>' +
+      (multi ? verbo + ' os ' + proxima.transportes.length + ' transportes' : verbo) + '</button>' +
       '<button type="button" class="tc-link" data-tc-abrir="' + esc(proxima.agendaId) + '">Abrir na Agenda</button></div>' +
       '</article>';
     if (tarefas.length > 1) {
@@ -114,6 +116,7 @@
         seguintes.map(function(t) {
           var urgente = !!t.prazoLabel;
           var varios = (t.transportes || []).length > 1;
+          var verboItem = t.parouNoPasso ? 'Continuar' : 'Começar';
           return '<div class="tc-acomp tc-grade-fila tc-item' + (urgente ? ' urgent' : '') + '" role="listitem" data-tc-id="' + esc(t.agendaId) + '">' +
             '<span class="tc-acomp-data">' + transpCentralHtmlDataDestaque(t.dataOrdem, t.data, t.hora) + '</span>' +
             '<span class="tc-trans-quem"><strong>' + esc(t.participante) + '</strong><span>' + esc([t.projeto, t.visita].filter(Boolean).join(' · ')) + '</span></span>' +
@@ -125,8 +128,8 @@
             }).join('') + '</span>' +
             transpCentralEtiquetas(t, true) + '</span>' +
             '<span class="tc-trans-acoes"><button type="button" class="tc-acao" data-tc-comecar="' + esc(t.agendaId) + '" aria-label="' +
-            esc((varios ? 'Começar os transportes de ' : 'Começar a tarefa de ') + t.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
-            (varios ? 'Começar todos' : 'Começar') + '</button></span></div>';
+            esc(verboItem + (varios ? ' os transportes de ' : ' a tarefa de ') + t.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
+            (varios ? verboItem + ' todos' : verboItem) + '</button></span></div>';
         }).join('') + '</div></section>';
     }
     return html + rodape;

@@ -75,7 +75,11 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.equal(await page.locator('#tcTabFazer').innerText(), 'Para fazer (2)');
       // Não fica preso à primeira tarefa: cada transporte da próxima tem seu próprio botão, e cada linha da lista também começa.
       assert.equal(await page.locator('.tc-next [data-tc-comecar][data-tc-slot]').count(), 2);
-      assert.match(await page.locator('.tc-next .btn-new').innerText(), /Começar os 2 transportes/);
+      // A próxima já foi iniciada (Parou no passo Gerar): o botão diz Continuar, não Começar.
+      assert.match(await page.locator('.tc-next .btn-new').innerText(), /Continuar os 2 transportes/);
+      assert.doesNotMatch(await page.locator('.tc-next .btn-new').innerText(), /Começar/);
+      // A da lista ainda não começou: segue "Começar".
+      assert.match(await page.locator('.tc-list .tc-item [data-tc-comecar]').innerText(), /Começar/);
       assert.equal(await page.locator('.tc-list .tc-item [data-tc-comecar]').count(), 1);
       assert.doesNotMatch(await page.locator('.tc-list').innerText(), /SITUAÇÃO|Situação/);
       assert.match(await page.locator('#tcFazer').innerText(), /Sugerida pelo sistema: a de prazo mais próximo/);
