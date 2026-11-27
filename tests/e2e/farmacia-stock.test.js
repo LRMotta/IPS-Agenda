@@ -1472,6 +1472,29 @@ test('recebimento sem nota permite informar a nota depois, com motivo, pelo deta
   } finally {await browser.close();}
 });
 
+test('recebimento lançado como inventário inicial permite informar a nota pelo detalhe da entrada', async()=>{
+  const browser=await loadPlaywright().chromium.launch({headless:true});
+  try {
+    const {page,errors}=await fixture(browser,1280);
+    const data=lifecycleData();
+    data.farmaciaAccess='operate';
+    await openStock(page,data);
+    await page.locator('#farmaciaInventoryResults button[data-position-id="IN1"]').click();
+    assert.match(await page.locator('#farmaciaPositionDetail').innerText(),/Nota fiscal da entrada/i);
+    assert.match(await page.locator('#farmaciaInvoiceCurrent').innerText(),/não informada/);
+    await page.evaluate(()=>window.pending.filter(p=>p.method==='getFarmaciaRemetentesNotas').forEach(p=>p.success({remetentes:[]})));
+    await page.locator('#farmaciaInvoiceNumber').fill('42246');
+    await page.locator('#farmaciaInvoiceSender').fill('Marken Ltda');
+    await page.locator('#farmaciaInvoiceUnitValue').fill('604.33');
+    await page.locator('#farmaciaInvoiceReason').fill('Recebimento lançado como inventário');
+    await page.getByRole('button',{name:'Salvar nota fiscal',exact:true}).click();
+    const call=await page.evaluate(()=>({method:window.pending.at(-1).method,payload:window.pending.at(-1).args[0]}));
+    assert.equal(call.method,'registrarNotaRecebimentoFarmacia');
+    assert.equal(call.payload.data.receiptId,'IN1');
+    assert.deepEqual(errors,[]); await page.close();
+  } finally {await browser.close();}
+});
+
 test('inventário de material aceita lote e validade em branco; medicamento continua exigindo', async () => {
   const browser=await loadPlaywright().chromium.launch({headless:true});
   try {

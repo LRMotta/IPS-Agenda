@@ -244,21 +244,24 @@ function medNfItensFarmacia_(ss) {
       try { registros.push({ id: row[0], type: row[1], restricted: row[3], data: JSON.parse(row[7]) }); } catch (e) { /* registro ilegível: fora da lista */ }
     });
     // Nota informada ou corrigida depois (RECEIPT_INVOICE): a mais recente de cada recebimento prevalece.
-    var notasPosteriores = {};
+    // Inventário inicial só entra com nota informada depois e enquanto não for excluído.
+    var notasPosteriores = {}, excluidos = {};
     registros.forEach(function(r) {
       if (r.type === 'PRODUCT' && r.data) produtos[r.id] = r.data;
       else if (r.type === 'PRODUCT_EDIT' && r.data && r.data.data && produtos[r.data.entityId]) produtos[r.data.entityId] = r.data.data;
       else if (r.type === 'RECEIPT_INVOICE' && r.data && r.data.invoice) notasPosteriores[r.data.receiptId] = r.data.invoice;
+      else if (r.type === 'INITIAL_DELETE' && r.data) excluidos[r.data.entityId] = true;
     });
     registros.forEach(function(r) {
-      var d = r.data, nf = r.type === 'RECEIPT' && d && (notasPosteriores[r.id] || d.invoice);
+      var d = r.data, nf = d && (r.type === 'RECEIPT' ? notasPosteriores[r.id] || d.invoice :
+        r.type === 'INITIAL' && !excluidos[r.id] ? notasPosteriores[r.id] : null);
       if (!nf || !medNfNumero_(nf.number)) return;
       var produto = produtos[d.productId] || {};
       itens.push({ studyId: study.id, estudo: study.nome || study.codigo || study.id, restricted: r.restricted, receiptId: r.id,
         notaFiscal: medNfTexto_(nf.number), remetente: medNfTexto_(nf.sender),
         descricao: [produto.name, produto.presentation].filter(Boolean).join(' · ') || 'Produto da Farmácia',
         quantidade: d.physical, unidade: produto.unit || '', lote: medNfTexto_(d.lot), valorUnitario: nf.unitValue,
-        dataRecebimentoISO: medNfTexto_(d.receivedOn) });
+        dataRecebimentoISO: medNfTexto_(d.receivedOn || d.countedOn) });
     });
   });
   return itens;

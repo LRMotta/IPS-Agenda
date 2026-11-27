@@ -119,6 +119,10 @@ A nota pode ser **informada depois ou corrigida** pelo detalhe da entrada recebi
 remetente e valor obrigatórios) e o motivo. O recebimento original não muda; o registro
 mais recente de cada recebimento passa a valer na entrada e na lista de notas fiscais,
 e aparece no histórico como "Nota fiscal informada". Nota igual à atual é recusada.
+O mesmo vale para uma entrada de **inventário inicial** ainda não excluída
+("Nota fiscal da entrada"), para recebimentos lançados por engano como inventário: a
+chave gravada continua `receiptId`, e a entrada só entra na lista de notas fiscais
+depois de ter a nota informada (data = data da contagem).
 A nota fica no ledger
 do estudo/classe: em estudo cego, o recebimento da classe restrita só é visto por
 quem tem a concessão restrita.
