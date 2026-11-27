@@ -64,6 +64,12 @@ test('estoque Geral: dispensação para participante de qualquer estudo, retorno
     const rows=await page.evaluate(()=>farmaciaCycleReportRows().map(r=>[r.product.name,r.used,r.monthly,r.coverage]));
     // Período padrão: 90 dias até 26/10 (fixture). Dipirona: 30 − 2 = 28; seringa: 10 no centro.
     assert.deepEqual(rows,[['Dipirona fictícia',28,9.333,231],['Seringa fictícia',10,3.333,360]]);
+    // Unidade concorda com a quantidade e a validade não quebra em duas linhas na coluna estreita.
+    const first=page.locator('#farmaciaCyclePane tbody tr').first();
+    assert.equal((await first.locator('td').nth(1).textContent()).trim(),'72 comprimidos');
+    const date=first.locator('td.farmacia-cycle-report-date');
+    assert.equal((await date.textContent()).trim(),'31/05/2027');
+    assert.equal(await date.evaluate(el=>el.ownerDocument.defaultView.getComputedStyle(el).whiteSpace),'nowrap');
     const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Exportar planilha'}).click()]);
     assert.equal(download.suggestedFilename(),'relatorio-consumo-geral-2026-07-29-a-2026-10-26.csv');
     const csv=fs.readFileSync(await download.path(),'utf8');
