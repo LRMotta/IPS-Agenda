@@ -76,8 +76,9 @@ test('acesso somente comum mantém menu, oferece somente estoque comum e reflete
     assert.equal(await page.locator('#navFarmacia').evaluate(el => el.style.display),'');
     assert.equal(await page.locator('#farmaciaStudy option').count(),2);
     await page.locator('#farmaciaStudy').selectOption('@IPS_COMMON');
-    await page.evaluate(() => window.pending.at(-1).success({study:{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},farmaciaAccess:'read',restrictedAllowed:false}));
-    assert.match(await page.locator('#farmaciaStudyDetail').innerText(),/saldo independente dos estudos/);
+    // Geral carrega o estoque direto, sem a consulta de acesso do estudo.
+    assert.equal(await page.evaluate(() => window.pending.some(p => p.method === 'getFarmaciaEstudo')),false);
+    assert.match(await page.locator('#farmaciaStudyDetail').innerText(),/Geral \(Farmácia\) — .*saldo independente dos estudos/);
     await page.evaluate(() => {
       window.USERS_ADMIN_ROWS[0].farmaciaAccess='none';
       window.USERS_ADMIN_ROWS[0].farmaciaCommonAccess='read';

@@ -394,8 +394,15 @@ function selecionarFarmaciaStudy(confirmed) {
     carregarFarmaciaEstoque(id, false, false);
     return;
   }
-  detail.textContent = 'Carregando estoque…';
   document.getElementById('farmaciaNoSelection').hidden = true;
+  // Geral: só farmacêuticos o veem e não há classe restrita, então a consulta de acesso não traz nada
+  // novo. O estoque carrega direto; getFarmaciaEstoque continua autorizando no servidor.
+  if (id === '@IPS_COMMON') {
+    detail.textContent = 'Geral (Farmácia) — ' + farmaciaAccessLabel(CURRENT_ACCESS.farmaciaCommonAccess) + '. Materiais compartilhados, com saldo independente dos estudos.';
+    if (typeof carregarFarmaciaEstoque === 'function') carregarFarmaciaEstoque(id, false, false);
+    return;
+  }
+  detail.textContent = 'Carregando estoque…';
   document.getElementById('farmaciaStockStatus').textContent = 'Validando acesso ao estoque…';
   function current() {
     return productsOnly === (typeof FARMACIA_VIEW !== 'undefined' && FARMACIA_VIEW === 'products') && requestId === FARMACIA_STUDY_REQUEST_ID && bootstrapId === FARMACIA_REQUEST_ID &&
