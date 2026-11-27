@@ -68,6 +68,7 @@ test('estoque Geral: dispensação para participante de qualquer estudo, retorno
     const first=page.locator('#farmaciaCyclePane tbody tr').first();
     assert.equal((await first.locator('td').nth(1).textContent()).trim(),'72 comprimidos');
     assert.equal(await first.locator('td').nth(1).locator('.farmacia-cycle-report-nowrap').evaluate(el=>el.ownerDocument.defaultView.getComputedStyle(el).whiteSpace),'nowrap');
+    assert.equal(await first.locator('td.farmacia-cycle-report-product').evaluate(el=>el.ownerDocument.defaultView.getComputedStyle(el).overflowWrap),'normal');
     const date=first.locator('td.farmacia-cycle-report-date');
     assert.equal((await date.textContent()).trim(),'31/05/2027');
     assert.equal(await date.evaluate(el=>el.ownerDocument.defaultView.getComputedStyle(el).whiteSpace),'nowrap');
