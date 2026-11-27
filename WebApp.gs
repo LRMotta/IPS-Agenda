@@ -18730,16 +18730,18 @@ function aplicarBackupEmVisitaFutura(payload) {
 // Linhas cujo vinculo de Backup cita o agendamento. A busca e por trecho; quem le confere o ID
 // exato. Null quando a busca nao esta disponivel: o chamador varre a Agenda.
 function agendaLinhasVinculoBackup_(agenda, agendamentoId, lastRow) {
-  var intervalo = agenda.getRange(2, 1, lastRow - 1, AGENDA_CFG.lastCol);
-  if (typeof intervalo.createTextFinder !== 'function') return null;
-  var colunas = {};
-  colunas[AGENDA_CFG.col.backupAgendaRef] = true;
-  if (AGENDA_CFG.col.backup2Dados > 0) colunas[AGENDA_CFG.col.backup2Dados] = true;
+  // So as colunas de vinculo sao buscadas: a busca na largura inteira da Agenda achava o mesmo e custava ~2 s.
+  var colunas = [AGENDA_CFG.col.backupAgendaRef];
+  if (AGENDA_CFG.col.backup2Dados > 0) colunas.push(AGENDA_CFG.col.backup2Dados);
+  var intervalos = colunas.map(function(coluna) { return agenda.getRange(2, coluna, lastRow - 1, 1); });
+  if (intervalos.some(function(intervalo) { return typeof intervalo.createTextFinder !== 'function'; })) return null;
   try {
     var linhas = [];
-    intervalo.createTextFinder(agendamentoId).matchCase(true).findAll().forEach(function(celula) {
-      var linha = celula.getRow();
-      if (colunas[celula.getColumn()] && linhas.indexOf(linha) < 0) linhas.push(linha);
+    intervalos.forEach(function(intervalo) {
+      intervalo.createTextFinder(agendamentoId).matchCase(true).findAll().forEach(function(celula) {
+        var linha = celula.getRow();
+        if (linhas.indexOf(linha) < 0) linhas.push(linha);
+      });
     });
     return linhas.sort(function(a, b) { return a - b; });
   } catch (buscaError) {
@@ -18747,16 +18749,18 @@ function agendaLinhasVinculoBackup_(agenda, agendamentoId, lastRow) {
   }
 }
 
-function agendaAtualizarBackupAwbVinculado_(agenda, linhaAgendamento, awb, slot) {
-  if (!agenda || agenda.getLastRow() < 2) return { atualizado: 0 };
+// idConhecido (opcional): ID da linha ja conferido pelo chamador (ex.: encontrarLinhaPorId). Evita reler a
+// celula logo depois de gravar a AWB na mesma linha.
+function agendaAtualizarBackupAwbVinculado_(agenda, linhaAgendamento, awb, slot, idConhecido) {
+  var lastRow = agenda ? agenda.getLastRow() : 0;
+  if (!agenda || lastRow < 2) return { atualizado: 0 };
   slot = String(slot || 'I').replace(/^Transporte\s+/i, '').toUpperCase();
   if (slot !== 'II' && slot !== 'III' && slot !== 'IV') slot = 'I';
   linhaAgendamento = Number(linhaAgendamento || 0);
   if (linhaAgendamento < 2) return { atualizado: 0 };
-  var agendamentoId = String(agenda.getRange(linhaAgendamento, AGENDA_CFG.col.id).getValue() || '').trim();
+  var agendamentoId = String(idConhecido || '').trim() || String(agenda.getRange(linhaAgendamento, AGENDA_CFG.col.id).getValue() || '').trim();
   if (!agendamentoId) return { atualizado: 0 };
   awb = String(awb || '').trim();
-  var lastRow = agenda.getLastRow();
   // Com a busca, so as linhas que citam o agendamento sao lidas; sem ela, a varredura de sempre.
   var linhasVinculo = agendaLinhasVinculoBackup_(agenda, agendamentoId, lastRow);
   var refValues = linhasVinculo

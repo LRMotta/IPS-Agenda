@@ -4381,7 +4381,8 @@ function transporteSincronizarAgenda_(payload) {
 
   var slotRoman = { '1': 'I', '2': 'II', '3': 'III', '4': 'IV' }[slot];
   if (slotRoman && awb && idx.awb !== undefined && typeof agendaAtualizarBackupAwbVinculado_ === 'function') {
-    agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual, slotRoman);
+    // A linha veio de encontrarLinhaPorId(idAgenda): o ID ja esta conferido, sem reler a celula apos gravar a AWB.
+    agendaAtualizarBackupAwbVinculado_(agenda, linha, awbAtual, slotRoman, idAgenda);
   }
   lap('as_backup_vinculo');
   if (typeof codexWriteAuditChanges_ === 'function' && changes.length) {

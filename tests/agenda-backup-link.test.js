@@ -942,3 +942,42 @@ test('interface oferece os dois caminhos e mantém o modal da Agenda durante a v
   assert.match(server, /function getAgendaVisitasFuturasParaBackup\(origemId, backupSlot\)/);
   assert.match(server, /function aplicarBackupEmVisitaFutura\(payload\)/);
 });
+
+test('AWB do agendamento no backup vinculado: com o ID conhecido nao rele a celula e a busca so olha as colunas de vinculo', () => {
+  const server = agendaServer();
+  const cfg = server.AGENDA_CFG;
+  const source = Array(cfg.lastCol).fill('');
+  source[cfg.idx.id] = 'origem-awb';
+  source[cfg.idx.tipo] = 'Visita';
+  source[cfg.idx.labCentral] = 'Sim';
+  source[cfg.idx.cb.nome] = 'MARKEN';
+  source[cfg.idx.cb.status] = 'Não Agendado';
+  // Outra coluna citando o ID nao e vinculo e nao pode entrar na busca.
+  source[cfg.idx.obs] = 'conferir destino-awb';
+  const destination = Array(cfg.lastCol).fill('');
+  destination[cfg.idx.id] = 'destino-awb';
+  destination[cfg.idx.c1.awb] = '620X12345678';
+  const sheet = new FakeSheet('Agenda', [Array(cfg.lastCol).fill(''), source, destination]);
+  server.formatarDataSafe = () => '29/07/2026';
+  server.formatarDataIsoAgenda_ = () => '2026-07-29';
+  server.formatAgendaHora_ = () => '14:30';
+  server.codexWriteAuditChanges_ = () => {};
+  server.agendaVincularBackupAoAgendamento_(sheet, 'origem-awb', 'destino-awb', new Date(2026, 6, 29, 14, 30));
+
+  const getRange = sheet.getRange.bind(sheet);
+  const lidas = [], buscas = [];
+  sheet.getRange = (row, col, nr, nc) => {
+    const range = getRange(row, col, nr, nc);
+    const valor = range.getValue.bind(range);
+    range.getValue = () => { lidas.push([row, col]); return valor(); };
+    const busca = range.createTextFinder.bind(range);
+    range.createTextFinder = (texto) => { buscas.push({ col, largura: nc || 1 }); return busca(texto); };
+    return range;
+  };
+  const r = server.agendaAtualizarBackupAwbVinculado_(sheet, 3, '620X87654321', 'I', 'destino-awb');
+  assert.equal(r.atualizado, 1);
+  assert.equal(server.agendaRowToObject_(sheet.rows[1], 2).backup.awb, '620X87654321');
+  assert.equal(lidas.some(([row, col]) => row === 3 && col === cfg.col.id), false, 'ID conhecido: a celula nao e relida');
+  assert.ok(buscas.length >= 1);
+  assert.ok(buscas.every((b) => b.largura === 1 && (b.col === cfg.col.backupAgendaRef || b.col === cfg.col.backup2Dados)), JSON.stringify(buscas));
+});
