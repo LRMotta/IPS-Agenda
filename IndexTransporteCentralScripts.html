@@ -59,7 +59,9 @@
     if (comCaixas) (tarefa.transportes || []).forEach(function(t) { var chip = transpCentralChipCaixa(t.caixa); if (chip && etiquetas.indexOf(chip) < 0) etiquetas.push(chip); });
     // "Parou no passo Enviar": o nome do passo diz algo a quem so acompanha; o numero fica so se o nome nao vier.
     var rotuloPasso = tarefa.parouNoPassoNome && typeof TC_PASSOS_ROTULO !== 'undefined' ? TC_PASSOS_ROTULO[tarefa.parouNoPassoNome] : '';
-    if (tarefa.parouNoPasso) etiquetas.push('<span class="chip chip-orange tc-chip"><span class="material-symbols-outlined" aria-hidden="true">bookmark</span>Parou no passo ' + esc(rotuloPasso || tarefa.parouNoPasso) + '</span>');
+    // Com nome e total: "Parou no passo Conferir · 1 de 4" (quanto falta). Sem total (registro antigo), só o nome.
+    var deTotal = rotuloPasso && tarefa.parouNoPassoTotal ? ' · ' + tarefa.parouNoPasso + ' de ' + tarefa.parouNoPassoTotal : '';
+    if (tarefa.parouNoPasso) etiquetas.push('<span class="chip chip-orange tc-chip"><span class="material-symbols-outlined" aria-hidden="true">bookmark</span>Parou no passo ' + esc((rotuloPasso || tarefa.parouNoPasso) + deTotal) + '</span>');
     if (tarefa.comPessoa) etiquetas.push('<span class="chip chip-purple tc-chip"><span class="material-symbols-outlined" aria-hidden="true">person</span>Com ' + esc(tarefa.comPessoa) + ' agora</span>');
     return etiquetas.length ? '<div class="tc-badges">' + etiquetas.join('') + '</div>' : '';
   }

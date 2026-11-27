@@ -37,7 +37,9 @@ function transporteRegistrosResumo_() {
       emPreparoDesde: linha[9] instanceof Date ? linha[9].toISOString() : String(linha[9] || ''),
       fasePinex: (/"fasePinex":"(\w+)"/.exec(dados) || [])[1] || '',
       gruPronta: /"gruPronta":true/.test(dados),
-      passoNumero: Number((/"passoNumero":(\d+)/.exec(dados) || [])[1]) || 0
+      passoNumero: Number((/"passoNumero":(\d+)/.exec(dados) || [])[1]) || 0,
+      // Registros gravados antes do total existir: 0, e a etiqueta mostra so o nome do passo.
+      passoTotal: Number((/"passoTotal":(\d+)/.exec(dados) || [])[1]) || 0
     };
   }
   return out;
@@ -266,7 +268,7 @@ function transporteTarefasConstruir_(ctx) {
       transportes.push({
         slot: slot[0], slotRotulo: slot[1], courier: nome, temperatura: String(r[cfg.temp] || '').trim(),
         destino: String(r[cfg.destino] || '').trim(), awb: awb, situacao: situacao,
-        passo: preparo ? preparo.passo : '', passoNumero: preparo ? preparo.passoNumero : 0, gruPronta: !!(preparo && preparo.gruPronta),
+        passo: preparo ? preparo.passo : '', passoNumero: preparo ? preparo.passoNumero : 0, passoTotal: preparo ? (preparo.passoTotal || 0) : 0, gruPronta: !!(preparo && preparo.gruPronta),
         comPessoa: dono ? ((ctx.nomes && ctx.nomes[dono.por]) || dono.por) : '',
         comEmail: dono ? dono.por : ''
       });
@@ -289,7 +291,9 @@ function transporteTarefasConstruir_(ctx) {
       comPessoa: comPessoa ? comPessoa.comPessoa : '', comEmail: comPessoa ? comPessoa.comEmail : '',
       parouNoPasso: parou ? parou.passoNumero : 0,
       // Nome do passo (conferir, gerar, enviar...): a etiqueta diz onde parou, nao so o numero.
-      parouNoPassoNome: parou ? String(parou.passo || '') : ''
+      parouNoPassoNome: parou ? String(parou.passo || '') : '',
+      // Total de passos daquele envio quando parou: "1 de 4". 0 se o registro nao tem (gravado antes) ou nao fecha.
+      parouNoPassoTotal: parou && parou.passoTotal >= parou.passoNumero ? parou.passoTotal : 0
     });
   });
   tarefas.sort(function(a, b) {

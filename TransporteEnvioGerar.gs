@@ -235,6 +235,7 @@ function transporteEnvioGerarDocumentos_(agendaId, slot, versao, generationReque
   // mudam a cada gravacao e nao entram no hash.
   var dadosDoToken = JSON.parse(JSON.stringify(registro));
   delete dadosDoToken.passoNumero;
+  delete dadosDoToken.passoTotal;
   TRANSPORTE_ENVIO_CAMPOS_GERACAO_.concat(TRANSPORTE_ENVIO_CAMPOS_DESATUALIZADO_).forEach(function(campo) { delete dadosDoToken[campo]; });
   // O token mora no registro do envio: outro navegador ou computador retoma a mesma geracao. O da tela so vale
   // na primeira tentativa, quando o registro ainda nao tem um.
@@ -337,7 +338,7 @@ function transporteEnvioGerarDocumentos_(agendaId, slot, versao, generationReque
     lap('status_agenda');
     // Envio internacional: o proximo passo e o formulario ANVISA; o e-mail a courier so depois da GRU e do extrato.
     var proximoPasso = transporteEnvioInternacional_(registro) && !registro.peticionamentoEnviadoEm ? 'anvisa' : 'enviar';
-    registro.passoNumero = transporteEnvioNumeroPasso_(registro, proximoPasso);
+    transporteEnvioMarcarPasso_(registro, proximoPasso);
     var gravado = transporteEnvioGravarAposGerar_(agendaId, slot, registro, lido, usuario, proximoPasso);
     lap('gravar_registro');
     resultado.versao = gravado.versao;
@@ -359,7 +360,7 @@ function concluirEnvioTransporte(agendaId, slot, versao) {
   if (lido.registro && lido.registro.fasePinex === 'agendamento') {
     if (lido.versao !== Number(versao)) throw transporteRegistroErro_('TRANSPORTE_REGISTRO_VERSAO', 'Este transporte foi alterado por outra pessoa. Recarregue antes de continuar.');
     var aguardando = Object.assign({}, lido.registro, { fasePinex: 'resposta' });
-    aguardando.passoNumero = transporteEnvioNumeroPasso_(aguardando, 'pinex_numeros');
+    transporteEnvioMarcarPasso_(aguardando, 'pinex_numeros');
     var gravado = transporteRegistroGravar_(agendaId, slot, aguardando, { versaoEsperada: lido.versao, usuario: usuario, passo: 'pinex_numeros' });
     transporteEnvioLiberar_(agendaId, slot, usuario);
     return { ok: true, versao: gravado.versao, aguardaPinex: true };

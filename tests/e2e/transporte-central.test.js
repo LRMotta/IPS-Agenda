@@ -46,7 +46,7 @@ const RESPOSTA = {
   ok: true, janelaDiasUteis: 7, maisAdiante: { transportes: 3, visitas: 2, primeiraData: '13/10/2026' },
   tarefas: [
     { agendaId: 'a1', data: '02/10/2026', hora: '09:00', participante: 'Pessoa A', projeto: 'Estudo X', visita: 'V1', titulo: 'Preparar 2 transportes',
-      prazoLabel: 'Em 3h', comPessoa: 'Ana', parouNoPasso: 2, parouNoPassoNome: 'gerar',
+      prazoLabel: 'Em 3h', comPessoa: 'Ana', parouNoPasso: 2, parouNoPassoNome: 'gerar', parouNoPassoTotal: 3,
       transportes: [{ slotRotulo: 'Transporte I', courier: 'OCASA', temperatura: 'CONGELADO', destino: 'LAB X', situacao: 'preparar' },
         { slotRotulo: 'Backup', courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'LAB X', situacao: 'preparar' }] },
     { agendaId: 'a2', data: '06/10/2026', hora: '10:00', participante: 'Pessoa B', projeto: 'Estudo Y', visita: 'V2', titulo: 'Enviar o pedido de coleta à courier',
@@ -92,7 +92,7 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.doesNotMatch(await page.locator('.tc-transports').innerText(), /Preparar/);
       assert.match(await page.locator('.tc-transports').innerText(), /Backup/);
       assert.match(await page.locator('.tc-badges').innerText(), /Em 3h/);
-      assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo Gerar/);
+      assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo Gerar · 2 de 3/);
       assert.match(await page.locator('.tc-badges').innerText(), /Com Ana agora/);
       assert.equal(await page.locator('.tc-list .tc-item').count(), 1);
       assert.match(await page.locator('.tc-list').innerText(), /Enviar o pedido de coleta à courier/);

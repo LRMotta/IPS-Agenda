@@ -154,7 +154,7 @@ test('resumo dos preparos lê só as colunas necessárias, ignora o JSON e não 
   const s = servidor();
   const cab = ['Chave', 'Agenda_ID', 'Slot', 'Dados_JSON', 'Passo', 'Versao', 'Atualizado_Em', 'Atualizado_Por', 'Em_Preparo_Por', 'Em_Preparo_Desde'];
   const rows = [cab, ['k1|1', 'k1', '1', '{"x":1}', '3', 2, '', 'u', 'ANA@example.invalid', '2026-10-02T10:00:00.000Z'],
-    ['k2|1', 'k2', '1', '{"courier":"PINEX (Agendamento)","fasePinex":"resposta"}', 'pinex_numeros', 4, '', 'u', '', ''], ['', '', '', '', '', '', '', '', '', '']];
+    ['k2|1', 'k2', '1', '{"courier":"PINEX (Agendamento)","fasePinex":"resposta","passoNumero":1,"passoTotal":4}', 'pinex_numeros', 4, '', 'u', '', ''], ['', '', '', '', '', '', '', '', '', '']];
   const faixas = [];
   const sh = {
     getLastRow: () => rows.length, writes: 0,
@@ -164,8 +164,8 @@ test('resumo dos preparos lê só as colunas necessárias, ignora o JSON e não 
   const resumo = plano(s.transporteRegistrosResumo_());
   assert.deepEqual(faixas, [[1, 1, 4, 10]], 'uma leitura só: cabeçalho e linhas juntos (eram quatro chamadas)');
   assert.deepEqual(resumo, {
-    'k1|1': { passo: '3', versao: 2, emPreparoPor: 'ana@example.invalid', emPreparoDesde: '2026-10-02T10:00:00.000Z', fasePinex: '', gruPronta: false, passoNumero: 0 },
-    'k2|1': { passo: 'pinex_numeros', versao: 4, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false, passoNumero: 0 }
+    'k1|1': { passo: '3', versao: 2, emPreparoPor: 'ana@example.invalid', emPreparoDesde: '2026-10-02T10:00:00.000Z', fasePinex: '', gruPronta: false, passoNumero: 0, passoTotal: 0 },
+    'k2|1': { passo: 'pinex_numeros', versao: 4, emPreparoPor: '', emPreparoDesde: '', fasePinex: 'resposta', gruPronta: false, passoNumero: 1, passoTotal: 4 }
   });
     s.transporteRegistrosSheetLeitura_ = () => null;
   assert.deepEqual(plano(s.transporteRegistrosResumo_()), {});
@@ -313,10 +313,13 @@ test('PINEX aguardando resposta: a tarefa respeita a janela de dias úteis e for
 
 test('"Parou no passo N" vem do número gravado com o passo e some quando o passo não é numerável', () => {
   const s = servidor();
-  const preparos = { 'n1|1': { passo: 'gerar', passoNumero: 3, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false },
-    'n2|1': { passo: 'concluido', passoNumero: 0, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false } };
-  const r = construir(s, [linha(s, 'n1', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n2', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n3', '06/10/2026', [{ nome: 'OCASA' }])], { preparos });
-  assert.deepEqual(r.tarefas.map((x) => [x.agendaId, x.parouNoPasso, x.parouNoPassoNome]), [['n1', 3, 'gerar'], ['n2', 0, ''], ['n3', 0, '']]);
+  const preparos = { 'n1|1': { passo: 'gerar', passoNumero: 3, passoTotal: 4, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false },
+    'n2|1': { passo: 'concluido', passoNumero: 0, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false },
+    // Gravado antes do total existir: fica só o nome do passo.
+    'n4|1': { passo: 'conferir', passoNumero: 1, versao: 2, emPreparoPor: '', emPreparoDesde: '', fasePinex: '', gruPronta: false } };
+  const r = construir(s, [linha(s, 'n1', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n2', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n3', '06/10/2026', [{ nome: 'OCASA' }]), linha(s, 'n4', '06/10/2026', [{ nome: 'OCASA' }])], { preparos });
+  assert.deepEqual(r.tarefas.map((x) => [x.agendaId, x.parouNoPasso, x.parouNoPassoNome, x.parouNoPassoTotal]),
+    [['n1', 3, 'gerar', 4], ['n2', 0, '', 0], ['n3', 0, '', 0], ['n4', 1, 'conferir', 0]]);
 });
 
 test('PINEX com os documentos gerados no passo a passo: enviar (com a GRU no título), não preparar de novo', () => {

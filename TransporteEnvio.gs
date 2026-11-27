@@ -94,6 +94,16 @@ function transporteEnvioNumeroPasso_(registro, passo) {
   return indice >= 0 ? indice + 1 : 0;
 }
 
+// Grava o numero do passo e o total de passos do envio naquele momento ("Parou no passo Conferir · 1 de 4").
+// Os dois saem da mesma lista: o total muda com o courier e com o que falta (AWB, PINEX, ANVISA).
+function transporteEnvioMarcarPasso_(registro, passo) {
+  var passos = transporteEnvioPassos_(registro);
+  var indice = passos.indexOf(String(passo || ''));
+  registro.passoNumero = indice >= 0 ? indice + 1 : 0;
+  registro.passoTotal = indice >= 0 ? passos.length : 0;
+  return registro;
+}
+
 function transporteEnvioInternacional_(registro) {
   var courier = transporteNormalizeCourierFromCodex_(registro.courier);
   if (courier === 'PINEX') return true;
@@ -128,7 +138,7 @@ function transporteEnvioPassos_(registro) {
 
 // Campos que a pessoa preenche no passo a passo e que a reconstrucao pela Agenda nao pode apagar.
 var TRANSPORTE_ENVIO_CAMPOS_LOCAIS_ = ['agendadoPor', 'pinexAgendadoPor', 'responsavelEntrega', 'horaEnvio', 'solicitarCaixa',
-  'pinexColeta', 'pinexProtocolo', 'observacoes', 'fasePinex', 'passoNumero', 'peticionamentoEnviadoEm', 'peticionamentoEnviadoPor', 'gruPronta', 'gruProntaEm', 'gruProntaPor',
+  'pinexColeta', 'pinexProtocolo', 'observacoes', 'fasePinex', 'passoNumero', 'passoTotal', 'peticionamentoEnviadoEm', 'peticionamentoEnviadoPor', 'gruPronta', 'gruProntaEm', 'gruProntaPor',
   'geracaoToken', 'rascunhoAssunto', 'rascunhoDestinatarios', 'rascunhoCe', 'rascunhoPeticao', 'pdfArquivoId', 'pdfArquivoNome', 'peticaoArquivoId', 'peticaoArquivoNome',
   'envioDesatualizadoEm', 'envioDesatualizadoPasso'];
 
@@ -362,7 +372,7 @@ function transporteEnvioAbrir_(agendaId, slot, usuario, lap) {
       }
     }
     if (!lido.registro || dadosAtualizados || JSON.stringify(lido.registro) !== JSON.stringify(registro)) {
-      registro.passoNumero = transporteEnvioNumeroPasso_(registro, passoInicial);
+      transporteEnvioMarcarPasso_(registro, passoInicial);
       var gravado = transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: lido.versao, usuario: usuario, passo: passoInicial });
       versao = gravado.versao;
       lap('gravar');
@@ -419,7 +429,7 @@ function transporteEnvioSalvar_(agendaId, slot, versao, campos, passo, usuario, 
   }
   if (registro.pinexColeta && !/^\d{5,6}$/.test(registro.pinexColeta)) throw new Error('PINEX COL. N° deve conter 5 ou 6 dígitos.');
   transporteEnvioAplicarFasePinex_(registro, lido.registro);
-  if (passo !== undefined) registro.passoNumero = transporteEnvioNumeroPasso_(registro, passo);
+  if (passo !== undefined) transporteEnvioMarcarPasso_(registro, passo);
   if (registro.solicitarCaixa) registro.solicitarCaixa = transporteNormalizeSimNao_(registro.solicitarCaixa, transporteDefaultSolicitarCaixa_(registro.courier));
   if (typeof antesDeGravar === 'function') antesDeGravar(registro);
   var gravado = transporteRegistroGravar_(agendaId, slot, registro, { versaoEsperada: versao, usuario: usuario, passo: passo === undefined ? undefined : String(passo) });
