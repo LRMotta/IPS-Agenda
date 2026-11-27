@@ -92,11 +92,13 @@ test('guia de dispensação imprime todos os medicamentos gravados juntos',async
     data.movements.push(item('GUIDE-A',4),item('GUIDE-B',6));
     await page.evaluate(d=>{FARMACIA_STOCK.data=d;},data);
     const text=await page.evaluate(()=>{const html=farmaciaDocumentHtml('GUIDE-B',false);const doc=new DOMParser().parseFromString(html,'text/html');return doc.title+'\n'+doc.body.innerText;});
-    assert.match(text,/^Guia de dispensação/);
-    assert.match(text,/Medicamentos na guia\s*2/);
-    assert.match(text,/1 de 2/);assert.match(text,/2 de 2/);
-    assert.match(text,/4 comprimido/);assert.match(text,/6 comprimido/);
-    assert.match(text,/Transação no IRT \/ plataforma do estudo\s*Não informado/);
+    assert.match(text,/^Guia de dispensação — GUIDEDEM/);
+    assert.match(text,/Guia nº\s*GUIDEDEM/);
+    assert.match(text,/Medicamentos \(2\)/);
+    assert.match(text,/4 comprimido/);assert.match(text,/6 comprimido/);assert.match(text,/Total:\s*10 comprimido/);
+    // Dados comuns da guia aparecem uma vez; códigos internos e campos vazios ficam de fora.
+    assert.equal(text.match(/DEMO-014/g).length,1);assert.equal(text.match(/PRESC-GUIA/g).length,1);
+    assert.doesNotMatch(text,/Identificador do registro|Dispensação vinculada|ID do estudo|Classe de acesso|GUIDE-A|guide-demo-0001|Transação no IRT|Não informado|Kit/);
     assert.deepEqual(errors,[]);
   }finally{await browser.close();}
 });
