@@ -171,6 +171,27 @@ test('resumo dos preparos lê só as colunas necessárias, ignora o JSON e não 
   assert.deepEqual(plano(s.transporteRegistrosResumo_()), {});
 });
 
+test('registro gravado antes do passoTotal: o total sai dos passos do próprio registro, com uma leitura de laboratórios', () => {
+  // Caso real (27/11): Christiane parou em Conferir antes da versão 411 e a etiqueta ficou sem "1 de N".
+  const s = servidor();
+  let leiturasLab = 0;
+  s.transporteReadLabCentralDireto_ = () => { leiturasLab++; return [{ nomeAbreviado: 'DASA (BARUERI)', pais: 'Brasil' }, { nomeAbreviado: 'LAB EUA', pais: 'EUA' }]; };
+  s.getLabCentral = () => { throw new Error('não deveria reautorizar'); };
+  const cab = ['Chave', 'Agenda_ID', 'Slot', 'Dados_JSON', 'Passo', 'Versao', 'Atualizado_Em', 'Atualizado_Por', 'Em_Preparo_Por', 'Em_Preparo_Desde'];
+  const reg = (extra) => JSON.stringify(Object.assign({ courier: 'OCASA', awb: '', destino: 'DASA (BARUERI)', passoNumero: 1 }, extra));
+  const rows = [cab,
+    ['a|1', 'a', '1', reg({}), 'conferir', 1, '', '', '', ''],
+    ['b|1', 'b', '1', reg({ destino: 'LAB EUA', awb: '12345678' }), 'conferir', 1, '', '', '', ''],
+    // Número gravado não bate com os passos de hoje (AWB lançada depois): sem total, para não mostrar número errado.
+    ['c|1', 'c', '1', reg({ awb: '12345678', passoNumero: 3 }), 'gerar', 1, '', '', '', ''],
+    ['d|1', 'd', '1', reg({ passoTotal: 9 }), 'conferir', 1, '', '', '', '']];
+  s.transporteRegistrosSheetLeitura_ = () => ({ getLastRow: () => rows.length, getRange: (r, c, n, w) => ({ getValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(c - 1, c - 1 + w)) }) });
+  const resumo = plano(s.transporteRegistrosResumo_());
+  assert.deepEqual(['a|1', 'b|1', 'c|1', 'd|1'].map((k) => [resumo[k].passoNumero, resumo[k].passoTotal]), [[1, 4], [1, 3], [3, 0], [1, 9]]);
+  assert.equal(leiturasLab, 1, 'laboratórios lidos uma vez, sem reautorizar');
+  assert.equal(s.TRANSPORTE_ABERTURA_MEMO_, null, 'o memo da leitura não fica ativo depois');
+});
+
 test('Mais adiante: semanas em ordem, itens por data e quando viram tarefa', () => {
   const s = servidor();
   const r = construir(s, [

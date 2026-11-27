@@ -12,8 +12,9 @@ var TRANSPORTE_TAREFAS_STATUS_PINEX_RESPOSTA_ = ['naoagendado', 'pendente', 'doc
 var TRANSPORTE_TAREFAS_SLOTS_ = [['1', 'Transporte I', 'c1'], ['2', 'Transporte II', 'c2'], ['3', 'Transporte III', 'c3'], ['4', 'Transporte IV', 'c4']];
 
 /**
- * Resumo do preparo de cada envio, em 1 leitura da aba (o JSON e lido, mas nao interpretado nem devolvido).
- * Devolve { chave: { passo, versao, emPreparoPor, emPreparoDesde } }. Sem aba: {}. Nao altera schema.
+ * Resumo do preparo de cada envio, em 1 leitura da aba (o JSON e lido por expressao regular, sem parse, e nao e devolvido;
+ * so os registros antigos parados num passo, sem passoTotal, sao interpretados para calcular o total).
+ * Devolve { chave: { passo, versao, emPreparoPor, emPreparoDesde, fasePinex, gruPronta, passoNumero, passoTotal } }. Sem aba: {}. Nao altera schema.
  */
 function transporteRegistrosResumo_() {
   var sh = transporteRegistrosSheetLeitura_();
@@ -23,7 +24,7 @@ function transporteRegistrosResumo_() {
   // Uma leitura so (cabecalho + linhas): cada chamada ao Sheets tem custo fixo maior que o das celulas a mais.
   var valores = sh.getRange(1, 1, lastRow, TRANSPORTE_REGISTROS_HEADERS_.length).getValues();
   transporteRegistrosCabecalhosDe_(valores[0]);
-  var out = {};
+  var out = {}, antigos = [];
   for (var n = 1; n < valores.length; n++) {
     var linha = valores[n];
     var chave = String(linha[0] || '');
@@ -38,11 +39,36 @@ function transporteRegistrosResumo_() {
       fasePinex: (/"fasePinex":"(\w+)"/.exec(dados) || [])[1] || '',
       gruPronta: /"gruPronta":true/.test(dados),
       passoNumero: Number((/"passoNumero":(\d+)/.exec(dados) || [])[1]) || 0,
-      // Registros gravados antes do total existir: 0, e a etiqueta mostra so o nome do passo.
       passoTotal: Number((/"passoTotal":(\d+)/.exec(dados) || [])[1]) || 0
     };
+    if (out[chave].passoNumero > 0 && !out[chave].passoTotal) antigos.push({ chave: chave, dados: dados });
   }
+  transporteRegistrosTotalAntigos_(out, antigos);
   return out;
+}
+
+/**
+ * Registros gravados antes do passoTotal (versao 411): o total sai dos passos do proprio registro, so para os
+ * envios parados num passo, e so vale se o passo gravado cair no mesmo numero. Sem isso, a etiqueta fica so com o
+ * nome. A leitura dos laboratorios (OCASA internacional) sai uma vez: a RPC ja autorizou a leitura na entrada.
+ */
+function transporteRegistrosTotalAntigos_(out, antigos) {
+  if (!antigos.length) return;
+  var memoProprio = !TRANSPORTE_ABERTURA_MEMO_;
+  if (memoProprio) TRANSPORTE_ABERTURA_MEMO_ = {};
+  try {
+    antigos.forEach(function(item) {
+      try {
+        var passos = transporteEnvioPassos_(JSON.parse(item.dados));
+        var resumo = out[item.chave];
+        if (passos[resumo.passoNumero - 1] === resumo.passo) resumo.passoTotal = passos.length;
+      } catch (e) {
+        Logger.log('Total de passos nao calculado para um registro antigo de Transporte.');
+      }
+    });
+  } finally {
+    if (memoProprio) TRANSPORTE_ABERTURA_MEMO_ = null;
+  }
 }
 
 // Operacao ativa com PDF gerado e sem e-mail identificado/enviado.
