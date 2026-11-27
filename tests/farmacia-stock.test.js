@@ -1110,3 +1110,13 @@ test('nota informada depois exige número, remetente, valor e motivo, e só vale
   assert.throws(()=>f.server.registrarNotaRecebimentoFarmacia({studyId:'P1',restricted:true,requestId:'invoice-other-class',data:{receiptId,invoice:ok,reason:'x'}}),/Entrada não encontrada|configurado/);
   assert.equal(f.sheet().writes,writes);
 });
+
+test('mesma remessa e lote em itens diferentes da nota fiscal entram como recebimentos separados', () => {
+  const f=lifecycleFixture(), invoice=(number,unitValue)=>({number,sender:'Distribuidora',unitValue});
+  f.server.registrarRecebimentoFarmacia(f.receipt({physical:2,invoice:invoice('43594',310.95)}));
+  f.server.registrarRecebimentoFarmacia({...f.receipt({physical:2,invoice:invoice('43594',295.4)}),requestId:'receipt-second-item'});
+  assert.equal(f.stock().positions.length,2);
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt({physical:2,invoice:invoice('43594',295.4)}),requestId:'receipt-same-item'}),/já foi registrado.*item/);
+  assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt({physical:2,invoice:invoice('',null)}),requestId:'receipt-no-invoice'}),/já foi registrado/);
+  assert.equal(f.stock().positions.length,2);
+});
