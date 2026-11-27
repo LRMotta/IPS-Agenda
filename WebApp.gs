@@ -1040,8 +1040,8 @@ function codexFarmaciaPermissionsFromRow_(sheetFlags, row) {
 // Identidade reservada do estoque compartilhado, nunca um ID de Projetos.
 var FARMACIA_COMMON_SCOPE_ = '@IPS_COMMON';
 
-function codexAssertFarmaciaCommonAccess_(permission) {
-  var access = codexAssertCanRead_();
+function codexAssertFarmaciaCommonAccess_(permission, readSnapshot) {
+  var access = codexAssertCanRead_(readSnapshot);
   var levels = ['none', 'read', 'operate', 'manage'];
   var required = levels.indexOf(permission);
   if (required < 1 || levels.indexOf(codexNormalizeFarmaciaAccess_(access.farmaciaCommonAccess)) < required) {
@@ -1102,8 +1102,8 @@ function codexFarmaciaGrantFor_(access, studyId) {
   return access.farmaciaAllStudies === true ? { studyId: studyId, restricted: false, viaAllStudies: true } : null;
 }
 
-function codexAssertFarmaciaAccess_(permission, studyId, restricted) {
-  var access = codexAssertCanRead_();
+function codexAssertFarmaciaAccess_(permission, studyId, restricted, readSnapshot) {
+  var access = codexAssertCanRead_(readSnapshot);
   var levels = ['none', 'read', 'operate', 'manage'];
   var required = levels.indexOf(permission);
   if (required < 1 || levels.indexOf(codexNormalizeFarmaciaAccess_(access.farmaciaAccess)) < required) {

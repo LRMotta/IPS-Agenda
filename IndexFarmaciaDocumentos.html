@@ -10,8 +10,15 @@ function farmaciaDocumentDate(value,time) {return value?farmaciaStockDate(value,
 function farmaciaDocumentQuantity(value,unit) {return value===undefined||value===null?'Não informado':farmaciaStockNumber(value)+' '+(unit||'');}
 // Número curto exibido ao usuário no lugar do identificador interno (FLC-…, UUID).
 function farmaciaDocumentNumber(id) {return String(id||'').replace(/^[A-Za-z]+-/,'').replace(/[^A-Za-z0-9]/g,'').slice(0,8).toUpperCase();}
+// Pessoa nos documentos: nome e registro profissional de Users (Nome · CRF-RS 12345); sem cadastro, o e-mail.
+function farmaciaDocumentPerson(email) {
+  var authors=FARMACIA_STOCK.data&&FARMACIA_STOCK.data.authors||{},person=authors[String(email||'').trim().toLowerCase()];
+  return person&&person.name?person.name+(person.registration?' · '+person.registration:''):email;
+}
+function farmaciaDocumentEmitterRegistration() {return typeof CURRENT_ACCESS!=='undefined'&&CURRENT_ACCESS.ok?String(CURRENT_ACCESS.registroProfissional||'').trim():'';}
+function farmaciaDocumentSigner(name) {var registration=farmaciaDocumentEmitterRegistration();return name+(registration?' · '+registration:'');}
 function farmaciaDocumentEvent(record,records,unit) {
-  var e=record.data,a=e.action,rows=[['Data da atividade',farmaciaDocumentDate(e.occurredOn||e.receivedOn||e.countedOn)],['Registrado por',record.author],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)]];
+  var e=record.data,a=e.action,rows=[['Data da atividade',farmaciaDocumentDate(e.occurredOn||e.receivedOn||e.countedOn)],['Registrado por',farmaciaDocumentPerson(record.author)],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)]];
   // A chegada do transporte não tem quantidade própria; a da saída vale para as duas.
   if(e.quantity!==undefined||e.physical!==undefined)rows.push(['Quantidade',farmaciaDocumentQuantity(e.quantity===undefined?e.physical:e.quantity,unit)]);
   var linked=records.find(function(r){return r.id===e.dispenseId;}),d=a==='dispense'?e:linked?linked.data:{};
@@ -70,7 +77,7 @@ function farmaciaDocumentHtml(id,lot) {
   if(title==='Registro de transporte'&&!selected.some(function(r){return r.data.action==='transport_arrival';}))body+='<p><strong>Chegada ainda não registrada nesta consulta.</strong></p>';
   if(title==='Registro de destinação')body+='<p>As referências registradas devem acompanhar os comprovantes pertinentes à devolução ou ao descarte.</p>';
   var signatures=title==='Registro de transporte'?['Responsável pela emissão','Responsável pela entrega','Responsável pelo recebimento']:['Responsável','Conferente (quando aplicável)'];
-  body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+signatures.map(function(label,index){return '<div class="signature"><strong>'+label+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(emitterName):'')+'</span></p><p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
+  body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+signatures.map(function(label,index){return '<div class="signature"><strong>'+label+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(farmaciaDocumentSigner(emitterName)):'')+'</span></p><p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
   // A ficha do lote é identificada pelo próprio lote, não pela posição interna.
   return farmaciaDocumentPage(title,lot?farmaciaLotLabel(p.lot)+(p.kit?' / '+p.kit:''):number,body,emitted,emitterName,FARMACIA_DOCUMENT_FOOTER);
 }
@@ -95,7 +102,7 @@ function farmaciaDocumentGuideHtml(record,records) {
   if(e.platformReference)fields.push(['Transação no IRT',e.platformReference]);
   if(e.document)fields.push(['Referência documental',e.document]);
   if(e.reason)fields.push(['Observação',e.reason]);
-  fields.push(['Registrado por',record.author],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)],['Conferência registrada',e.confirmed===true?'Sim':'Não informada']);
+  fields.push(['Registrado por',farmaciaDocumentPerson(record.author)],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)],['Conferência registrada',e.confirmed===true?'Sim':'Não informada']);
   if(list.some(function(r){return r.retroactive;}))fields.push(['Lançamento retroativo','Sim — data anterior à última operação registrada para a entrada. Conferir o motivo informado.']);
   var items=list.map(function(r){var position=farmaciaCyclePosition(r.data.positionId);return {d:r.data,position:position,product:farmaciaCycleProduct(position)||{}};});
   var kit=items.some(function(item){return item.position&&item.position.kit;}),totals={};
@@ -111,7 +118,7 @@ function farmaciaDocumentGuideHtml(record,records) {
   var body=farmaciaDocumentFields(fields);
   body+='<h2>Medicamentos ('+list.length+')</h2><table><colgroup>'+widths.map(function(w){return '<col style="width:'+w+'%">';}).join('')+'</colgroup><thead><tr>'+heads.map(function(v){return '<th>'+esc(v)+'</th>';}).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';
   body+='<p><strong>Total:</strong> '+esc(Object.keys(totals).map(function(unit){return farmaciaStockNumber(totals[unit])+' '+unit;}).join(' · '))+'</p>';
-  body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+['Responsável','Conferente (quando aplicável)'].map(function(label,index){return '<div class="signature"><strong>'+label+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(emitterName):'')+'</span></p><p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
+  body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+['Responsável','Conferente (quando aplicável)'].map(function(label,index){return '<div class="signature"><strong>'+label+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(farmaciaDocumentSigner(emitterName)):'')+'</span></p><p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
   return farmaciaDocumentPage('Guia de dispensação',number,body,emitted,emitterName,'Guia de dispensação v2. As assinaturas são manuais. Produto e apresentação refletem o cadastro atual. Guarde o PDF ou o exemplar assinado para preservar esta emissão.');
 }
 // Memorando de devolução ao patrocinador / destruição: todos os itens gravados com o mesmo memorando.
@@ -121,7 +128,7 @@ function farmaciaDocumentMemoHtml(record,records) {
   var title=sponsor?'Memorando de devolução ao patrocinador':'Memorando de destruição';
   var emitterName=typeof CURRENT_ACCESS!=='undefined'&&CURRENT_ACCESS.ok?String(CURRENT_ACCESS.name||'').trim():'';
   var emitted=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'}).format(new Date());
-  var body=farmaciaDocumentFields([['Memorando nº',e.memoNumber],['Destinação',FARMACIA_DESTINATION_LABELS[e.destination]],['Estudo',farmaciaCurrentStudyLabel()],['Protocolo',study.code],['Patrocinador',study.sponsor],['CRO',study.cro],['Centro',study.site],['Investigador principal',study.investigator],['Data da '+(sponsor?'devolução':'destruição'),farmaciaDocumentDate(e.occurredOn)],['Motivo',FARMACIA_DESTINATION_REASON_LABELS[e.reasonCategory]],['Autorização do patrocinador',e.authorization],['Referência documental',e.document],['Observação',e.reason],['Registrado por',record.author],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)]]);
+  var body=farmaciaDocumentFields([['Memorando nº',e.memoNumber],['Destinação',FARMACIA_DESTINATION_LABELS[e.destination]],['Estudo',farmaciaCurrentStudyLabel()],['Protocolo',study.code],['Patrocinador',study.sponsor],['CRO',study.cro],['Centro',study.site],['Investigador principal',study.investigator],['Data da '+(sponsor?'devolução':'destruição'),farmaciaDocumentDate(e.occurredOn)],['Motivo',FARMACIA_DESTINATION_REASON_LABELS[e.reasonCategory]],['Autorização do patrocinador',e.authorization],['Referência documental',e.document],['Observação',e.reason],['Registrado por',farmaciaDocumentPerson(record.author)],['Registro no sistema (Brasília)',farmaciaDocumentDate(record.registeredAt,true)]]);
   var totals={};
   var rows=list.map(function(r,index){
     var d=r.data,position=farmaciaCyclePosition(d.positionId),product=farmaciaCycleProduct(position)||{},unit=product.unit||'';
@@ -137,7 +144,7 @@ function farmaciaDocumentMemoHtml(record,records) {
     '<h2>Destruição</h2>'+farmaciaDocumentFields([['Empresa responsável',e.company],['Método',e.method],['Certificado de destruição / MTR',e.certificate||pending]]);
   body+='<h2>Declaração</h2><p>Declaro que a contagem dos itens acima foi conferida e reconciliada com os registros de dispensação e de retorno do estudo, que o material permaneceu segregado do estoque ativo até a saída e que '+(sponsor?'a devolução foi autorizada pelo patrocinador.':'a destruição foi autorizada pelo patrocinador e será comprovada pelo certificado da empresa responsável.')+'</p>';
   var signatures=[['Farmacêutico(a) responsável',true],['Monitor(a) do patrocinador (CRA) · reconciliação',false],[sponsor?'Recebido por (transportadora)':'Empresa responsável pela destruição',false],['Investigador(a) principal (opcional)',false]];
-  body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+signatures.map(function(item,index){return '<div class="signature"><strong>'+esc(item[0])+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(emitterName):'')+'</span></p>'+(item[1]?'<p>CRF:<span class="signature-line"></span></p>':'')+'<p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
+  body+='<section class="signatures"><h2>Assinaturas manuais</h2>'+signatures.map(function(item,index){return '<div class="signature"><strong>'+esc(item[0])+'</strong><p>Assinatura:<span class="signature-line"></span></p><p>Nome legível:<span class="signature-name">'+(index===0&&emitterName?esc(emitterName):'')+'</span></p>'+(item[1]?'<p>CRF:<span class="signature-name">'+esc(farmaciaDocumentEmitterRegistration())+'</span></p>':'')+'<p>Data: ____ / ____ / ________</p></div>';}).join('')+'</section>';
   body+='<h2>Anexos</h2><ul><li>Autorização do patrocinador ('+esc(e.authorization||'referência não informada')+')</li>'+(sponsor?'<li>Comprovante de coleta / AWB</li><li>Registro de temperatura do envio</li>':'<li>Certificado de destruição / MTR emitido pela empresa responsável</li>')+'</ul><p>Arquivar o exemplar assinado com os anexos na pasta da farmácia do estudo.</p>';
   return farmaciaDocumentPage(title,e.memoNumber,body,emitted,emitterName,'Memorando v1. Gerado a partir dos registros de destinação gravados com o mesmo número. As assinaturas são manuais. Os dados do estudo refletem o cadastro no momento do registro; produto e apresentação refletem o cadastro atual. Guarde o PDF ou exemplar assinado para preservar esta emissão.');
 }
