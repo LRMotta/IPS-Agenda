@@ -602,7 +602,7 @@ function farmaciaOpenPosition(id) {
   if (!history.length) rows = '<tr><td>Saldo inicial</td><td>' + esc(farmaciaStockQuantity(position.physical, product.unit)) + '</td><td>Registro anterior</td><td>' + esc(position.author) + '<small>' + esc(farmaciaStockDate(position.registeredAt, true)) + '</small></td></tr>';
   var html = farmaciaPositionSummaryHtml(position, product);
   html += farmaciaTable(['Evento / Motivo','Quantidade / Localização','Referência documental','Data / Responsável'], rows, 'Histórico do lote');
-  if (position.origin === 'receipt') html += farmaciaInvoiceSectionHtml(position, data);
+  if (position.origin === 'receipt' || position.origin === 'initial') html += farmaciaInvoiceSectionHtml(position, data);
   if (position.inTransit) html += '<p class="farmacia-cycle-help">Conclua o transporte em andamento antes de movimentar esta entrada.</p>';
   if (product.supplySource === 'sponsor' && data.farmaciaAccess === 'manage' && !position.inTransit) html += '<form id="farmaciaMovementForm" onsubmit="return salvarMovimentacaoFarmaciaApp(event)"><div class="form-section"><div class="section-label">Registrar movimentação</div><fieldset class="form-grid farmacia-movement-fields">' +
     '<div class="field"><label class="field-label" for="farmaciaMovementAction">Ação</label><select class="f-input" id="farmaciaMovementAction" onchange="farmaciaMovementChanged()">' + (position.returned ? '' : '<option value="block">Bloquear</option>') + (position.expired || position.returned ? '' : '<option value="release">Liberar conforme documento</option>') + '<option value="transfer">Transferir localização (saldo integral)</option></select></div>' +
@@ -632,11 +632,12 @@ function farmaciaInvoiceLabel(invoice) {
   return 'NF ' + invoice.number + ' · ' + invoice.sender + (typeof invoice.unitValue === 'number' ? ' · R$ ' + invoice.unitValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' / un.' : '');
 }
 
-// Nota do recebimento: mostra a atual e permite informar depois ou corrigir. O recebimento original não muda;
-// a nota nova fica no histórico da entrada e passa a valer na lista de notas fiscais.
+// Nota do recebimento ou do inventário inicial (recebimento lançado como inventário): mostra a atual e permite
+// informar depois ou corrigir. O registro original não muda; a nota nova fica no histórico da entrada e passa a
+// valer na lista de notas fiscais.
 function farmaciaInvoiceSectionHtml(position, data) {
   var invoice = position.invoice || {}, informed = !!invoice.number;
-  var html = '<div class="form-section"><div class="section-label">Nota fiscal do recebimento</div><p class="farmacia-invoice-current" id="farmaciaInvoiceCurrent">' + esc(farmaciaInvoiceLabel(invoice)) + '</p></div>';
+  var html = '<div class="form-section"><div class="section-label">' + (position.origin === 'initial' ? 'Nota fiscal da entrada' : 'Nota fiscal do recebimento') + '</div><p class="farmacia-invoice-current" id="farmaciaInvoiceCurrent">' + esc(farmaciaInvoiceLabel(invoice)) + '</p></div>';
   if (['operate', 'manage'].indexOf(data.farmaciaAccess) === -1) return html;
   return html + '<form id="farmaciaInvoiceForm" onsubmit="return salvarNotaRecebimentoFarmaciaApp(event)"><div class="form-section"><div class="section-label">' + (informed ? 'Corrigir nota fiscal' : 'Informar nota fiscal') + '</div><fieldset class="form-grid farmacia-invoice-fields">' +
     '<div class="field"><label class="field-label" for="farmaciaInvoiceNumber">Nº da nota fiscal</label><input class="f-input" id="farmaciaInvoiceNumber" maxlength="30" inputmode="numeric" required value="' + esc(invoice.number || '') + '"></div>' +

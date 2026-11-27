@@ -21,6 +21,12 @@ ao participante, não retorna) e `loan` (emprestado ao participante, volta para 
 aparecem na guia de dispensação junto dos medicamentos; `site` (consumido no centro) fica
 fora do ciclo e sai pelo estoque. O uso é obrigatório em material novo e na primeira
 correção de um material antigo; material sem o uso fica fora do ciclo até essa correção.
+Para isso não passar despercebido, a aba Dispensações e a guia avisam (⚠) quais materiais
+do patrocinador com saldo ficam fora da guia: sem uso definido, ou marcados como consumidos
+no centro. Na aba, quem é Responsável pela Farmácia tem o botão "Definir uso", que abre a
+correção do produto com o campo em foco e o motivo sugerido. Dentro da guia o aviso só
+orienta, porque a correção recarrega o estoque. Em Produtos, o material sem uso tem o selo
+"⚠ Defina o uso".
 Material não confere a validade contra o último dia previsto de uso, só que não saia
 vencido. No retorno de material emprestado, a equipe escolhe o destino: **conferido e
 higienizado** (`returnTo: 'stock'`) devolve a quantidade ao disponível da posição de
@@ -152,6 +158,35 @@ assinaturas (farmacêutico com CRF, monitor do patrocinador, transportadora ou e
 destruição e investigador principal opcional) e a lista de anexos. Destinações antigas,
 sem memorando, continuam legíveis e aparecem como registros avulsos.
 `registrarCicloFarmacia()` recusa `memoId`.
+
+### Dispensação e retorno no estoque Geral (26/11/2026)
+
+Pedido da Farmácia: controlar entrada e saída dos medicamentos comprados pelo IPS
+(estoque **Geral (Farmácia)**, `@IPS_COMMON`) sem o formulário manual, para saber o que
+comprar. Todo medicamento do Geral pode ser dispensado a qualquer participante de qualquer estudo.
+
+- **Produtos:** os mesmos tipos do ciclo, mas próprios do IPS (`supplySource: 'site'`):
+  medicamento, ou material entregue / emprestado ao participante. Material consumido no
+  centro continua saindo pelo ajuste de quantidade.
+- **Operações:** só dispensação (pela guia) e retorno. Transporte e destinação final são
+  recusados no Geral; perdas e vencidos seguem pelo ajuste (`registrarAjusteFarmacia`).
+  Permissão: `operate` ou `manage` na concessão do estoque comum (Users K).
+- **Participante:** `getFarmaciaParticipantes('@IPS_COMMON', false)` exige `operate` no Geral e
+  lista os participantes de todos os estudos do catálogo, só com código e estudo
+  (`studyId`, `studyLabel`), sem nome nem dados pessoais. A tela pede o estudo e depois o participante.
+- **Registro:** a dispensação do Geral grava `participantStudyId` (conferido com o cadastro
+  dentro do lock) e `participantStudyLabel` (retrato do nome do estudo). Só ela tem essas chaves:
+  o replay recusa dispensação do Geral sem estudo e dispensação de estudo com estudo. Visita e
+  último dia previsto de uso são opcionais (`validThrough: ''`); não há IRT.
+- **Retorno:** a sobra conferida de qualquer item volta ao disponível da posição de origem
+  (`returnTo: 'stock'`); avariada ou fora de uso fica segregada, como nos estudos. Adesão não é exibida.
+- **Relatório de consumo** (aba do Geral): calculado no navegador com o estoque já carregado,
+  sem gravar nada. Por produto e período (padrão: 90 dias até hoje): disponível agora,
+  bloqueado/quarentena, entradas (recebimentos e inventário), dispensado, sobra devolvida ao
+  estoque, consumo no centro (ajuste "consumo"), perdas e recontagem, consumo no período
+  (dispensado − sobra devolvida + consumo no centro), média mensal (consumo ÷ dias × 30),
+  cobertura do disponível em dias (destaque abaixo de 30) e próxima validade.
+  **Exportar planilha** baixa CSV com `;` e vírgula decimal; **Imprimir / PDF** abre a versão A4 paisagem.
 
 ## Persistência, concorrência e segurança
 

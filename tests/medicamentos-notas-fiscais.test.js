@@ -384,6 +384,18 @@ test('farmácia: nota informada ou corrigida depois do recebimento move o item p
   assert.deepEqual(chaves, ['112|ALMAC', '900|MARKEN']);
 });
 
+test('farmácia: inventário inicial entra na lista só com nota informada depois e enquanto não for excluído', () => {
+  const initial = (id) => ledgerRow(id, 'INITIAL', 'P1', false, { productId: 'FPR-1', lot: 'LT-' + id, expiry: '2027-01-31', location: 'A', kit: '', physical: 4,
+    blocked: 0, countedOn: '2026-11-23', confirmed: true, note: '', pending: 4 });
+  const nota = (id, entryId, number) => ledgerRow(id, 'RECEIPT_INVOICE', 'P1', false, { receiptId: entryId, invoice: { number, sender: 'Marken', unitValue: 5 }, reason: 'Recebimento lançado como inventário' });
+  const { server } = setupFarmacia([], [initial('FIN-1'), initial('FIN-2'), initial('FIN-3'), nota('FNF-1', 'FIN-1', '42246'), nota('FNF-2', 'FIN-3', '500'),
+    ledgerRow('FCA-1', 'INITIAL_DELETE', 'P1', false, { entityId: 'FIN-3', revision: 'FIN-3' })]);
+  const notas = Array.from(server.getMedicamentosNotasFiscais().notas);
+  assert.deepEqual(notas.map((n) => n.chave), ['42246|MARKEN'], 'sem nota (FIN-2) e excluído (FIN-3) ficam de fora');
+  assert.equal(notas[0].itens.length, 1);
+  assert.equal(notas[0].itens[0].lote, 'LT-FIN-1');
+});
+
 test('farmácia: todos os ledgers são lidos numa única chamada em lote, com o mesmo resultado da leitura aba a aba', () => {
   const ledger = [receipt('FRC-1', false, '777', 'Marken'), receipt('FRC-2', true, '888', 'Almac')];
   const porAba = setupFarmacia([], ledger);

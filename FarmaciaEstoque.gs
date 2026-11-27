@@ -204,7 +204,7 @@ function farmaciaReceiptInvoice_(value) {
   return { number: number, sender: sender, unitValue: unitValue === null ? null : Math.round(unitValue * 100) / 100 };
 }
 
-// Nota fiscal informada ou corrigida depois do recebimento (RECEIPT_INVOICE). O recebimento original não muda:
+// Nota fiscal informada ou corrigida depois do recebimento ou do inventário inicial (RECEIPT_INVOICE). O recebimento original não muda:
 // o registro novo fica no histórico e passa a valer como a nota do recebimento (o mais recente prevalece).
 function farmaciaReceiptInvoiceEditData_(value) {
   value = value || {};
@@ -214,11 +214,18 @@ function farmaciaReceiptInvoiceEditData_(value) {
     reason: farmaciaText_(value.reason, 'o motivo', 500) };
 }
 
+// A nota vale para recebimentos e para entradas de inventário inicial ainda existentes: recebimentos lançados
+// por engano como inventário não tinham onde receber a nota (26/11/2026). A chave gravada continua "receiptId".
+function farmaciaInvoiceEntry_(ledger, entryId) {
+  var entry = ledger.records.find(function(item) { return (item.type === 'RECEIPT' || item.type === 'INITIAL') && item.id === entryId; });
+  var position = entry && ledger.positions.find(function(item) { return item.id === entry.id; });
+  if (!entry || (entry.type === 'INITIAL' && !position)) throw new Error('Entrada não encontrada neste estudo e classe de acesso.');
+  return { record: entry, position: position };
+}
+
 function farmaciaApplyReceiptInvoice_(ledger, record) {
-  var receipt = ledger.records.find(function(item) { return item.type === 'RECEIPT' && item.id === record.data.receiptId; });
-  if (!receipt) throw new Error('Recebimento não encontrado neste estudo e classe de acesso.');
-  var position = ledger.positions.find(function(item) { return item.id === receipt.id; });
-  if (position) position.invoice = record.data.invoice;
+  var entry = farmaciaInvoiceEntry_(ledger, record.data.receiptId);
+  if (entry.position) entry.position.invoice = record.data.invoice;
   ledger.movements.push(record);
 }
 
@@ -235,10 +242,8 @@ function registrarNotaRecebimentoFarmacia(payload) {
       if (previous.type !== 'RECEIPT_INVOICE' || previous.dataJson !== JSON.stringify(data)) throw new Error('Esta operação já foi usada com outros dados.');
       return { ok: true, id: previous.id, repeated: true };
     }
-    var receipt = ledger.records.find(function(record) { return record.type === 'RECEIPT' && record.id === data.receiptId; });
-    if (!receipt) throw new Error('Recebimento não encontrado neste estudo e classe de acesso.');
-    var position = ledger.positions.find(function(item) { return item.id === receipt.id; });
-    var current = position ? position.invoice : receipt.data.invoice;
+    var entry = farmaciaInvoiceEntry_(ledger, data.receiptId);
+    var current = entry.position ? entry.position.invoice : entry.record.data.invoice;
     if (current && JSON.stringify(current) === JSON.stringify(data.invoice)) throw new Error('A nota fiscal informada é igual à atual.');
     var id = 'FNF-' + Utilities.getUuid();
     if (ledger.records.some(function(record) { return record.id === id; })) throw new Error('Não foi possível gerar um identificador único. Tente novamente.');
@@ -373,8 +378,10 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
         else receipts.add(farmaciaReceiptKey_(data));
         positions.push(farmaciaEntryState_(record)); movements.push(record);
       } else if (record.type === 'LIFECYCLE') {
-        if (context.studyId === FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
-        farmaciaApplyLifecycle_({ records: records, products: products, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate }, record);
+        if (JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
+        // No Geral, farmaciaApplyLifecycle_ só aceita dispensação e retorno.
+        farmaciaApplyLifecycle_({ records: records, products: products, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate,
+          common: context.studyId === FARMACIA_COMMON_SCOPE_ }, record);
       } else if (record.type === 'RECEIPT_INVOICE') {
         if (JSON.stringify(farmaciaReceiptInvoiceEditData_(data)) !== record.dataJson) throw new Error('Nota fiscal do recebimento inválida.');
         farmaciaApplyReceiptInvoice_({ records: records, positions: positions, movements: movements }, record);
@@ -400,7 +407,8 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
     // eslint-disable-next-line preserve-caught-error -- Não propagar dados brutos ou identificadores de registros inconsistentes ao cliente.
     throw new Error('Registros do estoque da Farmácia inconsistentes. Nenhum saldo foi alterado.');
   }
-  return { sheet: sheet, records: records, products: products, initial: initial, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate };
+  return { sheet: sheet, records: records, products: products, initial: initial, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate,
+    common: context.studyId === FARMACIA_COMMON_SCOPE_ };
 }
 
 function codexAssertFarmaciaProductsAccess_(studyId, restricted) {

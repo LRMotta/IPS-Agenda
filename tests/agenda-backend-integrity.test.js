@@ -222,3 +222,30 @@ test('cancelamento invalida snapshot repovoado durante a notificação antes de 
   assert.equal(f.sheet.rows[1][f.cfg.idx.controle], 'Cancelado');
   assert.equal(f.server.agendaWindowCacheGet_(duringNotificationKey), null, 'escrita de Controle também invalida snapshot concorrente');
 });
+
+test('edição sem troca de data ou hora usa a linha sugerida e não relê a coluna de IDs', () => {
+  const f = editFixture();
+  let buscasCompletas = 0;
+  f.c.agendaLocalizarLinhaPorId_ = f.c.encontrarLinhaPorId = () => { buscasCompletas++; return 2; };
+  f.payload._rowIndex = 2;
+  f.payload.obs = 'Observação corrigida';
+  const result = f.c.atualizarAgendaEventoCompleto(f.payload);
+  assert.equal(result.ok, true);
+  assert.equal(f.sheet.rows[1][f.i.obs], 'Observação corrigida');
+  assert.equal(buscasCompletas, 0, 'linha sugerida conferida pelo ID e sem busca após salvar');
+});
+
+test('linha sugerida com outro ID volta à busca completa antes de gravar', () => {
+  const f = editFixture();
+  const outra = f.sheet.rows[1].slice();
+  outra[f.i.id] = 'B';
+  f.sheet.rows.push(outra);
+  let buscasCompletas = 0;
+  f.c.agendaLocalizarLinhaPorId_ = f.c.encontrarLinhaPorId = () => { buscasCompletas++; return 2; };
+  f.payload._rowIndex = 3;
+  f.payload.obs = 'Observação corrigida';
+  assert.equal(f.c.atualizarAgendaEventoCompleto(f.payload).ok, true);
+  assert.equal(buscasCompletas, 1);
+  assert.equal(f.sheet.rows[1][f.i.obs], 'Observação corrigida');
+  assert.equal(f.sheet.rows[2][f.i.obs], 'Observação original', 'linha de outro agendamento preservada');
+});
