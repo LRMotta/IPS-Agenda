@@ -159,6 +159,35 @@ destruição e investigador principal opcional) e a lista de anexos. Destinaçõ
 sem memorando, continuam legíveis e aparecem como registros avulsos.
 `registrarCicloFarmacia()` recusa `memoId`.
 
+### Dispensação e retorno no estoque Geral (26/11/2026)
+
+Pedido da Farmácia: controlar entrada e saída dos medicamentos comprados pelo IPS
+(estoque **Geral (Farmácia)**, `@IPS_COMMON`) sem o formulário manual, para saber o que
+comprar. Todo medicamento do Geral pode ser dispensado a qualquer participante de qualquer estudo.
+
+- **Produtos:** os mesmos tipos do ciclo, mas próprios do IPS (`supplySource: 'site'`):
+  medicamento, ou material entregue / emprestado ao participante. Material consumido no
+  centro continua saindo pelo ajuste de quantidade.
+- **Operações:** só dispensação (pela guia) e retorno. Transporte e destinação final são
+  recusados no Geral; perdas e vencidos seguem pelo ajuste (`registrarAjusteFarmacia`).
+  Permissão: `operate` ou `manage` na concessão do estoque comum (Users K).
+- **Participante:** `getFarmaciaParticipantes('@IPS_COMMON', false)` exige `operate` no Geral e
+  lista os participantes de todos os estudos do catálogo, só com código e estudo
+  (`studyId`, `studyLabel`), sem nome nem dados pessoais. A tela pede o estudo e depois o participante.
+- **Registro:** a dispensação do Geral grava `participantStudyId` (conferido com o cadastro
+  dentro do lock) e `participantStudyLabel` (retrato do nome do estudo). Só ela tem essas chaves:
+  o replay recusa dispensação do Geral sem estudo e dispensação de estudo com estudo. Visita e
+  último dia previsto de uso são opcionais (`validThrough: ''`); não há IRT.
+- **Retorno:** a sobra conferida de qualquer item volta ao disponível da posição de origem
+  (`returnTo: 'stock'`); avariada ou fora de uso fica segregada, como nos estudos. Adesão não é exibida.
+- **Relatório de consumo** (aba do Geral): calculado no navegador com o estoque já carregado,
+  sem gravar nada. Por produto e período (padrão: 90 dias até hoje): disponível agora,
+  bloqueado/quarentena, entradas (recebimentos e inventário), dispensado, sobra devolvida ao
+  estoque, consumo no centro (ajuste "consumo"), perdas e recontagem, consumo no período
+  (dispensado − sobra devolvida + consumo no centro), média mensal (consumo ÷ dias × 30),
+  cobertura do disponível em dias (destaque abaixo de 30) e próxima validade.
+  **Exportar planilha** baixa CSV com `;` e vírgula decimal; **Imprimir / PDF** abre a versão A4 paisagem.
+
 ## Persistência, concorrência e segurança
 
 Os eventos usam o mesmo cabeçalho do ledger da Farmácia, com tipo `LIFECYCLE`, prefixo

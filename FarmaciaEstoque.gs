@@ -378,8 +378,10 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
         else receipts.add(farmaciaReceiptKey_(data));
         positions.push(farmaciaEntryState_(record)); movements.push(record);
       } else if (record.type === 'LIFECYCLE') {
-        if (context.studyId === FARMACIA_COMMON_SCOPE_ || JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
-        farmaciaApplyLifecycle_({ records: records, products: products, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate }, record);
+        if (JSON.stringify(farmaciaLifecycleData_(data)) !== record.dataJson) throw new Error('Operação do ciclo inválida.');
+        // No Geral, farmaciaApplyLifecycle_ só aceita dispensação e retorno.
+        farmaciaApplyLifecycle_({ records: records, products: products, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate,
+          common: context.studyId === FARMACIA_COMMON_SCOPE_ }, record);
       } else if (record.type === 'RECEIPT_INVOICE') {
         if (JSON.stringify(farmaciaReceiptInvoiceEditData_(data)) !== record.dataJson) throw new Error('Nota fiscal do recebimento inválida.');
         farmaciaApplyReceiptInvoice_({ records: records, positions: positions, movements: movements }, record);
@@ -405,7 +407,8 @@ function farmaciaParseLedgerRows_(context, sheet, rows) {
     // eslint-disable-next-line preserve-caught-error -- Não propagar dados brutos ou identificadores de registros inconsistentes ao cliente.
     throw new Error('Registros do estoque da Farmácia inconsistentes. Nenhum saldo foi alterado.');
   }
-  return { sheet: sheet, records: records, products: products, initial: initial, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate };
+  return { sheet: sheet, records: records, products: products, initial: initial, positions: positions, movements: movements, lastLifecycleDate: lastLifecycleDate,
+    common: context.studyId === FARMACIA_COMMON_SCOPE_ };
 }
 
 function codexAssertFarmaciaProductsAccess_(studyId, restricted) {
