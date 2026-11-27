@@ -127,11 +127,9 @@ test('DHL, PINEX (Agendamento), PINEX e courier sem rascunho', () => {
   const s = servidor();
   const dhl = s.transporteEmailDoRegistro_(registro({ courier: 'DHL', temperatura: 'AMBIENTE' }));
   assert.deepEqual(Array.from(dhl.destinatarios), ['dhl@example.invalid']);
-  assert.match(dhl.html, /Ref\. interna<\/td><td[^>]*>IPS-TRP-AB12CD34-T1</);
+  assert.doesNotMatch(dhl.html, /Ref\. interna|IPS-TRP-AB12CD34-T1/);
   assert.match(dhl.html, /Solicitar Caixa de Transporte<\/td><td[^>]*>Sim</);
   assert.match(dhl.html, /Data de envio<\/td><td[^>]*>16\/11\/2026</);
-  const semRef = s.transporteEmailDoRegistro_(registro({ courier: 'DHL', refInterna: '' }));
-  assert.doesNotMatch(semRef.html, /Ref\. interna/);
 
   const pinexAg = s.transporteEmailDoRegistro_(registro({ courier: 'PINEX (Agendamento)', awb: '' }));
   assert.equal(pinexAg.assunto, 'EMBARQ (CDX0159-12) - 16NOV2026 - PPD Global (Covington) - AGENDAMENTO DE COLETA');

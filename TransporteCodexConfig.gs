@@ -6746,19 +6746,8 @@ function transporteCodexEmailHtml_(ss, sheetKey, tipo, saudacao, temperaturaGera
   return html + '</table><p style="margin:22px 0 22px 0;line-height:1.75;">Os documentos necess\u00e1rios para o agendamento est\u00e3o anexados a este e-mail.</p>';
 }
 
-// refInternaExterna: quando informada (inclusive vazia), dispensa a leitura do registro na planilha de Transporte.
-function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, solicitarCaixa, saudacao, refInternaExterna) {
-  var registro = {};
-  if (refInternaExterna !== undefined) {
-    registro.refInterna = refInternaExterna;
-  } else {
-    try {
-      registro = transporteReadRegistro_() || {};
-    } catch (e) {
-      registro = {};
-    }
-  }
-  var refInterna = String(registro.refInterna || '').trim();
+// A referencia interna (AGD-...) vai apenas no rodape "Ref. IPS", nao na tabela.
+function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvio, investigador, laboratorio, awb, temperatura, solicitarCaixa, saudacao) {
   var rows = [
     ['Projeto', projeto || '-'],
     ['Janela de Envio', janelaEnvio || '-'],
@@ -6769,7 +6758,6 @@ function transporteCodexEmailDhlHtml_(projeto, dataColeta, janelaEnvio, dataEnvi
     ['AWB / C\u00f3digo', awb || '-'],
     ['Solicitar Caixa de Transporte', transporteNormalizeSimNao_(solicitarCaixa, 'Sim')]
   ];
-  if (refInterna) rows.push(['Ref. interna', refInterna]);
   var html = '<p>Prezados,</p><p>' + transporteCodexEmailEsc_(saudacao || transporteCodexSaudacao_()) + ',</p><p>Seguem dados para agendamento de coleta (CNPJ : ' + transporteCodexEmailEsc_(transporteCnpjTexto_()) + '):</p><table style="border-collapse:collapse;font-size:12px;border:1px solid #000;">';
   rows.forEach(function(row) {
     html += '<tr><td style="border:1px solid #000;padding:3px;font-weight:bold;line-height:1.45;">' + transporteCodexEmailEsc_(row[0]) + '</td><td style="border:1px solid #000;padding:3px;line-height:1.45;">' + transporteCodexEmailEsc_(row[1]) + '</td></tr>';

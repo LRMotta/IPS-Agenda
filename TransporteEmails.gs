@@ -168,7 +168,7 @@ function transporteEmailDoRegistro_(registro, opcoes) {
   } else if (transporteIsDhl_(courier)) {
     destinatarios = transporteCourierEmailRecipients_(courier, temperatura);
     html = transporteCodexEmailDhlHtml_(projeto, dataColeta, registro.horaEnvio, dataEnvio, registro.investigador, laboratorio, awb, temperatura,
-      transporteDefaultSolicitarCaixa_(courier), saudacao, String(registro.refInterna || ''));
+      transporteDefaultSolicitarCaixa_(courier), saudacao);
   } else if (courier === 'PINEX') {
     return { courier: courier, semRascunho: true, ok: true, motivo: 'Rascunho nao criado para PINEX; anexe os documentos na thread original do agendamento.' };
   } else {

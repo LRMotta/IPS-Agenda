@@ -40,6 +40,7 @@ async function fixture(browser, width) {
     productsHidden:document.querySelector('[data-farmacia-view="products"]').hidden}));
   await page.addScriptTag({ content:`
     var FARMACIA_STUDY_REQUEST_ID=0, FARMACIA_REQUEST_ID=1, pending=[], currentPage='farmacia';
+    var CURRENT_ACCESS={ok:true,farmaciaAccess:'manage',farmaciaCommonAccess:'manage'};
     function getCurrentPage(){return currentPage;}
     function irPara(page){currentPage=page;}
     function abrirOverlay(id){document.getElementById(id).classList.add('open');}
@@ -769,8 +770,8 @@ test('estoque comum aparece separado, oculta classe restrita e troca descarta re
       const {page,errors} = await fixture(browser,width);
       await page.evaluate(() => window.renderFarmaciaStudies([{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},{id:'P1',nome:'Estudo A'}]));
       await page.locator('#farmaciaStudy').selectOption('@IPS_COMMON');
-      assert.equal(await page.evaluate(() => window.pending.at(-1).args[0]),'@IPS_COMMON');
-      await page.evaluate(() => window.pending.at(-1).success({study:{id:'@IPS_COMMON',nome:'Geral (Farmácia)'},farmaciaAccess:'manage',restrictedAllowed:false}));
+      // Geral não passa pela consulta de acesso do estudo: o estoque é pedido direto (o servidor autoriza nele).
+      assert.equal(await page.evaluate(() => window.pending.some(p => p.method === 'getFarmaciaEstudo')),false);
       assert.deepEqual(await page.evaluate(() => window.pending.at(-1).args),['@IPS_COMMON',false]);
       const oldIndex = await page.evaluate(() => window.pending.length-1);
       const data = stockData({products:[{id:'PR1',name:'Equipo fictício',presentation:'Equipo de teste',unit:'unidade',control:'quantity'}]});
