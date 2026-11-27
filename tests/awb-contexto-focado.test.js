@@ -295,7 +295,12 @@ test('caixa nao le Courier nem LabCentral quando o projeto nao tem regra', () =>
 test('registrar a base do lembrete nao le os feriados', () => {
   const fonte = readProjectFile('CourierLembretes.gs').replace(/\r\n/g, '\n');
   const a = fonte.indexOf('function courierLembreteRegistrarBase_(');
-  assert.match(fonte.slice(a, fonte.indexOf('\nfunction ', a + 10)), /courierLembreteAgendaSnapshot_\(true, true\)/);
+  assert.match(fonte.slice(a, fonte.indexOf('\nfunction ', a + 10)), /courierLembreteAgendaSnapshotDoId_\(agendaId\)/);
+  // A busca pelo ID devolve sem feriados; sem busca, o indice completo continua sem feriados.
+  const b = fonte.indexOf('function courierLembreteAgendaSnapshotDoId_(');
+  const doId = fonte.slice(b, fonte.indexOf('\nfunction ', b + 10));
+  assert.match(doId, /feriados: null/);
+  assert.doesNotMatch(doId.replace(/courierLembreteAgendaSnapshot_\(true, true\)/g, ''), /courierLembreteAgendaSnapshot_\(/);
   assert.match(fonte, /feriados: semFeriados \? null : getAgendaFeriadosPendenciasMap_\(\)/);
 });
 

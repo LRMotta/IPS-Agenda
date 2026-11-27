@@ -55,6 +55,7 @@ function fixture() {
   });
   s.courierLembreteRows_ = () => rows;
   s.courierLembreteAgendaSnapshot_ = () => ({});
+  s.courierLembreteAgendaSnapshotDoId_ = () => ({});
   s.courierLembreteAgenda_ = () => current;
   s.courierLembreteHoraLocal_ = (date) => date;
   s.courierLembreteVencido_ = () => true;
@@ -556,4 +557,27 @@ test('PINEX: numeros informados durante a cobranca vao para revisao, sem envio',
   assert.equal(f.sent(), 0);
   assert.equal(f.rows[0].estado, 'REVISAO');
   assert.equal(f.rows[0].detalhe, 'Números da PINEX já informados');
+});
+
+test('base de cobranca acha o agendamento pela busca do ID, sem ler a coluna inteira; ID duplicado continua sem base', () => {
+  const { FakeSheet } = require('./helpers/fake-spreadsheet');
+  const idx = { id: 2 };
+  const linha = (id) => ['', '', id, '08/09/2026'];
+  const sheet = new FakeSheet('Agenda', [['', '', 'ID', 'Data'], linha('outro'), linha(' evt '), linha('EVT'), linha('evt2')]);
+  let colunaLida = 0;
+  const getRange = sheet.getRange.bind(sheet);
+  sheet.getRange = (...args) => {
+    const range = getRange(...args);
+    const ler = range.getDisplayValues.bind(range);
+    range.getDisplayValues = () => { if (args[2] > 1) colunaLida++; return ler(); };
+    return range;
+  };
+  const s = runFile('CourierLembretes.gs', { getAgendaSheetForRead_: () => sheet, AGENDA_CFG: { idx, lastCol: 4 } });
+  const snapshot = s.courierLembreteAgendaSnapshotDoId_('evt');
+  assert.deepEqual(JSON.parse(JSON.stringify(snapshot.porId)), { evt: [{ row: 3 }] }, 'espacos nas pontas ignorados; maiusculas diferenciadas; evt2 nao conta');
+  assert.equal(snapshot.feriados, null);
+  assert.equal(colunaLida, 0);
+  sheet.rows.push(linha('evt'));
+  assert.equal(s.courierLembreteAgendaSnapshotDoId_('evt').porId.evt.length, 2, 'duplicado: courierLembreteAgenda_ recusa a base');
+  assert.equal(Object.keys(s.courierLembreteAgendaSnapshotDoId_('a.b').porId).length, 0, 'caractere especial nao vira curinga');
 });

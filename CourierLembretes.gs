@@ -79,6 +79,25 @@ function courierLembreteAgendaSnapshot_(somenteIndice, semFeriados) {
   };
 }
 
+// Indice de um unico ID, pela busca na coluna de IDs: a base de cobranca so precisa saber se o ID e unico e em
+// que linha esta, sem ler a coluna inteira (~1 s). Sem a busca (ou com falha), o indice completo de sempre.
+function courierLembreteAgendaSnapshotDoId_(id) {
+  var sh = getAgendaSheetForRead_();
+  var lastRow = sh.getLastRow();
+  var coluna = lastRow < 2 ? null : sh.getRange(2, AGENDA_CFG.idx.id + 1, lastRow - 1, 1);
+  if (!coluna || typeof coluna.createTextFinder !== 'function' || !String(id || '').trim()) return courierLembreteAgendaSnapshot_(true, true);
+  try {
+    // Como o indice completo: ID igual depois de tirar espacos das pontas, diferenciando maiusculas.
+    var padrao = '^\\s*' + String(id).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$';
+    var linhas = coluna.createTextFinder(padrao).useRegularExpression(true).matchCase(true).findAll().map(function(celula) { return { row: celula.getRow() }; });
+    var porId = Object.create(null);
+    if (linhas.length) porId[String(id).trim()] = linhas;
+    return { sheet: sh, somenteIndice: true, porId: porId, feriados: null };
+  } catch (buscaError) {
+    return courierLembreteAgendaSnapshot_(true, true);
+  }
+}
+
 function courierLembreteAgenda_(id, slot, snapshot) {
   snapshot = snapshot || courierLembreteAgendaSnapshot_(true);
   var idx = AGENDA_CFG.idx;
@@ -139,7 +158,7 @@ function courierLembreteRegistrarBase_(agendaId, slot, gerado, vinculoIniciadoEm
   lap = lap || function() {};
   // Chamado somente durante geração nova. Nunca preenche vínculos do histórico.
   // Registrar a base so usa a linha; a verificacao de horarios le os feriados depois.
-  var snapshot = courierLembreteAgendaSnapshot_(true, true);
+  var snapshot = courierLembreteAgendaSnapshotDoId_(agendaId);
   lap('mo_base_ids_agenda');
   var atual = courierLembreteAgenda_(agendaId, slot, snapshot);
   lap('mo_base_linha');
