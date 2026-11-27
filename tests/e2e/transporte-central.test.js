@@ -96,6 +96,14 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.match(await page.locator('.tc-badges').innerText(), /Com Ana agora/);
       assert.equal(await page.locator('.tc-list .tc-item').count(), 1);
       assert.match(await page.locator('.tc-list').innerText(), /Enviar o pedido de coleta à courier/);
+      // Destino e temperatura numa coluna própria (antes só no card de cima); a tarefa fica com transporte e courier.
+      assert.equal(await page.locator('.tc-list .tc-fila-destino').innerText(), 'LAB Y · CONGELADO');
+      assert.equal(await page.locator('.tc-list .tc-fila-transp').innerText(), 'Transporte I: MARKEN');
+      if (width >= 1280) {
+        assert.equal(await page.locator('.tc-list .tc-thead').innerText(), 'ENVIO\nPARTICIPANTE\nTAREFA\nDESTINO');
+        const [tarefa, destino, acao] = await Promise.all(['.tc-fila-tarefa', '.tc-fila-destino', '.tc-trans-acoes'].map((s) => page.locator('.tc-list ' + s).boundingBox()));
+        assert.ok(tarefa.x + tarefa.width <= destino.x && destino.x + destino.width <= acao.x, 'Destino fica entre a tarefa e o botão');
+      }
       assert.equal(await page.locator('.tc-item.urgent').count(), 0);
       assert.match(await page.locator('.tc-footer').innerText(), /3 transportes viram tarefa em breve/);
       await page.locator('[data-tc-abrir]').click();

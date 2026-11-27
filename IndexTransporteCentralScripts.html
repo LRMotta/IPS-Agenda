@@ -114,7 +114,7 @@
       var seguintes = tarefas.slice(1);
       html += '<section class="tc-secao">' + transpCentralHtmlCabecalho('Também para fazer', 'format_list_numbered', seguintes.length,
         'Na ordem sugerida pelo sistema. Você pode começar qualquer uma, ou só um dos transportes.') +
-        '<div class="tc-tabela tc-list" role="list">' + transpCentralHtmlThead('tc-grade-fila', ['Envio', 'Participante', 'Tarefa', '']) +
+        '<div class="tc-tabela tc-list" role="list">' + transpCentralHtmlThead('tc-grade-fila', ['Envio', 'Participante', 'Tarefa', 'Destino', '']) +
         seguintes.map(function(t) {
           var urgente = !!t.prazoLabel;
           var varios = (t.transportes || []).length > 1;
@@ -124,11 +124,17 @@
             '<span class="tc-trans-quem"><strong>' + esc(t.participante) + '</strong><span>' + esc([t.projeto, t.visita].filter(Boolean).join(' · ')) + '</span></span>' +
             '<span class="tc-fila-tarefa"><strong class="tc-item-title">' + esc(t.titulo) + '</strong>' +
             // Cada transporte é um atalho para começar só ele; com um transporte só, o texto basta.
+            // A temperatura vai com o destino, na coluna ao lado: aqui fica o transporte e o courier.
             '<span class="tc-fila-transp">' + (t.transportes || []).map(function(x) {
-              var rotulo = [x.slotRotulo, [x.courier, x.temperatura].filter(Boolean).join(' · ')].filter(Boolean).join(': ');
+              var rotulo = [x.slotRotulo, x.courier].filter(Boolean).join(': ');
               return varios ? transpCentralBotaoTransporte(t, x, rotulo, 'tc-pilula') : '<span class="tc-item-meta">' + esc(rotulo) + '</span>';
             }).join('') + '</span>' +
             transpCentralEtiquetas(t, true) + '</span>' +
+            // Destino e temperatura de cada transporte (antes só no card de cima); com mais de um, o rótulo diz qual é qual.
+            '<span class="tc-fila-destino">' + (t.transportes || []).map(function(x) {
+              var destino = [x.destino, x.temperatura].filter(Boolean).join(' · ');
+              return '<span>' + (varios ? '<span class="tc-fila-slot">' + esc(x.slotRotulo || '') + ': </span>' : '') + esc(destino || '—') + '</span>';
+            }).join('') + '</span>' +
             '<span class="tc-trans-acoes"><button type="button" class="tc-acao" data-tc-comecar="' + esc(t.agendaId) + '" aria-label="' +
             esc(verboItem + (varios ? ' os transportes de ' : ' a tarefa de ') + t.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
             (varios ? verboItem + ' todos' : verboItem) + '</button></span></div>';
