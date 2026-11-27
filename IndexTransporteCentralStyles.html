@@ -38,8 +38,8 @@
     .tc-acomp.urgent { background: #fff7f6; box-shadow: inset 3px 0 0 #b3261e; }
     .tc-grade-acao { grid-template-columns: 132px minmax(160px, 1fr) minmax(280px, 2.2fr) 180px; }
     .tc-grade-sem-acao { grid-template-columns: 132px minmax(160px, 1fr) minmax(280px, 3fr); }
-    /* Fila: a coluna Destino ocupa a faixa que sobrava entre a tarefa e o botão em telas largas. */
-    .tc-grade-fila { grid-template-columns: 132px minmax(160px, 1fr) minmax(220px, 1.5fr) minmax(170px, 1.1fr) 150px; }
+    /* Fila: o bloco dos transportes ocupa a faixa entre o participante e o botão, com colunas próprias. */
+    .tc-grade-fila { grid-template-columns: 132px minmax(150px, .9fr) minmax(0, 3fr) 150px; }
 
     /* Data do envio em destaque */
     .tc-acomp-data { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -124,16 +124,32 @@
     .tc-meta strong { color: var(--text); font-weight: 600; }
     .tc-next .tc-transports { margin-top: 14px; }
     .tc-actions { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-    .tc-fila-tarefa { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+    .tc-fila-tarefa { display: grid; gap: 6px; min-width: 0; }
     .tc-fila-transp { display: flex; flex-wrap: wrap; gap: 6px; }
     /* Atalho para começar só um transporte: pílula discreta, no contorno dos botões secundários. */
     .tc-acao.tc-pilula { min-height: 26px; padding: 0 9px; font-size: 12px; font-weight: 500; color: var(--text); }
     .tc-acao.tc-pilula .material-symbols-outlined { font-size: 15px; color: var(--primary); }
     .tc-item-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
     .tc-item-meta { font-size: 12px; color: var(--text-muted); }
-    .tc-fila-destino { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12.5px; color: var(--text); }
-    .tc-fila-destino > span { overflow-wrap: anywhere; }
-    .tc-fila-destino .tc-fila-slot { color: var(--text-muted); }
+    /* Um transporte por linha, como as linhas da Agenda: transporte · temperatura · laboratório. As larguras fixas
+       alinham temperatura e laboratório de uma visita à outra (e com o cabeçalho). */
+    /* 4ª coluna: etapa diferente (situações misturadas), caixa e AWB no card. */
+    .tc-tr { display: grid; grid-template-columns: 230px 104px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; }
+    .tc-tr-box { margin-top: 14px; display: grid; gap: 6px; padding: 8px 12px; background: #f7f9fd; border: 1px solid #eef2f8; border-radius: var(--r-sm); }
+    .tc-tr-quem { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-width: 0; max-width: 100%; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; }
+    span.tc-tr-quem > .material-symbols-outlined { font-size: 16px; color: var(--primary); margin: 0 2px 0 1px; }
+    .tc-tr-slot { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .2px; color: #718096; margin-right: 2px; }
+    /* Atalho de um transporte: discreto como etiqueta; ao passar o mouse fica claro que é clicável. */
+    .tc-acao.tc-tr-quem { transition: background .12s, border-color .12s, box-shadow .12s; }
+    .tc-acao.tc-tr-quem:hover { background: var(--primary-light); border-color: var(--primary); box-shadow: 0 1px 4px rgba(26, 115, 232, .18); }
+    .tc-acao.tc-tr-quem:hover, .tc-acao.tc-tr-quem:hover .tc-tr-slot { color: var(--primary); }
+    .ag-temp.tc-tr-temp { justify-content: center; width: 100%; box-sizing: border-box; padding: 2px 8px; font-size: 11px; }
+    /* Laboratório: informação de apoio, no tamanho e no cinza do protocolo. */
+    .tc-tr-lab { display: inline-flex; align-items: center; gap: 5px; min-width: 0; font-size: 12px; color: var(--text-faint); overflow-wrap: anywhere; }
+    .tc-tr-lab .material-symbols-outlined { font-size: 14px; }
+    .tc-tr-fim { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .tc-tr-etapa-tarefa { justify-self: start; width: fit-content; }
+    .tc-tr-cab { gap: 12px; }
 
     /* Em breve: semanas em acordeão */
     .tc-acordeao { display: grid; gap: 10px; }
@@ -223,7 +239,7 @@
     @media (max-width: 1100px) {
       .tc-thead { display: none; }
       .tc-grade-acao, .tc-grade-sem-acao, .tc-grade-fila { grid-template-columns: 132px minmax(0, 1fr); }
-      .tc-acomp .tc-acomp-transp, .tc-acomp .tc-trans-acoes, .tc-acomp .tc-vira, .tc-acomp .tc-fila-tarefa, .tc-acomp .tc-fila-destino, .tc-acomp .tc-fila-chips { grid-column: 1 / -1; }
+      .tc-acomp .tc-acomp-transp, .tc-acomp .tc-trans-acoes, .tc-acomp .tc-vira, .tc-acomp .tc-fila-tarefa, .tc-acomp .tc-fila-chips { grid-column: 1 / -1; }
       .tc-acomp .tc-trans-acoes, .tc-fila-chips .tc-badges { justify-content: flex-start; }
       .tc-acomp .tc-vira { justify-self: start; }
     }
@@ -242,6 +258,11 @@
     }
     @media (max-width: 600px) {
       .tc-grade-acao, .tc-grade-sem-acao, .tc-grade-fila { grid-template-columns: minmax(0, 1fr); }
+      /* Transporte e temperatura numa linha, laboratório (e AWB) embaixo. */
+      .tc-tr { grid-template-columns: minmax(0, 1fr) 96px; row-gap: 4px; }
+      .tc-tr-lab { grid-column: 1; padding-left: 4px; }
+      .tc-tr-fim { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; min-width: 0; }
+      .tc-tr-fim .tc-chip { white-space: normal; }
       .tc-acomp-acao-transp { margin-left: 0; }
       .tc-title { font-size: 17px; }
       .tc-next { padding: 16px; }

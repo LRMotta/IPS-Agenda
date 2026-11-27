@@ -1,5 +1,5 @@
 'use strict';
-/* global document, window, getComputedStyle, transpCentralCarregar, transpCentralAba, transpCentralFecharCancelamento, transpCentralFecharEnviada */
+/* global document, window, getComputedStyle, transpCentralCarregar, transpCentralAba, transpCentralFecharCancelamento, transpCentralFecharEnviada, transpCentralHtmlFazer */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -86,24 +86,55 @@ test('Transporte (piloto): próxima tarefa, lista, etiquetas e em breve', async 
       assert.doesNotMatch(await page.locator('#page-transporte-central .tc-head').innerText(), /Sugerida pelo sistema/, 'a frase não fica mais no topo de todas as abas');
       const titulo = await page.locator('.tc-title').innerText();
       assert.doesNotMatch(titulo, /Backup|Transporte I/, 'o tipo do transporte não vai no título');
-      // Cada transporte numa faixa: tipo, situação, courier · temperatura e destino em blocos próprios.
-      // Os dois transportes pedem a mesma coisa (o título já diz): sem o rótulo "Preparar" em cada um.
-      assert.match(await page.locator('.tc-transports').innerText(), /Transporte I\s+OCASA · CONGELADO\s+LAB X/);
+      // Um transporte por linha, como na Agenda: transporte (atalho) · temperatura (chip com a cor da Agenda) · laboratório.
+      // Os dois transportes pedem a mesma coisa (o título já diz): sem etiqueta de etapa em cada um.
+      const linhasCard = page.locator('.tc-next .tc-tr');
+      assert.equal(await linhasCard.count(), 2);
+      assert.equal(await linhasCard.nth(0).locator('.tc-tr-quem').innerText(), 'play_arrow\nTRANSPORTE I\nOCASA');
+      assert.equal(await linhasCard.nth(0).locator('.tc-tr-temp').innerText(), 'CONGELADO');
+      assert.match(await linhasCard.nth(0).locator('.tc-tr-temp').getAttribute('class'), /temp-congelado/);
+      assert.match(await linhasCard.nth(1).locator('.tc-tr-temp').getAttribute('class'), /temp-ambiente/);
+      assert.match(await linhasCard.nth(0).locator('.tc-tr-lab').innerText(), /LAB X$/);
+      assert.match(await linhasCard.nth(0).innerText(), /Aguardando AWB/);
+      assert.match(await linhasCard.nth(1).locator('.tc-tr-quem').innerText(), /BACKUP\s+MARKEN/);
+      assert.equal(await page.locator('.tc-next .tc-tr-etapa').count(), 0);
       assert.doesNotMatch(await page.locator('.tc-transports').innerText(), /Preparar/);
-      assert.match(await page.locator('.tc-transports').innerText(), /Backup/);
       assert.match(await page.locator('.tc-badges').innerText(), /Em 3h/);
       assert.match(await page.locator('.tc-badges').innerText(), /Parou no passo Gerar · 2 de 3/);
       assert.match(await page.locator('.tc-badges').innerText(), /Com Ana agora/);
       assert.equal(await page.locator('.tc-list .tc-item').count(), 1);
-      assert.match(await page.locator('.tc-list').innerText(), /Enviar o pedido de coleta à courier/);
-      // Destino e temperatura numa coluna própria (antes só no card de cima); a tarefa fica com transporte e courier.
-      assert.equal(await page.locator('.tc-list .tc-fila-destino').innerText(), 'LAB Y · CONGELADO');
-      assert.equal(await page.locator('.tc-list .tc-fila-transp').innerText(), 'Transporte I: MARKEN');
+      // Exceção (pedido de coleta) salta aos olhos como etiqueta; o transporte segue na linha, sem atalho (é um só).
+      assert.equal(await page.locator('.tc-list .tc-tr-etapa-tarefa').innerText(), 'priority_high\nEnviar o pedido de coleta à courier');
+      assert.equal(await page.locator('.tc-list .tc-item-title').count(), 0, 'sem título em negrito na fila');
+      const linhaLista = page.locator('.tc-list .tc-item .tc-tr');
+      assert.match(await linhaLista.locator('.tc-tr-quem').innerText(), /TRANSPORTE I\s+MARKEN/);
+      assert.equal(await linhaLista.locator('button').count(), 0);
+      assert.equal(await linhaLista.locator('.tc-tr-temp').innerText(), 'CONGELADO');
+      assert.match(await linhaLista.locator('.tc-tr-lab').innerText(), /LAB Y$/);
+      // Laboratório no tamanho e no cinza do protocolo.
+      const [labFonte, protoFonte] = await Promise.all(['.tc-list .tc-tr-lab', '.tc-list .tc-trans-quem span'].map((s) => page.locator(s).first().evaluate((el) => getComputedStyle(el).fontSize)));
+      assert.equal(labFonte, protoFonte);
       if (width >= 1280) {
-        assert.equal(await page.locator('.tc-list .tc-thead').innerText(), 'ENVIO\nPARTICIPANTE\nTAREFA\nDESTINO');
-        const [tarefa, destino, acao] = await Promise.all(['.tc-fila-tarefa', '.tc-fila-destino', '.tc-trans-acoes'].map((s) => page.locator('.tc-list ' + s).boundingBox()));
-        assert.ok(tarefa.x + tarefa.width <= destino.x && destino.x + destino.width <= acao.x, 'Destino fica entre a tarefa e o botão');
+        assert.equal(await page.locator('.tc-list .tc-thead').innerText(), 'ENVIO\nPARTICIPANTE\nTRANSPORTE\nTEMPERATURA\nDESTINO');
+        // Temperatura alinhada com o cabeçalho.
+        const [cab, chip] = await Promise.all([page.locator('.tc-list .tc-tr-cab > span').nth(1).boundingBox(), linhaLista.locator('.tc-tr-temp').boundingBox()]);
+        assert.ok(Math.abs(cab.x - chip.x) < 2, 'temperatura alinhada com o cabeçalho');
       }
+      // Regra do título na fila: "Preparar…" some; exceções viram etiqueta; situações misturadas marcam só o diferente.
+      const fila = await page.evaluate(() => {
+        const base = { data: '09/10/2026', hora: '09:00', participante: 'P', projeto: 'E', visita: 'V', prazoLabel: '', parouNoPasso: 0 };
+        const tr = (slot, situacao) => ({ slot, slotRotulo: 'Transporte ' + slot, courier: 'MARKEN', temperatura: 'AMBIENTE', destino: 'LAB', situacao });
+        const html = transpCentralHtmlFazer({ tarefas: [Object.assign({ agendaId: 'z0', titulo: 'x', transportes: [tr('I', 'preparar')] }, base),
+          Object.assign({ agendaId: 'z1', titulo: 'Preparar 2 transportes', transportes: [tr('I', 'preparar'), tr('II', 'preparar')] }, base),
+          Object.assign({ agendaId: 'z2', titulo: 'Pedir a coleta à PINEX', transportes: [tr('I', 'pinex_pedir')] }, base),
+          Object.assign({ agendaId: 'z3', titulo: 'Preparar o transporte', transportes: [tr('I', 'preparar'), tr('II', 'enviar_doc')] }, base)], maisAdiante: {} });
+        const d = document.createElement('div'); d.innerHTML = html;
+        const item = (id) => d.querySelector('[data-tc-id="' + id + '"]');
+        return ['z1', 'z2', 'z3'].map((id) => [item(id).querySelectorAll('.tc-tr-etapa-tarefa').length, [...item(id).querySelectorAll('.tc-tr .tc-tr-etapa')].map((e) => e.textContent),
+          item(id).querySelectorAll('button.tc-tr-quem').length, /Preparar/.test(item(id).textContent)]);
+      });
+      assert.deepEqual(fila, [[0, [], 2, false], [1, [], 0, false], [0, ['Enviar pedido de coleta'], 2, false]]);
+      assert.equal(await page.evaluate(() => { const d = document.createElement('div'); d.innerHTML = transpCentralHtmlFazer({ tarefas: [{ agendaId: 'z', titulo: 'Pedir a coleta à PINEX', transportes: [{ slot: '1', situacao: 'pinex_pedir' }] }] }); return d.querySelectorAll('.tc-next .tc-tr-etapa').length; }), 0, 'no card o título já diz a etapa');
       assert.equal(await page.locator('.tc-item.urgent').count(), 0);
       assert.match(await page.locator('.tc-footer').innerText(), /3 transportes viram tarefa em breve/);
       await page.locator('[data-tc-abrir]').click();
@@ -463,7 +494,7 @@ test('Caixa especial no Para fazer e no Em breve: nome, prazo para pedir e alert
       await page.evaluate((r) => window.__pedidos[0].ok(r), resposta);
       // Próxima tarefa: na linha do transporte que pede a caixa, uma vez só.
       assert.equal(await page.locator('.tc-next .tc-chip-caixa').count(), 1);
-      assert.match(await page.locator('.tc-next .tc-transports li').nth(1).innerText(), /Caixa Extreme Ambient · pedir até 20\/11/);
+      assert.match(await page.locator('.tc-next .tc-tr').nth(1).innerText(), /Caixa Extreme Ambient · pedir até 20\/11/);
       assert.match(await page.locator('.tc-next .tc-chip-caixa').getAttribute('title'), /Confira se ela está disponível e peça à courier até 20\/11\/2026/);
       // Também para fazer: nas etiquetas, em vermelho quando o prazo passou.
       const lista = page.locator('.tc-list .tc-chip-caixa');

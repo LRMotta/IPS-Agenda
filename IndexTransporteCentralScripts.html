@@ -45,11 +45,57 @@
       (acoes ? '<span class="tc-acomp-acao-transp">' + acoes + '</span>' : '') + '</li>';
   }
 
-  // Começa só um transporte da visita (o passo a passo abre direto nele).
-  function transpCentralBotaoTransporte(tarefa, t, texto, classe) {
-    return '<button type="button" class="tc-acao ' + (classe || '') + '" data-tc-comecar="' + esc(tarefa.agendaId) + '" data-tc-slot="' + esc(t.slot) + '"' +
-      ' aria-label="' + esc('Começar só o ' + (t.slotRotulo || 'transporte') + ' de ' + tarefa.participante) + '">' +
-      '<span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' + esc(texto) + '</button>';
+  // Cor da temperatura igual à da Agenda (SharedAgendaRules); a regra local só vale se ela não estiver carregada.
+  function transpCentralTempClasse(temp) {
+    if (typeof AgendaRules !== 'undefined' && AgendaRules.temperatureClass) return AgendaRules.temperatureClass(temp);
+    var n = String(temp || '').toLowerCase();
+    return n.indexOf('ambiente') > -1 ? 'temp-ambiente' : n.indexOf('refriger') > -1 ? 'temp-refrigerado' : n.indexOf('congel') > -1 ? 'temp-congelado' : '';
+  }
+
+  // AWB como na Agenda (chip com rastreio); fora dela, o chip simples.
+  function transpCentralAwbHtml(t) {
+    if (typeof agendaAwbHtml === 'function') return agendaAwbHtml(t.awb, t.courier);
+    return t.awb ? '<span class="ag-awb">' + esc(t.awb) + '</span>' : '<span class="ag-awb-pend">Aguardando AWB</span>';
+  }
+
+  // Um transporte por linha, no desenho das linhas da Agenda e nas mesmas três colunas em toda a fila:
+  // transporte (e courier) · temperatura · laboratório. Com mais de um transporte na visita, o transporte é o
+  // atalho para começar só ele. etapa: só quando a visita mistura situações (ex.: um a preparar, outro a enviar).
+  // fim: AWB no card de cima.
+  function transpCentralHtmlTransporteFila(tarefa, t, varios, etapa, fim) {
+    var quem = '<span class="tc-tr-slot">' + esc(t.slotRotulo || 'Transporte') + '</span>' + esc(t.courier || '');
+    var temp = t.temperatura ? '<span class="ag-temp tc-tr-temp ' + transpCentralTempClasse(t.temperatura) + '">' + esc(t.temperatura) + '</span>' : '<span></span>';
+    return '<div class="tc-tr">' +
+      (varios
+        ? '<button type="button" class="tc-acao tc-pilula tc-tr-quem" data-tc-comecar="' + esc(tarefa.agendaId) + '" data-tc-slot="' + esc(t.slot) + '"' +
+          ' aria-label="' + esc('Começar só o ' + (t.slotRotulo || 'transporte') + ' de ' + tarefa.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' + quem + '</button>'
+        : '<span class="tc-tr-quem"><span class="material-symbols-outlined" aria-hidden="true">local_shipping</span>' + quem + '</span>') +
+      temp +
+      '<span class="tc-tr-lab">' + (t.destino ? '<span class="material-symbols-outlined" aria-hidden="true">science</span>' + esc(t.destino) : '') + '</span>' +
+      (etapa || fim ? '<span class="tc-tr-fim">' + (etapa ? '<span class="chip chip-orange tc-chip tc-tr-etapa">' + esc(etapa) + '</span>' : '') + (fim || '') + '</span>' : '') +
+      '</div>';
+  }
+
+  // "Preparar o transporte" é o caso comum e não ganha título na fila; as exceções (PINEX, pedido de coleta, GRU)
+  // aparecem como etiqueta, para saltar aos olhos. Com situações misturadas, cada transporte diferente leva a sua.
+  function transpCentralEtapaFila(tarefa) {
+    var situacoes = (tarefa.transportes || []).map(function(t) { return t.situacao; });
+    var preparar = situacoes.filter(function(s) { return s === 'preparar'; }).length;
+    if (preparar === situacoes.length) return { titulo: '', porTransporte: false };
+    if (!preparar) return { titulo: tarefa.titulo || '', porTransporte: false };
+    return { titulo: '', porTransporte: true };
+  }
+
+  function transpCentralHtmlTransportesFila(tarefa, comAwb) {
+    var transportes = tarefa.transportes || [];
+    var varios = transportes.length > 1;
+    var etapa = transpCentralEtapaFila(tarefa);
+    return (etapa.titulo ? '<span class="chip chip-orange tc-chip tc-tr-etapa tc-tr-etapa-tarefa"><span class="material-symbols-outlined" aria-hidden="true">priority_high</span>' + esc(etapa.titulo) + '</span>' : '') +
+      transportes.map(function(t) {
+        var rotulo = etapa.porTransporte && t.situacao !== 'preparar' ? (TC_SITUACAO[t.situacao] || '') : '';
+        // Card de cima: caixa especial e AWB no fim da linha (na lista, a caixa vai nas etiquetas da tarefa).
+        return transpCentralHtmlTransporteFila(tarefa, t, varios, rotulo, comAwb ? transpCentralChipCaixa(t.caixa) + transpCentralAwbHtml(t) : '');
+      }).join('');
   }
 
   // comCaixas: a lista "Também para fazer" não mostra as linhas dos transportes, então a caixa vai nas etiquetas.
@@ -91,9 +137,6 @@
     }
     var proxima = tarefas[0];
     var multi = (proxima.transportes || []).length > 1;
-    // O rótulo da situação (Preparar, Enviar pedido de coleta…) só aparece quando os transportes da visita pedem coisas diferentes;
-    // senão, o título da tarefa já diz o que fazer.
-    var situacoesDistintas = (proxima.transportes || []).map(function(t) { return t.situacao; }).filter(function(s, i, a) { return a.indexOf(s) === i; }).length > 1;
     // Tarefa já iniciada ("Parou no passo …"): o botão diz Continuar, para não parecer que recomeça do zero.
     var verbo = proxima.parouNoPasso ? 'Continuar' : 'Começar';
     var html = transpCentralHtmlCabecalho('Próxima tarefa', 'play_circle', null, 'Sugerida pelo sistema: a de prazo mais próximo. Você pode escolher outra na lista abaixo.') +
@@ -102,10 +145,9 @@
       '<div class="tc-next-texto"><h2 class="tc-title">' + esc(proxima.titulo) + '</h2>' +
       '<p class="tc-meta"><strong>' + esc(proxima.participante) + '</strong>' + esc([proxima.projeto, proxima.visita].filter(Boolean).map(function(p) { return ' · ' + p; }).join('')) + '</p>' +
       transpCentralEtiquetas(proxima) + '</div></div>' +
-      // Com mais de um transporte, cada um pode ser começado sozinho; "Começar" faz todos, na ordem.
-      '<ul class="tc-acomp-transp tc-transports">' + (proxima.transportes || []).map(function(t) {
-        return transpCentralHtmlTransporteLinha(situacoesDistintas ? t : Object.assign({}, t, { situacao: '' }), multi ? transpCentralBotaoTransporte(proxima, t, 'Começar este') : '');
-      }).join('') + '</ul>' +
+      // Com mais de um transporte, cada um pode ser começado sozinho (o próprio transporte é o atalho); "Começar" faz todos.
+      // O título do card já diz o que fazer: aqui as etiquetas de etapa só aparecem quando os transportes diferem.
+      '<div class="tc-transports tc-tr-box">' + transpCentralHtmlTransportesFila(Object.assign({}, proxima, { titulo: '' }), true) + '</div>' +
       '<div class="tc-actions"><button type="button" class="btn-new" data-tc-comecar="' + esc(proxima.agendaId) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
       (multi ? verbo + ' os ' + proxima.transportes.length + ' transportes' : verbo) + '</button>' +
       '<button type="button" class="tc-link" data-tc-abrir="' + esc(proxima.agendaId) + '">Abrir na Agenda</button></div>' +
@@ -114,7 +156,9 @@
       var seguintes = tarefas.slice(1);
       html += '<section class="tc-secao">' + transpCentralHtmlCabecalho('Também para fazer', 'format_list_numbered', seguintes.length,
         'Na ordem sugerida pelo sistema. Você pode começar qualquer uma, ou só um dos transportes.') +
-        '<div class="tc-tabela tc-list" role="list">' + transpCentralHtmlThead('tc-grade-fila', ['Envio', 'Participante', 'Tarefa', 'Destino', '']) +
+        // O bloco dos transportes tem as próprias colunas (transporte, temperatura, destino); o cabeçalho segue as mesmas larguras.
+        '<div class="tc-tabela tc-list" role="list"><div class="tc-thead tc-grade-fila" aria-hidden="true"><span>Envio</span><span>Participante</span>' +
+        '<span class="tc-tr tc-tr-cab"><span>Transporte</span><span>Temperatura</span><span>Destino</span></span><span></span></div>' +
         seguintes.map(function(t) {
           var urgente = !!t.prazoLabel;
           var varios = (t.transportes || []).length > 1;
@@ -122,19 +166,9 @@
           return '<div class="tc-acomp tc-grade-fila tc-item' + (urgente ? ' urgent' : '') + '" role="listitem" data-tc-id="' + esc(t.agendaId) + '">' +
             '<span class="tc-acomp-data">' + transpCentralHtmlDataDestaque(t.dataOrdem, t.data, t.hora) + '</span>' +
             '<span class="tc-trans-quem"><strong>' + esc(t.participante) + '</strong><span>' + esc([t.projeto, t.visita].filter(Boolean).join(' · ')) + '</span></span>' +
-            '<span class="tc-fila-tarefa"><strong class="tc-item-title">' + esc(t.titulo) + '</strong>' +
-            // Cada transporte é um atalho para começar só ele; com um transporte só, o texto basta.
-            // A temperatura vai com o destino, na coluna ao lado: aqui fica o transporte e o courier.
-            '<span class="tc-fila-transp">' + (t.transportes || []).map(function(x) {
-              var rotulo = [x.slotRotulo, x.courier].filter(Boolean).join(': ');
-              return varios ? transpCentralBotaoTransporte(t, x, rotulo, 'tc-pilula') : '<span class="tc-item-meta">' + esc(rotulo) + '</span>';
-            }).join('') + '</span>' +
-            transpCentralEtiquetas(t, true) + '</span>' +
-            // Destino e temperatura de cada transporte (antes só no card de cima); com mais de um, o rótulo diz qual é qual.
-            '<span class="tc-fila-destino">' + (t.transportes || []).map(function(x) {
-              var destino = [x.destino, x.temperatura].filter(Boolean).join(' · ');
-              return '<span>' + (varios ? '<span class="tc-fila-slot">' + esc(x.slotRotulo || '') + ': </span>' : '') + esc(destino || '—') + '</span>';
-            }).join('') + '</span>' +
+            // Um transporte por linha (transporte · temperatura · destino), sem o título "Preparar…" do caso comum;
+            // as exceções (PINEX, pedido de coleta, GRU) vêm como etiqueta acima. Caixa, prazo e passo seguem embaixo.
+            '<span class="tc-fila-tarefa">' + transpCentralHtmlTransportesFila(t, false) + transpCentralEtiquetas(t, true) + '</span>' +
             '<span class="tc-trans-acoes"><button type="button" class="tc-acao" data-tc-comecar="' + esc(t.agendaId) + '" aria-label="' +
             esc(verboItem + (varios ? ' os transportes de ' : ' a tarefa de ') + t.participante) + '"><span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>' +
             (varios ? verboItem + ' todos' : verboItem) + '</button></span></div>';
