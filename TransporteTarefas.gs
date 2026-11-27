@@ -51,6 +51,8 @@ function transporteRegistrosResumo_() {
  * Registros gravados antes do passoTotal (versao 411): o total sai dos passos do proprio registro, so para os
  * envios parados num passo, e so vale se o passo gravado cair no mesmo numero. Sem isso, a etiqueta fica so com o
  * nome. A leitura dos laboratorios (OCASA internacional) sai uma vez: a RPC ja autorizou a leitura na entrada.
+ * TEMPORARIO: remover (esta funcao, a lista "antigos" do resumo e o teste correspondente) a partir de 18/12/2026,
+ * quando os envios em andamento ja terao o passoTotal gravado. Roda sobre todos os registros antigos parados.
  */
 function transporteRegistrosTotalAntigos_(out, antigos) {
   if (!antigos.length) return;
