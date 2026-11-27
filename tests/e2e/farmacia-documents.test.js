@@ -94,11 +94,15 @@ test('guia de dispensação imprime todos os medicamentos gravados juntos',async
     const {page,errors}=await cycleFixture(browser);const data=cycleData({farmaciaAccess:'read'});
     const item=(id,quantity)=>({id,type:'LIFECYCLE',author:'farm@example.invalid',registeredAt:'2026-10-26T12:00:00.000Z',data:{action:'dispense',positionId:'IN1',occurredOn:'2026-10-26',quantity,participantId:'CAD-014',participantLabel:'DEMO-014',visit:'C3D1',prescription:'PRESC-GUIA',platformReference:'',validThrough:'2026-11-05',confirmed:true,guideId:'guide-demo-0001',document:'',reason:''}});
     data.movements.push(item('GUIDE-A',4),item('GUIDE-B',6));
-    await page.evaluate(d=>{FARMACIA_STOCK.data=d;},data);
+    data.authors={'farm@example.invalid':{name:'Farmacêutica Demo',registration:'CRF-RS 12345'}};
+    await page.evaluate(d=>{FARMACIA_STOCK.data=d;window.CURRENT_ACCESS={ok:true,name:'Emissor Demo',registroProfissional:'CRF-RS 999'};},data);
     const text=await page.evaluate(()=>{const html=farmaciaDocumentHtml('GUIDE-B',false);const doc=new DOMParser().parseFromString(html,'text/html');return doc.title+'\n'+doc.body.innerText;});
     assert.match(text,/^Guia de dispensação — GUIDEDEM/);
     assert.match(text,/Guia nº\s*GUIDEDEM/);
     assert.match(text,/Medicamentos \(2\)/);
+    // Pessoas aparecem por nome · registro profissional; o e-mail fica só como reserva.
+    assert.match(text,/Registrado por\s*Farmacêutica Demo · CRF-RS 12345/);assert.doesNotMatch(text,/farm@example\.invalid/);
+    assert.match(text,/Nome legível:\s*Emissor Demo · CRF-RS 999/);
     assert.match(text,/4 comprimido/);assert.match(text,/6 comprimido/);assert.match(text,/Total:\s*10 comprimido/);
     // Dados comuns da guia aparecem uma vez; códigos internos e campos vazios ficam de fora.
     assert.equal(text.match(/DEMO-014/g).length,1);assert.equal(text.match(/PRESC-GUIA/g).length,1);

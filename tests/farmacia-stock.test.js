@@ -1120,3 +1120,17 @@ test('mesma remessa e lote em itens diferentes da nota fiscal entram como recebi
   assert.throws(()=>f.server.registrarRecebimentoFarmacia({...f.receipt({physical:2,invoice:invoice('',null)}),requestId:'receipt-no-invoice'}),/já foi registrado/);
   assert.equal(f.stock().positions.length,2);
 });
+
+test('estoque devolve nome e registro dos autores lendo Users uma vez, só da autorização', () => {
+  const f=fixture();
+  f.users.rows[1][6]='CRF-RS 12345';
+  f.server.cadastrarProdutoFarmacia(f.product());
+  const original=f.server.codexGetAllowedUsers_;let reads=0;
+  f.server.codexGetAllowedUsers_=()=>{reads++;return original();};
+  const data=f.server.getFarmaciaEstoque('P1',false);
+  assert.equal(reads,1);
+  assert.deepEqual(JSON.parse(JSON.stringify(data.authors)),{'farm@example.invalid':{name:'Farmácia',registration:'CRF-RS 12345'}});
+  // E-mail fora de Users fica sem entrada (o documento mostra o e-mail); a busca ignora maiúsculas.
+  const authors=f.server.farmaciaAuthors_([{author:'saiu@example.invalid'},{author:'FARM@example.invalid'}],{'farm@example.invalid':{name:'Farmácia',registroProfissional:''}});
+  assert.deepEqual(JSON.parse(JSON.stringify(authors)),{'farm@example.invalid':{name:'Farmácia',registration:''}});
+});

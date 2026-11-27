@@ -139,10 +139,10 @@ function farmaciaStorage_() {
   return getCodexSpreadsheet_();
 }
 
-function farmaciaContext_(studyId, restricted, permission) {
+function farmaciaContext_(studyId, restricted, permission, readSnapshot) {
   if (typeof restricted !== 'boolean') throw new Error('Selecione uma classe de acesso válida.');
   if (studyId === FARMACIA_COMMON_SCOPE_ && restricted) throw new Error('O estoque comum não possui classe restrita.');
-  var access = studyId === FARMACIA_COMMON_SCOPE_ ? codexAssertFarmaciaCommonAccess_(permission) : codexAssertFarmaciaAccess_(permission, studyId, restricted);
+  var access = studyId === FARMACIA_COMMON_SCOPE_ ? codexAssertFarmaciaCommonAccess_(permission, readSnapshot) : codexAssertFarmaciaAccess_(permission, studyId, restricted, readSnapshot);
   return { access: access, studyId: studyId, restricted: restricted, ss: farmaciaStorage_() };
 }
 
@@ -478,13 +478,27 @@ function getFarmaciaProdutos(studyId, restricted) {
     }) };
 }
 
+// Nome e registro profissional de quem lançou, para os documentos impressos. Vem da mesma
+// leitura de Users feita pela autorização; e-mail fora de Users fica sem entrada (o documento mostra o e-mail).
+function farmaciaAuthors_(records, users) {
+  var result = {};
+  (records || []).forEach(function(record) {
+    var email = String(record.author || '').trim().toLowerCase(), user = users && users[email];
+    if (!email || result[email] || !user || !user.name) return;
+    result[email] = { name: user.name, registration: user.registroProfissional || '' };
+  });
+  return result;
+}
+
 function getFarmaciaEstoque(studyId, restricted) {
-  var context = farmaciaContext_(studyId, restricted, 'read');
+  var readSnapshot = {};
+  var context = farmaciaContext_(studyId, restricted, 'read', readSnapshot);
   var data = context.ss ? farmaciaReadLedger_(context) : { products: [], positions: [], movements: [] };
   var today = farmaciaToday_();
   var locations = farmaciaReadLocations_();
   var productsWithStockHistory = farmaciaProductsWithStock_(data.records || []);
   return { study: context.access.farmaciaStudy, restricted: restricted, configured: !!context.ss,
+    authors: farmaciaAuthors_(data.products.concat(data.movements), readSnapshot.users),
     locationsConfigured: locations.configured, storageUnits: locations.units,
     locationsCanManage: context.access.role === 'admin' || context.access.role === 'user',
     farmaciaAccess: context.access.farmaciaAccess, products: data.products.map(function(record) {
